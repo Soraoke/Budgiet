@@ -9,9 +9,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.chrono.ChronoLocalDate
+import java.time.chrono.ChronoPeriod
+import java.time.chrono.Chronology
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.time.temporal.Temporal
+import java.time.temporal.TemporalField
+import java.time.temporal.TemporalUnit
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -178,21 +186,27 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
     }
 }
 
-class Date private constructor(private val localDate: LocalDate) {
-    constructor(millis: Long) : this(
-        Instant.ofEpochMilli(millis)
+class Date private constructor(private val localDate: LocalDate): ChronoLocalDate {
+    constructor(utcMillis: Long) : this(
+        Instant.ofEpochMilli(utcMillis)
             // NOTE: This does not set the timezone of the Date to UTC,
             // but instead interprets the millis as set in UTC, which is what the DatePicker provides.
             .atZone(ZoneOffset.UTC)
             .toLocalDate()
     )
 
+    val utcMillis: Long
+        get() = this.localDate
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
+
     override fun toString(): String {
         val now = LocalDate.now()
 
         return when (localDate) {
             // I know this arm is unreachable, but wanted to include it for completeness.
-            // Maybe we'll want to use it for something else later.
+            // Maybe we'll want to use it for something else later.Expand commentComment on line R209
             now.plusDays(1) -> "Tomorrow"
             now -> "Today"
             now.minusDays(1) -> "Yesterday"
@@ -203,6 +217,18 @@ class Date private constructor(private val localDate: LocalDate) {
                 }
         }
     }
+
+    override fun equals(other: Any?): Boolean = this.localDate == other
+    override fun hashCode(): Int = this.localDate.hashCode()
+
+    override fun getChronology(): Chronology? = this.localDate.chronology
+    override fun lengthOfMonth(): Int = this.localDate.lengthOfMonth()
+    override fun until(endDateExclusive: ChronoLocalDate?): ChronoPeriod? = this.localDate.until(endDateExclusive)
+    override fun until(
+        endExclusive: Temporal?,
+        unit: TemporalUnit?
+    ): Long = this.localDate.until(endExclusive, unit)
+    override fun getLong(field: TemporalField?): Long = this.localDate.getLong(field)
 
     companion object {
         /** Get the **current** [Date].
@@ -221,12 +247,13 @@ class Date private constructor(private val localDate: LocalDate) {
         @OptIn(ExperimentalMaterial3Api::class)
         fun pastOrPresentDates(): SelectableDates {
             // Taken from https://stackoverflow.com/a/77678547/32115191
+            @Suppress("RemoveRedundantQualifierName")
             return object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    return utcTimeMillis <= System.currentTimeMillis()
+                    return Date(utcTimeMillis) <= Date.now()
                 }
                 override fun isSelectableYear(year: Int): Boolean {
-                    return year <= LocalDate.now().year
+                    return year <= Date.now().localDate.year
                 }
             }
         }

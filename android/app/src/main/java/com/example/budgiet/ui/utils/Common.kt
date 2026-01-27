@@ -11,6 +11,8 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -27,11 +29,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
+import com.example.budgiet.Date
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+
+val DIALOG_SHAPE
+    @Composable get() = MaterialTheme.shapes.extraLarge
+val DIALOG_PROPERTIES = DialogProperties(
+    dismissOnBackPress = true,
+    dismissOnClickOutside = true,
+    usePlatformDefaultWidth = true,
+)
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
@@ -184,4 +197,51 @@ fun PlainSearchBar(
             )
         }
     ) { }
+}
+
+/** A simple [DatePicker] Dialog that only allows selecting dates that already happened
+ * (i.e. *past or present* dates). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DatePickerDialog(
+    modifier: Modifier = Modifier,
+    selectedDate: Date = Date.now(),
+    onDismiss: () -> Unit,
+    onSubmit: (Date) -> Unit,
+) {
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate.utcMillis,
+        selectableDates = Date.pastOrPresentDates(),
+    )
+
+    DatePickerDialog(
+        modifier = modifier,
+        shape = DIALOG_SHAPE,
+        properties = DIALOG_PROPERTIES,
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    datePickerState
+                        .selectedDateMillis
+                        ?.let { millis ->
+                            onSubmit(Date(millis))
+                        }
+                }
+            ) {
+                Text("Ok")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    ) {
+        DatePicker(
+            state = datePickerState,
+            showModeToggle = true,
+        )
+    }
 }
