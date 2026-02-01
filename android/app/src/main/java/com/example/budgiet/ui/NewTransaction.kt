@@ -432,12 +432,20 @@ fun DescriptionField(
     fieldValue: String,
     onValueChange: (String) -> Unit,
 ) {
+    // Whether the user has pasted content that goes over the MAX_LENGTH of the field.
+    // When this happens, the field becomes an error state.
+    var pasteOverflow by remember { mutableStateOf(false) }
+
     OutlinedTextField(
         modifier = modifier.fillMaxWidth()
             .heightIn(min = DESCRIPTION_FIELD_MIN_HEIGHT, max = DESCRIPTION_FIELD_MAX_HEIGHT),
         value = fieldValue,
         onValueChange = { newDescription ->
-            // Implement character limit with a cutoff, instead of not replacing the description value in the first place
+            @Suppress("AssignedValueIsNeverRead")
+            pasteOverflow = newDescription.length > DESCRIPTION_MAX_LENGTH
+
+            // Implement character limit with a cutoff,
+            // instead of not replacing the description value in the first place.
             onValueChange(newDescription.take(DESCRIPTION_MAX_LENGTH))
         },
         shape = MaterialTheme.shapes.large,
@@ -449,12 +457,12 @@ fun DescriptionField(
             "Write details about the transaction here...",
             color = MaterialTheme.colorScheme.outline,
         ) },
-        isError = fieldValue.length > DESCRIPTION_MAX_LENGTH,
+        isError = pasteOverflow,
         supportingText = {
             Row(Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                if (fieldValue.length > DESCRIPTION_MAX_LENGTH) {
+                if (pasteOverflow) {
                     Text("Description is too long!")
                     Spacer(Modifier.width(8.dp))
                 }

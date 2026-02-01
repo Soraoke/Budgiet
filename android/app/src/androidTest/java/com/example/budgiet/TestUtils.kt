@@ -3,19 +3,22 @@ package com.example.budgiet
 import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import kotlin.Result
 
 /** Get the **value** of a property from a [SemanticsNode][SemanticsNodeInteraction].
  * Throws exception if property was *not found* or value was `null`.
  *
  * Use one of [SemanticsProperties] as the **key**.
  * These have the same names as the Semantics properties you see in the printed Node. */
-fun <T> SemanticsNodeInteraction.getSemanticsProperty(key: SemanticsPropertyKey<T>): T
-        = this.fetchSemanticsNode()
-    .config
-    .getOrElse(key) {
-        throw RuntimeException("SemanticsProperty with key \"${key.name}\" was not found or was null.")
-    }
+fun <T> SemanticsNodeInteraction.getSemanticsProperty(key: SemanticsPropertyKey<T>): Result<T>
+    = this.fetchSemanticsNode()
+        .config
+        .getOrNull(key)
+        .runCatching {
+            this ?: throw RuntimeException("SemanticsProperty with key \"${key.name}\" was not found or was null.")
+        }
 
 /** Returns the [Class] of the **value** of a [SemanticsProperty][SemanticsConfiguration].
  *
