@@ -91,7 +91,49 @@ class DescriptionFieldTests {
     @get:Rule
     val rule = createComposeRule()
 
-    // TODO: test graphemes with multiple codepoints (e.g. ä (are you sure this is the multi-codepoint variant?), certain emojis)
+    @Test
+    fun largeGraphemesTest() {
+        val snowMan = "☃"
+        val accentedE = "e" + "´"
+        val state = TestState(rule)
+
+        // Check that multiple code units count as 1 character.
+        assertEquals(3, snowMan.encodeToByteArray().size)
+        assertEquals(1, snowMan.length)
+        // Check that multiple code points count as 1 character.
+        assertEquals(3, accentedE.encodeToByteArray().size)
+        assertEquals(1, snowMan.length)
+
+        // Check that the field accepts multiple code units as 1 character.
+        state.descriptionField.performTextInput("a".repeat(DESCRIPTION_MAX_LENGTH - 1))
+        state.descriptionField.performTextInput(snowMan)
+        assert(state.descriptionField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text
+            .contains(snowMan)
+        )
+        state.assertCounter(DESCRIPTION_MAX_LENGTH)
+        state.assertIsNotError()
+
+        // Deleting 1 character deletes the 3 code units.
+        @OptIn(ExperimentalTestApi::class)
+        state.descriptionField.performKeyInput {
+            this.pressKey(Key.Backspace)
+        }
+        state.assertCounter(DESCRIPTION_MAX_LENGTH - 1)
+
+        // Check that the field accepts multiple code points as 1 character.
+        state.descriptionField.performTextInput(accentedE)
+        assert(state.descriptionField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text
+            .contains(accentedE)
+        )
+        state.assertCounter(DESCRIPTION_MAX_LENGTH)
+        state.assertIsNotError()
+    }
 
     @Test
     fun pasteLimitTest() {
