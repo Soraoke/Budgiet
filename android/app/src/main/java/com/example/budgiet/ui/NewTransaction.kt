@@ -5,12 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -21,10 +21,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.paging.PagingConfig
@@ -64,18 +66,28 @@ import com.example.budgiet.Location
 import com.example.budgiet.Result
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
+import com.example.budgiet.graphemeStringLength
+import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
+import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListItemScope
 import com.example.budgiet.ui.utils.PagedListColumn
 import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import com.example.budgiet.ui.utils.TextIconButton
 import java.util.Currency
 import kotlin.math.ceil
+
+/** The maximum number of characters (graphemes) allowed in the Description field.
+ * This value should not be changed as the database enforces the value. */
+const val DESCRIPTION_MAX_LENGTH = 255
+val DESCRIPTION_FIELD_MIN_HEIGHT = 125.dp
+val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +97,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
     var showLocationPicker by remember { mutableStateOf(false) }
     var selectedLocation by remember { mutableStateOf<Location?>(null) }
     var selectedPrice by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier,
@@ -141,6 +154,22 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
         FormField("Price") {
             PriceField(initialPrice = selectedPrice, onPriceChange = { selectedPrice = it })
         }
+        FormField("Description", labelPosition = LabelPosition.AboveContent) {
+            DescriptionField(fieldValue = description) { description = it }
+        }
+
+        FormField(null, horizontalArrangement = Arrangement.SpaceBetween) {
+            TextIconButton(
+                onClick = { TODO() },
+                icon = { Icon(Icons.Filled.Clear, "Cancel") },
+                text = { Text("Cancel") }
+            )
+            FilledTextIconButton(
+                onClick = { TODO() },
+                icon = { Icon(Icons.Filled.Check, "Submit") },
+                text = { Text("Submit") },
+            )
+        }
     }
 
     if (showDatePicker) {
@@ -187,25 +216,61 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
 
 }
 
+/** Dictates how the *[FormField]*'s **label/title** is positioned in the element.
+ *
+ * Whether the main content is **small** and the label should appear [Beside][LabelPosition.BesidesContent] (to the left of) the content,
+ * or the main content is **large** and the label should appear directly [Above][LabelPosition.AboveContent] the content. */
+enum class LabelPosition {
+    AboveContent, BesidesContent,
+}
+
 @Composable
 fun FormField(
-    label: String,
+    label: String?,
     modifier: Modifier = Modifier,
+    labelPosition: LabelPosition = LabelPosition.BesidesContent,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.End,
+    verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
     content: @Composable (RowScope.() -> Unit)
 ) {
-    ListItem(
-        modifier = modifier,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = { Text(label) },
-        headlineContent = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-                content = content,
-            )
-        }
-    )
+    val headlineRow = @Composable {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = horizontalArrangement,
+            verticalAlignment = verticalAlignment,
+            content = content,
+        )
+    }
+
+    when (labelPosition) {
+        LabelPosition.BesidesContent -> ListItem(
+            modifier = modifier,
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            // The ListItem places leadingContent to the left of headlineContent, and adds spacing.
+            leadingContent = label?.let { { Text(label) } },
+            headlineContent = headlineRow,
+        )
+        LabelPosition.AboveContent -> ListItem(
+            modifier = modifier,
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            headlineContent = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.Top,
+                ) {
+                    if (label != null) {
+                        Text(
+                            label,
+                            color = ListItemDefaults.colors().leadingIconColor,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    headlineRow()
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -215,8 +280,6 @@ fun LocationPickerDialog(
     onSubmit: (Location) -> Unit,
 ) {
     val dialogPadding = 8.dp
-    val textIconButtonPadding = 12.dp
-    val textIconButtonSpacing = 4.dp
     val searchColumnSize = 3.5f
     // Page size should have enough items to scroll down several times the number of items showed.
     val searchPageSize = ceil(searchColumnSize).toInt() * 3
@@ -321,14 +384,11 @@ fun LocationPickerDialog(
                     }
 
                     PlainToolTipBox("Add new location") {
-                        Button(
+                        FilledTextIconButton(
                             onClick = { TODO() },
-                            contentPadding = PaddingValues(horizontal = textIconButtonPadding)
-                        ) {
-                            Icon(Icons.Filled.Add, "New Location")
-                            Spacer(Modifier.width(textIconButtonSpacing))
-                            Text("New")
-                        }
+                            icon = { Icon(Icons.Filled.Add, "New Location") },
+                            text = { Text("New") },
+                        )
                     }
                 }
             }
@@ -392,6 +452,59 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
         }
 
         // TODO: Add Icon decoration for the price (like $ USD)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DescriptionField(
+    modifier: Modifier = Modifier,
+    fieldValue: String,
+    onValueChange: (String) -> Unit,
+) {
+    // Whether the user has pasted content that goes over the MAX_LENGTH of the field.
+    // When this happens, the field becomes an error state.
+    var pasteOverflow by remember { mutableStateOf(false) }
+
+    OutlinedTextField(
+        modifier = modifier.fillMaxWidth()
+            .heightIn(min = DESCRIPTION_FIELD_MIN_HEIGHT, max = DESCRIPTION_FIELD_MAX_HEIGHT),
+        value = fieldValue,
+        onValueChange = { newDescription ->
+            // Get the String length, but in units of graphemes.
+            val length = graphemeStringLength(newDescription)
+
+            @Suppress("AssignedValueIsNeverRead")
+            pasteOverflow = length > DESCRIPTION_MAX_LENGTH
+
+            // Implement character limit with a cutoff,
+            // instead of not replacing the description value in the first place.
+            onValueChange(graphemeStringTake(newDescription, DESCRIPTION_MAX_LENGTH))
+        },
+        shape = MaterialTheme.shapes.large,
+        textStyle = LocalTextStyle.current.copy(
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+            lineHeight = 1.5.em,
+        ),
+        placeholder = { Text(
+            "Write details about the transaction here...",
+            color = MaterialTheme.colorScheme.outline,
+        ) },
+        isError = pasteOverflow,
+        supportingText = {
+            Row(Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (pasteOverflow) {
+                    Text("Description is too long!")
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    "${graphemeStringLength(fieldValue)}/$DESCRIPTION_MAX_LENGTH",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        },
     )
 }
 

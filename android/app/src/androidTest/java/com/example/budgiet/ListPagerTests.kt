@@ -34,7 +34,7 @@ const val LOAD_TIME = 5000L
 const val ERROR_MESSAGE = "loading page exception"
 
 @OptIn(UsableInTestsOnly::class)
-class TestState(
+private class TestState(
     private val rule: ComposeContentTestRule,
     private val getPage: PageGetter<Int> = { start, length -> List(length.toInt()) { i -> start.toInt() + i } },
 ) {
