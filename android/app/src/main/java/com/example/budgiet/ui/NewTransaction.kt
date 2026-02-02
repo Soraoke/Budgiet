@@ -1,7 +1,9 @@
 package com.example.budgiet.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -75,7 +80,6 @@ import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
-import java.text.BreakIterator
 import java.util.Currency
 import kotlin.math.ceil
 
@@ -103,6 +107,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                 readOnly = true,
                 onValueChange = {},
                 value = selectedDate.toString(),
+                shape = MaterialTheme.shapes.medium,
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
                         IconButton(onClick = { showDatePicker = !showDatePicker }) {
@@ -113,7 +118,18 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
             )
         }
         FormField("Location") {
-            OutlinedButton(onClick = { showLocationPicker = true }) {
+            /** The border-radius of the shape of the two buttons in this field.
+             * This only applies to the corners that connect the buttons. */
+            val inBetweenBorderRadius = MaterialTheme.shapes.extraSmall.bottomEnd
+
+            OutlinedButton(
+                onClick = { showLocationPicker = true },
+                // Modify the shape on the left-side of the button to connect with the auto-select location button.
+                shape = RoundedCornerShape(
+                    topStart = CornerSize(percent = 50), bottomStart = CornerSize(percent = 50),
+                    topEnd = inBetweenBorderRadius, bottomEnd = inBetweenBorderRadius,
+                )
+            ) {
                 Text(
                     if (selectedLocation != null) {
                         selectedLocation!!.name
@@ -123,13 +139,20 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                 )
             }
             PlainToolTipBox("Auto-select Location") {
-                FilledIconButton(onClick = { TODO() }) {
+                FilledIconButton(
+                    onClick = { TODO() },
+                    // Modify the shape on the right-side of the button to connect with the select location button.
+                    shape = RoundedCornerShape(
+                        topEnd = CornerSize(percent = 50), bottomEnd = CornerSize(percent = 50),
+                        topStart = inBetweenBorderRadius, bottomStart = inBetweenBorderRadius,
+                    )
+                ) {
                     Icon(Icons.Outlined.LocationOn, "Auto-select Location")
                 }
             }
         }
         FormField("Price") {
-            PriceField(initialPrice = selectedPrice, onPriceChange = {selectedPrice = it})
+            PriceField(initialPrice = selectedPrice, onPriceChange = { selectedPrice = it })
         }
         FormField("Description", labelPosition = LabelPosition.AboveContent) {
             DescriptionField(fieldValue = description) { description = it }
@@ -183,7 +206,10 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
 
     if (showLocationPicker) {
         LocationPickerDialog(
-            onDismiss = { showLocationPicker = false },
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showLocationPicker = false
+            },
             onSubmit = { location -> selectedLocation = location }
         )
     }
@@ -284,6 +310,8 @@ fun LocationPickerDialog(
                     state = searchState,
                 )
 
+                Spacer(Modifier.height(dialogPadding))
+
                 // Show search results if the SearchBar has a query,
                 // otherwise show recent locations.
                 if (searchState.text.isEmpty()) {
@@ -291,8 +319,6 @@ fun LocationPickerDialog(
                         modifier = Modifier.fillMaxWidth()
                             .padding(start = dialogPadding)
                     )
-                } else {
-                    Spacer(Modifier.height(dialogPadding))
                 }
 
                 @Composable
@@ -400,6 +426,7 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
                 }
             },
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
+        shape = MaterialTheme.shapes.medium,
         keyboardOptions = KeyboardOptions.Default.copy(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done
@@ -414,8 +441,7 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
             Text(
                 "0",
                 textAlign = TextAlign.End,
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.outline,
             )
         },
@@ -429,6 +455,7 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DescriptionField(
     modifier: Modifier = Modifier,
@@ -481,11 +508,14 @@ fun DescriptionField(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Preview(showBackground = true)
 @Composable
 fun NewTransactionPreview() {
     BudgietTheme {
-        NewTransactionForm()
+        Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
+            NewTransactionForm()
+        }
     }
 }
 
