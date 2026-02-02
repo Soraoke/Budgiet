@@ -61,6 +61,8 @@ import com.example.budgiet.Location
 import com.example.budgiet.Result
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
+import com.example.budgiet.graphemeStringLength
+import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
@@ -73,6 +75,7 @@ import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
+import java.text.BreakIterator
 import java.util.Currency
 import kotlin.math.ceil
 
@@ -441,12 +444,15 @@ fun DescriptionField(
             .heightIn(min = DESCRIPTION_FIELD_MIN_HEIGHT, max = DESCRIPTION_FIELD_MAX_HEIGHT),
         value = fieldValue,
         onValueChange = { newDescription ->
+            // Get the String length, but in units of graphemes.
+            val length = graphemeStringLength(newDescription)
+
             @Suppress("AssignedValueIsNeverRead")
-            pasteOverflow = newDescription.length > DESCRIPTION_MAX_LENGTH
+            pasteOverflow = length > DESCRIPTION_MAX_LENGTH
 
             // Implement character limit with a cutoff,
             // instead of not replacing the description value in the first place.
-            onValueChange(newDescription.take(DESCRIPTION_MAX_LENGTH))
+            onValueChange(graphemeStringTake(newDescription, DESCRIPTION_MAX_LENGTH))
         },
         shape = MaterialTheme.shapes.large,
         textStyle = LocalTextStyle.current.copy(
@@ -467,7 +473,7 @@ fun DescriptionField(
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
-                    "${fieldValue.length}/$DESCRIPTION_MAX_LENGTH",
+                    "${graphemeStringLength(fieldValue)}/$DESCRIPTION_MAX_LENGTH",
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
