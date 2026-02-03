@@ -21,11 +21,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.getSelectedDate
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
@@ -33,8 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.example.budgiet.Date
 import com.example.budgiet.R
+import com.example.budgiet.localDateFromUtcMillis
+import java.time.LocalDate
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
@@ -193,11 +196,22 @@ fun PlainSearchBar(
 @Composable
 fun DatePickerDialog(
     modifier: Modifier = Modifier,
+    selectedDate: LocalDate = LocalDate.now(),
     onDismiss: () -> Unit,
-    onSubmit: (Date) -> Unit,
+    onSubmit: (LocalDate) -> Unit,
 ) {
     val datePickerState = rememberDatePickerState(
-        selectableDates = Date.pastOrPresentDates(),
+        initialSelectedDate = selectedDate,
+        /** Only allow [Date][LocalDate]s that occurred.
+         * That is, dates that are in the *past or present*. */
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                return localDateFromUtcMillis(utcTimeMillis) <= LocalDate.now()
+            }
+            override fun isSelectableYear(year: Int): Boolean {
+                return year <= LocalDate.now().year
+            }
+        },
     )
 
     DatePickerDialog(
@@ -207,10 +221,7 @@ fun DatePickerDialog(
             TextButton(
                 onClick = {
                     onDismiss()
-                    // FIXME: DatePicker is providing incorrect dates
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        onSubmit(Date(millis))
-                    }
+                    onSubmit(datePickerState.getSelectedDate()!!) // There is always a selected date.
                 }
             ) {
                 Text("Ok")

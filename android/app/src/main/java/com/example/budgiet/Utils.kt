@@ -9,7 +9,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.concurrent.Executor
@@ -178,57 +180,28 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
     }
 }
 
-// Formatting method taken from https://stackoverflow.com/a/56668796/32115191.
-// According to the answer, the java.time package can be used in any version of Android, so the warning can be suppressed.
-@SuppressLint("NewApi")
-class Date private constructor(private val localDate: LocalDate) {
-    constructor(millis: Long) : this(
-        java.util.Date(millis).let { dateMillis ->
-            LocalDate.of(dateMillis.year, dateMillis.month, dateMillis.date)
-        }
-    )
+fun localDateFromUtcMillis(utcMillis: Long): LocalDate {
+    return Instant.ofEpochMilli(utcMillis)
+        // NOTE: This does not set the timezone of the Date to UTC,
+        // but instead interprets the millis as set in UTC, which is what the DatePicker provides.
+        .atZone(ZoneOffset.UTC)
+        .toLocalDate()
+}
+fun LocalDate.formatRelativeToPresent(): String {
+    val now = LocalDate.now()
 
-    override fun toString(): String {
-        val now = LocalDate.now()
-        println("localDate = $localDate")
-        println("now = $now")
-
-        return if (localDate == now) {
-            "Today"
-        } else if (localDate == now.minusDays(1)) {
-            "Yesterday"
-        } else {
-            val formatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
-            localDate.format(formatter)
-        }
-    }
-
-    companion object {
-        /** Get the **current** [Date].
-         *
-         * Calls [LocalDate.now] under the hood. */
-        fun now(): Date {
-            return Date(LocalDate.now())
-        }
-
-        /** Only allow [Date]s that occurred.
-         * That is, dates that are in the *past or present*.
-         *
-         * @return a singleton that can be passed to [rememberDatePickerState][androidx.compose.material3.rememberDatePickerState],
-         * which will disable any *future* dates in the [DatePicker][androidx.compose.material3.DatePicker],
-         * only allowing *past or present* dates to be selected. */
-        @OptIn(ExperimentalMaterial3Api::class)
-        fun pastOrPresentDates(): SelectableDates {
-            // Taken from https://stackoverflow.com/a/77678547/32115191
-            return object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    return utcTimeMillis <= System.currentTimeMillis()
-                }
-                override fun isSelectableYear(year: Int): Boolean {
-                    return year <= LocalDate.now().year
-                }
+    return when (this) {
+        // I know this arm is unreachable, but wanted to include it for completeness.
+        // Maybe we'll want to use it for something else later.
+        now.plusDays(1) -> "Tomorrow"
+        now -> "Today"
+        now.minusDays(1) -> "Yesterday"
+        // Formatting method taken from https://stackoverflow.com/a/56668796/32115191.
+        else -> DateTimeFormatter
+            .ofLocalizedDate(FormatStyle.LONG)
+            .let { formatter ->
+                this.format(formatter)
             }
-        }
     }
 }
 

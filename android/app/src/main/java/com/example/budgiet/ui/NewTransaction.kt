@@ -53,10 +53,10 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.paging.PagingConfig
-import com.example.budgiet.Date
 import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
 import com.example.budgiet.graphemeStringLength
@@ -74,6 +74,7 @@ import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
+import java.time.LocalDate
 import java.util.Currency
 import kotlin.math.ceil
 
@@ -87,7 +88,7 @@ val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 @Composable
 fun NewTransactionForm(modifier: Modifier = Modifier) {
     var showDatePicker by remember { mutableStateOf(false) }
-    var selectedDate by remember { mutableStateOf(Date.now()) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var showLocationPicker by remember { mutableStateOf(false) }
     var selectedLocation by remember { mutableStateOf<Location?>(null) }
     var selectedPrice by remember { mutableStateOf("") }
@@ -100,11 +101,11 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
             OutlinedTextField(
                 readOnly = true,
                 onValueChange = {},
-                value = selectedDate.toString(),
+                value = selectedDate.formatRelativeToPresent(),
                 shape = MaterialTheme.shapes.medium,
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
-                        IconButton(onClick = { showDatePicker = !showDatePicker }) {
+                        IconButton(onClick = { showDatePicker = true }) {
                             Icon(painterResource(R.drawable.date_range_24px), "Select Date")
                         }
                     }
@@ -168,7 +169,11 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
 
     if (showDatePicker) {
         DatePickerDialog(
-            onDismiss = { showDatePicker = false },
+            selectedDate = selectedDate,
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showDatePicker = false
+            },
             onSubmit = { selectedDate = it },
         )
     }
