@@ -24,72 +24,71 @@ import org.junit.Test
 
 const val DESCRIPTION_FIELD_TAG = "DescriptionField"
 
-private class TestState(private val rule: ComposeContentTestRule) {
-
-    val descriptionField
-        get() = this.rule.onNodeWithTag(DESCRIPTION_FIELD_TAG)
-
-    init {
-        rule.setContent {
-            var fieldValue by remember { mutableStateOf("") }
-            DescriptionField(
-                modifier = Modifier.testTag(DESCRIPTION_FIELD_TAG),
-                fieldValue = fieldValue,
-                onValueChange = { fieldValue = it },
-            )
-        }
-    }
-
-    /** Assert that the **character counter** Node is at a certain number. */
-    fun assertCounter(count: Int) = assertEquals(
-        count,
-        this.descriptionField
-            .getSemanticsProperty(SemanticsProperties.Text)
-            .getOrThrow()
-            // The counter Node is always the last in the TextField Node.
-            .last()
-            // Parse the character count.
-            .text
-            .split('/', limit = 2)[0]
-            .toInt()
-    )
-
-    fun assertIsError() {
-        assertEquals(
-            "Invalid input",
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Error)
-                .getOrThrow(),
-        )
-        assertEquals(
-            "Description is too long!",
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Text)
-                .getOrThrow()
-                [0].text,
-        )
-    }
-
-    fun assertIsNotError() {
-        assertEquals(
-            null,
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Error)
-                .getOrNull(),
-        )
-        assertEquals(
-            1,
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Text)
-                .getOrThrow()
-                .size,
-        )
-    }
-}
-
 class DescriptionFieldTests {
     @get:Rule
     val rule = createComposeRule()
+
+    private class TestState(private val rule: ComposeContentTestRule) {
+        val descriptionField
+            get() = this.rule.onNodeWithTag(DESCRIPTION_FIELD_TAG)
+
+        init {
+            rule.setContent {
+                var fieldValue by remember { mutableStateOf("") }
+                DescriptionField(
+                    modifier = Modifier.testTag(DESCRIPTION_FIELD_TAG),
+                    fieldValue = fieldValue,
+                    onValueChange = { fieldValue = it },
+                )
+            }
+        }
+
+        /** Assert that the **character counter** Node is at a certain number. */
+        fun assertCounter(count: Int) = assertEquals(
+            count,
+            this.descriptionField
+                .getSemanticsProperty(SemanticsProperties.Text)
+                .getOrThrow()
+                // The counter Node is always the last in the TextField Node.
+                .last()
+                // Parse the character count.
+                .text
+                .split('/', limit = 2)[0]
+                .toInt()
+        )
+
+        fun assertIsError() {
+            assertEquals(
+                "Invalid input",
+                this.descriptionField
+                    .getSemanticsProperty(SemanticsProperties.Error)
+                    .getOrThrow(),
+            )
+            assertEquals(
+                "Description is too long!",
+                this.descriptionField
+                    .getSemanticsProperty(SemanticsProperties.Text)
+                    .getOrThrow()
+                    [0].text,
+            )
+        }
+
+        fun assertIsNotError() {
+            assertEquals(
+                null,
+                this.descriptionField
+                    .getSemanticsProperty(SemanticsProperties.Error)
+                    .getOrNull(),
+            )
+            assertEquals(
+                1,
+                this.descriptionField
+                    .getSemanticsProperty(SemanticsProperties.Text)
+                    .getOrThrow()
+                    .size,
+            )
+        }
+    }
 
     @Test
     fun largeGraphemesTest() {

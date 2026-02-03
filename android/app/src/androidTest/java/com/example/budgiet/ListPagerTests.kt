@@ -33,51 +33,51 @@ const val MAX_PAGES = 3
 const val LOAD_TIME = 5000L
 const val ERROR_MESSAGE = "loading page exception"
 
-@OptIn(UsableInTestsOnly::class)
-private class TestState(
-    private val rule: ComposeContentTestRule,
-    private val getPage: PageGetter<Int> = { start, length -> List(length.toInt()) { i -> start.toInt() + i } },
-) {
-    val pagerController = PagerController()
-    private val executor = Executors.newSingleThreadExecutor()
-
-    val listColumn
-        get() = rule.onNodeWithTag(LIST_TAG)
-
-    init {
-        rule.setContent {
-            PagedListColumn(
-                modifier = Modifier.testTag(LIST_TAG),
-                pager = rememberTestListPager(
-                    getPage = this.getPage,
-                    executor = this.executor,
-                    config = PagingConfig(
-                        pageSize = PAGE_SIZE,
-                        initialLoadSize = PAGE_SIZE,
-                        prefetchDistance = PAGE_SIZE,
-                        maxSize = PAGE_SIZE * MAX_PAGES,
-                        // Don't let the pager return a bunch of unloaded items, we are going to show a single unloaded item at a time.
-                        enablePlaceholders = false,
-                    )
-                ),
-                pagerController = this.pagerController,
-                itemKey = { it },
-                itemContent = { i -> this.DataItem(
-                    modifier = Modifier.testTag(ITEM_TAG),
-                    headlineContent = { Text("Item: $i") },
-                ) },
-                loadingContent = { this.LoadingItem(modifier = Modifier.testTag(LOADING_ITEM_TAG)) },
-                errorContent = { type, message ->
-                    this.ErrorItem(modifier = Modifier.testTag(ERROR_ITEM_TAG), type, message)
-                }
-            )
-        }
-    }
-}
-
 class ListPagerTests {
     @get:Rule
     val rule = createComposeRule()
+
+    @OptIn(UsableInTestsOnly::class)
+    private class TestState(
+        private val rule: ComposeContentTestRule,
+        private val getPage: PageGetter<Int> = { start, length -> List(length.toInt()) { i -> start.toInt() + i } },
+    ) {
+        val pagerController = PagerController()
+        private val executor = Executors.newSingleThreadExecutor()
+
+        val listColumn
+            get() = rule.onNodeWithTag(LIST_TAG)
+
+        init {
+            rule.setContent {
+                PagedListColumn(
+                    modifier = Modifier.testTag(LIST_TAG),
+                    pager = rememberTestListPager(
+                        getPage = this.getPage,
+                        executor = this.executor,
+                        config = PagingConfig(
+                            pageSize = PAGE_SIZE,
+                            initialLoadSize = PAGE_SIZE,
+                            prefetchDistance = PAGE_SIZE,
+                            maxSize = PAGE_SIZE * MAX_PAGES,
+                            // Don't let the pager return a bunch of unloaded items, we are going to show a single unloaded item at a time.
+                            enablePlaceholders = false,
+                        )
+                    ),
+                    pagerController = this.pagerController,
+                    itemKey = { it },
+                    itemContent = { i -> this.DataItem(
+                        modifier = Modifier.testTag(ITEM_TAG),
+                        headlineContent = { Text("Item: $i") },
+                    ) },
+                    loadingContent = { this.LoadingItem(modifier = Modifier.testTag(LOADING_ITEM_TAG)) },
+                    errorContent = { type, message ->
+                        this.ErrorItem(modifier = Modifier.testTag(ERROR_ITEM_TAG), type, message)
+                    }
+                )
+            }
+        }
+    }
 
 //    /** Tests that pages are **unloaded** when the Pager appends enough items to overflow MAX_PAGES. */
 //    @Test
