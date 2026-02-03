@@ -200,6 +200,12 @@ class Date private constructor(private val localDate: LocalDate): ChronoLocalDat
             .atStartOfDay(ZoneOffset.UTC)
             .toInstant()
             .toEpochMilli()
+    val year: Int
+        get() = this.localDate.year
+    val month: Month
+        get() = this.localDate.month
+    val dayOfMonth: Int
+        get() = this.localDate.dayOfMonth
 
     override fun toString(): String {
         val now = LocalDate.now()
