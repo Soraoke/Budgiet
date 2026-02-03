@@ -21,8 +21,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -35,7 +33,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +65,7 @@ import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
+import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListItemScope
@@ -169,35 +167,10 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
     }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(
-            selectableDates = Date.pastOrPresentDates(),
-        )
-
         DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = { TextButton(
-                onClick = {
-                    showDatePicker = false
-                    // FIXME: DatePicker is providing incorrect dates
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        selectedDate = Date(millis)
-                    }
-                }
-            ) {
-                Text("Ok")
-            } },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDatePicker = false }
-                ) {
-                    Text("Cancel")
-                }
-            },
-        ) {
-            DatePicker(
-                state = datePickerState,
-            )
-        }
+            onDismiss = { showDatePicker = false },
+            onSubmit = { selectedDate = it },
+        )
     }
 
     if (showLocationPicker) {
