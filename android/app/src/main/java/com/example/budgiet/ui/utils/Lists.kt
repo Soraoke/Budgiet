@@ -14,8 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.Icon
@@ -34,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
@@ -42,6 +41,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.example.budgiet.ListPager
+import com.example.budgiet.R
 import com.example.budgiet.rememberListPager
 
 /** When a [LazyColumn]'s [ListItem]'s **height** can't be determined because it has no content,
@@ -192,7 +192,7 @@ class ListItemScope internal constructor(
             // but it should also not set the List height because it has an irregular size due to the error message.
             modifier = modifier.clip(this.listScope.itemShape),
             leadingContent = { Icon(
-                Icons.Filled.Info, // TODO: replace with the Material Error icon
+                painterResource(R.drawable.info_24px),
                 "Error",
                 tint = color,
             ) },
@@ -247,6 +247,7 @@ fun ListColumn(
     // Get the height of the first item in the list to determine the size of the whole List widget.
     val itemHeight = remember { mutableStateOf<Dp?>(null) }
     val listMaxHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems + dividerThickness * 3
+    val listMinHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * 1.25f + dividerThickness
 
     LazyColumn(
         state = state,
@@ -254,8 +255,7 @@ fun ListColumn(
         reverseLayout = reverseLayout,
         verticalArrangement = Arrangement.spacedBy(dividerThickness),
         // List's height should be conscious of it's items' and dividers' heights.
-        // TODO: use clamp
-        modifier = modifier.heightIn(max = listMaxHeight)
+        modifier = modifier.heightIn(min = listMinHeight, max = listMaxHeight)
             .clip(shape),
     ) { ListColumnScope(this, itemHeight, itemShape).content() }
 }

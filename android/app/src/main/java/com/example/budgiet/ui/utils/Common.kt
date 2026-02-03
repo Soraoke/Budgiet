@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +28,9 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.budgiet.R
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
@@ -120,7 +119,7 @@ fun PlainToolTipBox(
 ) {
     TooltipBox(
         modifier = modifier,
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        positionProvider = @Suppress("DEPRECATION") TooltipDefaults.rememberPlainTooltipPositionProvider(),
         state = rememberTooltipState(),
         tooltip = {
             PlainTooltip { Text(text) }
@@ -171,11 +170,11 @@ fun PlainSearchBar(
                     unfocusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
                 placeholder = { Text("Search existing locations") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                leadingIcon = { Icon(painterResource(R.drawable.search_24px), null) },
                 trailingIcon = if (state.text.isNotEmpty()) { {
                     PlainToolTipBox("Clear search") {
                         IconButton(onClick = { state.edit { replace(0, length, "") } }) {
-                            Icon(Icons.Filled.Clear, "Clear search")
+                            Icon(painterResource(R.drawable.close_24px), "Clear search")
                         }
                     }
                 } } else {

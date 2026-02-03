@@ -19,12 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
@@ -52,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +58,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.paging.PagingConfig
 import com.example.budgiet.Date
 import com.example.budgiet.Location
+import com.example.budgiet.R
 import com.example.budgiet.Result
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
@@ -111,7 +107,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
                         IconButton(onClick = { showDatePicker = !showDatePicker }) {
-                            Icon(Icons.Filled.DateRange, "Select Date")
+                            Icon(painterResource(R.drawable.date_range_24px), "Select Date")
                         }
                     }
                 },
@@ -147,7 +143,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                         topStart = inBetweenBorderRadius, bottomStart = inBetweenBorderRadius,
                     )
                 ) {
-                    Icon(Icons.Outlined.LocationOn, "Auto-select Location")
+                    Icon(painterResource(R.drawable.location_on_24px), "Auto-select Location")
                 }
             }
         }
@@ -161,12 +157,12 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
         FormField(null, horizontalArrangement = Arrangement.SpaceBetween) {
             TextIconButton(
                 onClick = { TODO() },
-                icon = { Icon(Icons.Filled.Clear, "Cancel") },
+                icon = { Icon(painterResource(R.drawable.close_24px), "Cancel") },
                 text = { Text("Cancel") }
             )
             FilledTextIconButton(
                 onClick = { TODO() },
-                icon = { Icon(Icons.Filled.Check, "Submit") },
+                icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
                 text = { Text("Submit") },
             )
         }
@@ -386,7 +382,7 @@ fun LocationPickerDialog(
                     PlainToolTipBox("Add new location") {
                         FilledTextIconButton(
                             onClick = { TODO() },
-                            icon = { Icon(Icons.Filled.Add, "New Location") },
+                            icon = { Icon(painterResource(R.drawable.add_24px), "New Location") },
                             text = { Text("New") },
                         )
                     }
@@ -404,7 +400,6 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
         onValueChange = onPriceChange,
         value = initialPrice,
         modifier = modifier
-            // fixme: use clamping than max for width
             .widthIn(max = 150.dp)
             .onFocusChanged { state ->
                 /* FIXME: When currency field is added onto price, change "USD" to whatever

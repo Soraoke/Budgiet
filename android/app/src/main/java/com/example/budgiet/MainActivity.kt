@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -28,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.budgiet.ui.NewTransactionForm
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -56,7 +55,7 @@ fun MainPage(modifier: Modifier = Modifier) {
         floatingActionButton = {
             PlainToolTipBox(text = "Add new transaction record") {
                 FloatingActionButton(onClick = { showBottomSheet = true }) {
-                    Icon(Icons.Filled.Add, "New Transaction")
+                    Icon(painterResource(R.drawable.add_24px), "New Transaction")
                 }
             }
         },
@@ -76,7 +75,10 @@ fun MainPage(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxHeight()
                 .windowInsetsPadding(WindowInsets.statusBars),
             sheetState = sheetState,
-            onDismissRequest = { showBottomSheet = false },
+            onDismissRequest = {
+                @Suppress("AssignedValueIsNeverRead")
+                showBottomSheet = false
+            },
         ) {
             NewTransactionForm()
         }
