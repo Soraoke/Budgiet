@@ -12,6 +12,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -24,12 +26,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.budgiet.Date
 import com.example.budgiet.R
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
@@ -183,4 +187,46 @@ fun PlainSearchBar(
             )
         }
     ) { }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DatePickerDialog(
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    onSubmit: (Date) -> Unit,
+) {
+    val datePickerState = rememberDatePickerState(
+        selectableDates = Date.pastOrPresentDates(),
+    )
+
+    DatePickerDialog(
+        modifier = modifier,
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    // FIXME: DatePicker is providing incorrect dates
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        onSubmit(Date(millis))
+                    }
+                }
+            ) {
+                Text("Ok")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+            ) {
+                Text("Cancel")
+            }
+        },
+    ) {
+        DatePicker(
+            state = datePickerState,
+            showModeToggle = true,
+        )
+    }
 }
