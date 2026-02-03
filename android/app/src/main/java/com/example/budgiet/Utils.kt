@@ -187,13 +187,19 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
 }
 
 class Date private constructor(private val localDate: LocalDate): ChronoLocalDate {
-    constructor(utcTimeMillis: Long) : this(
-        Instant.ofEpochMilli(utcTimeMillis)
+    constructor(utcMillis: Long) : this(
+        Instant.ofEpochMilli(utcMillis)
             // NOTE: This does not set the timezone of the Date to UTC,
             // but instead interprets the millis as set in UTC, which is what the DatePicker provides.
             .atZone(ZoneOffset.UTC)
             .toLocalDate()
     )
+
+    val utcMillis: Long
+        get() = this.localDate
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
 
     override fun toString(): String {
         val now = LocalDate.now()

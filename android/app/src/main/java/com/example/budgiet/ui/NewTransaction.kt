@@ -144,6 +144,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
 
     if (showDatePicker) {
         DatePickerDialog(
+            selectedDate = selectedDate,
             onDismiss = { showDatePicker = false },
             onSubmit = { date -> selectedDate = date },
         )

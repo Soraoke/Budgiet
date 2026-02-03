@@ -120,10 +120,12 @@ fun PlainSearchBar(
 @Composable
 fun DatePickerDialog(
     modifier: Modifier = Modifier,
+    selectedDate: Date = Date.now(),
     onDismiss: () -> Unit,
     onSubmit: (Date) -> Unit,
 ) {
     val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate.utcMillis,
         selectableDates = Date.pastOrPresentDates(),
     )
 
