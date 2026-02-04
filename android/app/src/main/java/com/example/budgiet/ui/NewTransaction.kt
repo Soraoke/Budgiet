@@ -21,7 +21,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -33,7 +32,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,6 +57,7 @@ import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.formatPrice
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.getLocationsSearchPage
@@ -77,7 +76,6 @@ import com.example.budgiet.ui.utils.PagedListColumn
 import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
-import com.example.budgiet.ui.utils.TEXT_ICON_BUTTON_SPACING
 import com.example.budgiet.ui.utils.TextIconButton
 import java.time.LocalDate
 import java.util.Currency
@@ -455,18 +453,16 @@ fun PriceField(
         },
         placeholder = {
             Text(
-                "0",
+                selectedCurrency.formatPrice(0.0),
                 textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.outline,
             )
         },
         isError = parseError != null,
-        supportingText = {
-            if (parseError != null) {
-                Text(parseError as String)
-            }
-        }
+        supportingText = parseError?.let { parseError -> {
+            Text(parseError)
+        } }
     )
 }
 

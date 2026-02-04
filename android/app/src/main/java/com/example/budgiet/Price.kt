@@ -1,8 +1,43 @@
 package com.example.budgiet
 
 import java.text.DecimalFormatSymbols
+import java.text.NumberFormat
 import java.util.Currency
 import java.util.Locale
+
+// TODO: unit test
+/** Formats the price value according to the [Currency] being used.
+ *
+ * This returns the **price** formatted with the *decimal point* (if applicable) and *digit separators*.
+ * The returned string *does not* include the currency symbol, as that is displayed as a separate `Icon`.
+ *
+ * Heavily inspired by [this article](https://www.codestudy.net/blog/how-can-i-convert-numbers-to-currency-format-in-android/). */
+fun Currency.formatPrice(price: Double): String {
+    @Suppress("KotlinConstantConditions")
+    when (price) {
+        Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY -> return "NaN"
+    }
+
+    val formatter = NumberFormat.getCurrencyInstance()
+    formatter.currency = this
+    formatter.minimumFractionDigits = this.defaultFractionDigits
+    formatter.maximumFractionDigits = this.defaultFractionDigits
+
+    var formatted = formatter.format(price)
+
+    // Remove currency symbol
+    formatted = if (!formatted.first().isDigit()) {
+        formatted.removeRange(0..0)
+    } else if (!formatted.last().isDigit()) {
+        val i = formatted.length - 1
+        formatted.removeRange(i..i)
+    } else {
+        formatted
+    }
+
+    // Remove leading and trailing whitespace
+    return formatted.trim()
+}
 
 /**
  * Validates correctness of Transaction's price field input and
