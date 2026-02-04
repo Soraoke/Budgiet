@@ -1,12 +1,13 @@
 package com.example.budgiet
 
 import android.annotation.SuppressLint
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SelectableDates
+import java.util.Currency
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import java.time.Instant
@@ -203,6 +204,29 @@ fun LocalDate.formatRelativeToPresent(): String {
                 this.format(formatter)
             }
     }
+}
+
+/** Maps a **[Currency]** to one of our imported *drawable resources*.
+ *
+ * This will take the [Currency]'s [symbol][Currency.getSymbol] and try to match it with a resource.
+ *
+ * @returns `null` if we do not recognize the currency's *symbol*.
+ * In this case, the caller should omit the currency icon,
+ * or default to using the **dollar** icon if an icon is required. */
+@Composable
+fun getCurrencyIcon(currency: Currency): Painter? {
+    return painterResource(when (currency.symbol) {
+        "$" -> R.drawable.currency_dollar_24px
+        "£" -> R.drawable.currency_pound_24px
+        "¥" -> R.drawable.currency_yen_24px
+        "€", "₠" -> R.drawable.currency_euro_24px
+        "₹", "र", "₨", "R", "s" -> R.drawable.currency_rupee_24px
+        "₽" -> R.drawable.currency_ruble_24px
+        "₣", "Ꞙ" -> R.drawable.currency_franc_24px
+        "₺", "₤" -> R.drawable.currency_lira_24px
+        "₿" -> R.drawable.currency_bitcoin_24px
+        else -> return null
+    })
 }
 
 // TODO: Actual implementation in Rust

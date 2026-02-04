@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -31,6 +33,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,6 +60,7 @@ import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.Result
 import com.example.budgiet.formatRelativeToPresent
+import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
 import com.example.budgiet.graphemeStringLength
@@ -73,9 +77,11 @@ import com.example.budgiet.ui.utils.PagedListColumn
 import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import com.example.budgiet.ui.utils.TEXT_ICON_BUTTON_SPACING
 import com.example.budgiet.ui.utils.TextIconButton
 import java.time.LocalDate
 import java.util.Currency
+import java.util.Locale
 import kotlin.math.ceil
 
 /** The maximum number of characters (graphemes) allowed in the Description field.
@@ -83,6 +89,8 @@ import kotlin.math.ceil
 const val DESCRIPTION_MAX_LENGTH = 255
 val DESCRIPTION_FIELD_MIN_HEIGHT = 125.dp
 val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
+
+val FIELD_MAX_WIDTH = 275.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +100,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
     var showLocationPicker by remember { mutableStateOf(false) }
     var selectedLocation by remember { mutableStateOf<Location?>(null) }
     var selectedPrice by remember { mutableStateOf("") }
+    var selectedCurrency by remember { mutableStateOf(Currency.getInstance(Locale.getDefault())) }
     var description by remember { mutableStateOf("") }
 
     Column(
@@ -147,7 +156,12 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
             }
         }
         FormField("Price") {
-            PriceField(initialPrice = selectedPrice, onPriceChange = { selectedPrice = it })
+            PriceField(
+                selectedPrice = selectedPrice,
+                onPriceChange = { selectedPrice = it },
+                selectedCurrency = selectedCurrency,
+                onCurrencyChange = { selectedCurrency = it }
+            )
         }
         FormField("Description", labelPosition = LabelPosition.AboveContent) {
             DescriptionField(fieldValue = description) { description = it }
@@ -374,22 +388,27 @@ fun LocationPickerDialog(
 }
 
 @Composable
-fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChange: (String) -> Unit) {
+fun PriceField(
+    modifier: Modifier = Modifier,
+    selectedPrice: String,
+    onPriceChange: (String) -> Unit,
+    selectedCurrency: Currency = Currency.getInstance(Locale.getDefault()),
+    onCurrencyChange: (Currency) -> Unit,
+) {
+    var currencyMenuOpen by remember { mutableStateOf(false) }
     var parseError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+
     OutlinedTextField(
-        onValueChange = onPriceChange,
-        value = initialPrice,
         modifier = modifier
-            .widthIn(max = 150.dp)
+            .widthIn(min = 150.dp, max = FIELD_MAX_WIDTH)
+            .width(70.dp) // Must place this AFTER the clamp.
             .onFocusChanged { state ->
-                /* FIXME: When currency field is added onto price, change "USD" to whatever
-                *   currency code we are using */
                 // When we lose focus on this text field, we should parse the price input
                 // to see if it is invalid (outputting an error doing so) or format the
                 // price accordingly if valid
                 if (!state.isFocused) {
-                    when (val result = parsePrice(initialPrice, Currency.getInstance("USD"))) {
+                    when (val result = parsePrice(selectedPrice, Currency.getInstance("USD"))) {
                         is Result.Ok -> {
                             onPriceChange(result.value)
                             parseError = null
@@ -401,6 +420,8 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
                     }
                 }
             },
+        onValueChange = onPriceChange,
+        value = selectedPrice,
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
         shape = MaterialTheme.shapes.medium,
         keyboardOptions = KeyboardOptions.Default.copy(
@@ -408,11 +429,30 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
             imeAction = ImeAction.Done
         ),
         keyboardActions = KeyboardActions(
-            onDone = {
-                focusManager.clearFocus()
-            }
+            onDone = { focusManager.clearFocus() }
         ),
-        isError = parseError != null,
+        leadingIcon = {
+            PlainToolTipBox("Change currency") {
+                TextButton(
+                    modifier = Modifier.padding(start = 8.dp),
+                    onClick = { currencyMenuOpen = !currencyMenuOpen },
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    val icon = getCurrencyIcon(selectedCurrency)
+                    val code = selectedCurrency.currencyCode
+
+                    Icon(painterResource(R.drawable.arrow_drop_down_24px), "Open currency menu")
+                    if (icon != null) {
+                        Icon(icon, null)
+                    }
+                    // Only show currency name in the field if it is not the local's currency.
+                    // If the icon is not shown, must show the currency code either way.
+                    if (code != Currency.getInstance(Locale.getDefault()).currencyCode || icon == null) {
+                        Text(code)
+                    }
+                }
+            }
+        },
         placeholder = {
             Text(
                 "0",
@@ -421,13 +461,12 @@ fun PriceField(modifier: Modifier = Modifier, initialPrice: String, onPriceChang
                 color = MaterialTheme.colorScheme.outline,
             )
         },
+        isError = parseError != null,
         supportingText = {
             if (parseError != null) {
                 Text(parseError as String)
             }
         }
-
-        // TODO: Add Icon decoration for the price (like $ USD)
     )
 }
 
