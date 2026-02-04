@@ -23,13 +23,13 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -117,7 +117,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
              * This only applies to the corners that connect the buttons. */
             val inBetweenBorderRadius = MaterialTheme.shapes.extraSmall.bottomEnd
 
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = { showLocationPicker = true },
                 // Modify the shape on the left-side of the button to connect with the auto-select location button.
                 shape = RoundedCornerShape(
@@ -298,7 +298,10 @@ fun LocationPickerDialog(
                 @Composable
                 fun ListItemScope.LocationItem(location: Location) {
                     this.DataItem(
-                        modifier = modifier.clickable(onClick = { onSubmit(location) }),
+                        modifier = modifier.clickable(onClick = {
+                            onSubmit(location)
+                            onDismiss()
+                        }),
                         headlineContent = { Text(location.name) },
                         supportingContent = { Text(location.address) },
                     )

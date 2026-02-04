@@ -146,50 +146,37 @@ fun PlainToolTipBox(
 @Composable
 fun PlainSearchBar(
     modifier: Modifier = Modifier,
-//    expandable: Boolean = false,
     onQueryChange: (CharSequence) -> Unit,
     state: TextFieldState = rememberTextFieldState(),
 ) {
-//    var expanded by remember { mutableStateOf(false) }
-//    val onExpandedChange = { new: Boolean ->
-//        expanded = new && expandable
-//    }
-
-    DockedSearchBar(
+    SearchBarDefaults.InputField(
         modifier = modifier,
+        query = state.text.toString(),
+        onQueryChange = {
+            state.edit { replace(0, length, it) }
+            onQueryChange(state.text)
+        },
+        onSearch = { },
         expanded = false,
         onExpandedChange = { },
-        colors = SearchBarDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            focusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ),
-        inputField = {
-            SearchBarDefaults.InputField(
-                query = state.text.toString(),
-                onQueryChange = {
-                    state.edit { replace(0, length, it) }
-                    onQueryChange(state.text)
-                },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-                placeholder = { Text("Search existing locations") },
-                leadingIcon = { Icon(painterResource(R.drawable.search_24px), null) },
-                trailingIcon = if (state.text.isNotEmpty()) { {
-                    PlainToolTipBox("Clear search") {
-                        IconButton(onClick = { state.edit { replace(0, length, "") } }) {
-                            Icon(painterResource(R.drawable.close_24px), "Clear search")
-                        }
-                    }
-                } } else {
-                    null
-                },
-            )
-        }
-    ) { }
+        placeholder = { Text("Search existing locations") },
+        leadingIcon = { Icon(painterResource(R.drawable.search_24px), null) },
+        trailingIcon = if (state.text.isNotEmpty()) { {
+            PlainToolTipBox("Clear search") {
+                IconButton(onClick = { state.edit { replace(0, length, "") } }) {
+                    Icon(painterResource(R.drawable.close_24px), "Clear search")
+                }
+            }
+        } } else {
+            null
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
