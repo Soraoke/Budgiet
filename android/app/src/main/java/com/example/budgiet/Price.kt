@@ -39,60 +39,65 @@ fun Currency.formatPrice(price: Double): String {
     return formatted.trim()
 }
 
-/**
- * Validates correctness of Transaction's price field input and
- * formats the number appropriately on success
+/** Parse the value of the [PriceField][com.example.budgiet.ui.PriceField] input to a *decimal number* ([Double]).
+ * The parsing is done according to **[Currency]** requirements (i.e. punctuation and decimal places).
  *
- * @param price the price input in Transaction form
- * @param currency the currency code of the price (e.g. USD)
- * @return a result of formatted price input or a specific price parsing error
- */
-fun parsePrice(price: String, currency: Currency): Result<String> {
+ * If the parsing fails, this function returns an [Result.Err] with the reason. */
+fun Currency.parsePrice(price: String): Result<Double?> {
     if (price == "") {
-        return Result.Ok("")
+        return Result.Ok(null)
     }
 
+    val currency = this
     var prevDigit: Char? = null
     val priceLen = price.length
     var decimalFound = false
-    // how many decimal places are allowed by the currency (i.e. USD uses 2 decimal places,
-    // crypto could be using varying number of decimal places)
+    // How many decimal places are allowed by the currency
+    // (e.g. USD uses 2 decimal places, crypto uses a variety number of decimal places).
     val defaultFractionDigits = currency.defaultFractionDigits
-    // locale-specific decimal separator (i.e. ',', '.')
+    // Separates the decimal digits from unit digits (locale-specific) (i.e. ',', '.').
     val decimalSeparator = DecimalFormatSymbols.getInstance(Locale.getDefault()).decimalSeparator
-    val otherDecimalSeparator = if (decimalSeparator == ',') {
-        '.'
-    } else {
-        ','
-    }
+    // Separate digits in the thousands (local-specific).
+    val digitSeparator = if (decimalSeparator == ',') { '.' } else { ',' }
+
     price.forEachIndexed { index, char ->
         if (char.isDigit()) {
             if (prevDigit == '0') {
                 // 0100 is not allowed, 0.00 is allowed
                 if (!decimalFound && index == 1) {
-                    return Result.Err(Exception("Leading un-fractional 0s are not allowed"))
+                    return Result.Err(NumberFormatException("Leading un-fractional 0s are not allowed"))
                 }
             }
             prevDigit = char
         } else if (char == decimalSeparator) {
             if (decimalFound) {
-                return Result.Err(Exception("Decimal '$decimalSeparator' exists already"))
+                return Result.Err(NumberFormatException("Decimal '$decimalSeparator' exists already"))
             }
             // if more digits used after decimal (i.e. 100.000 USD), return an error
             else if (priceLen - index - 1 > defaultFractionDigits) {
-                return Result.Err(Exception("${currency.currencyCode} uses up to $defaultFractionDigits decimal places"))
+                return Result.Err(NumberFormatException("${currency.currencyCode} uses up to $defaultFractionDigits decimal places"))
             }
             decimalFound = true
-        } else if (char == otherDecimalSeparator) {
-            return Result.Err(Exception("Your locale uses '$decimalSeparator' as decimal"))
-        }
-        else {
-            return Result.Err(Exception("Invalid character '$char' used"))
+        } else if (char == digitSeparator) {
+            return Result.Err(NumberFormatException("Your locale uses '$decimalSeparator' as decimal"))
+        } else {
+            return Result.Err(NumberFormatException("Invalid character '$char' used"))
         }
     }
 
-    val priceDouble = price.toDouble()
-    val priceDecimalFormat = String.format("%.${defaultFractionDigits}f", priceDouble)
-
-    return Result.Ok(priceDecimalFormat)
+    return Result.Ok(price.toDouble())
 }
+
+/** Validates correctness of Transaction [PriceField][com.example.budgiet.ui.PriceField]'s input
+ * and *formats* the number appropriately on success to display in the field.
+ *
+ * @param price the price input in Transaction form
+ * @param this the currency code of the price (e.g. USD)
+ * @return a result of formatted price input or a specific price parsing error */
+fun Currency.validatePriceInput(price: String): Result<String>
+    = this.parsePrice(price)
+        .map { price ->
+            price?.let {
+                this.formatPrice(price)
+            } ?: ""
+        }
