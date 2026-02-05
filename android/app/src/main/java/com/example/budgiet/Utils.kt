@@ -56,12 +56,10 @@ sealed class Result<out T> {
     class Ok<out T>(val value: T) : Result<T>()
     class Err(val error: Throwable) : Result<Nothing>()
 
-    /**
-     * Unwraps the Result to retrieve it's Ok value
+    /**  Unwraps the Result to retrieve it's Ok value
      * If the Result is Err, it will return null
      *
-     * @return Ok Result value or null
-     */
+     * @return Ok Result value or null */
     fun getOkOrNull(): T? {
         return when (this) {
             is Ok -> this.value
@@ -69,16 +67,23 @@ sealed class Result<out T> {
         }
     }
 
-    /**
-     * Unwraps the Result to retrieve it's Err throwable
+    /** Unwraps the Result to retrieve it's Err throwable
      * If the Result is Ok, it will return null
      *
-     * @return Err Result throwable or null
-     */
+     * @return Err Result throwable or null */
     fun getErrOrNull(): Throwable? {
         return when (this) {
             is Ok -> null
             is Err -> this.error
+        }
+    }
+
+    /** Transforms the value of `this` if it is [Ok].
+     * Does nothing otherwise. */
+    fun <U> map(transform: (T) -> U): Result<U> {
+        return when(this) {
+            is Ok -> Ok(transform(this.value))
+            is Err -> this
         }
     }
 }

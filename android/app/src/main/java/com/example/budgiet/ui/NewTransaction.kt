@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -64,7 +65,6 @@ import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
-import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -77,6 +77,7 @@ import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
+import com.example.budgiet.validatePriceInput
 import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
@@ -400,21 +401,19 @@ fun PriceField(
     OutlinedTextField(
         modifier = modifier
             .widthIn(min = 150.dp, max = FIELD_MAX_WIDTH)
-            .width(70.dp) // Must place this AFTER the clamp.
+            // FIXME: TextField does not grow with the input text's width
+            .width(IntrinsicSize.Min) // Must place this AFTER the clamp.
             .onFocusChanged { state ->
                 // When we lose focus on this text field, we should parse the price input
                 // to see if it is invalid (outputting an error doing so) or format the
                 // price accordingly if valid
                 if (!state.isFocused) {
-                    when (val result = parsePrice(selectedPrice, Currency.getInstance("USD"))) {
+                    when (val result = selectedCurrency.validatePriceInput(selectedPrice)) {
                         is Result.Ok -> {
                             onPriceChange(result.value)
                             parseError = null
                         }
-
-                        is Result.Err -> {
-                            parseError = result.error.message
-                        }
+                        is Result.Err -> parseError = result.error.message
                     }
                 }
             },
@@ -462,7 +461,7 @@ fun PriceField(
         isError = parseError != null,
         supportingText = parseError?.let { parseError -> {
             Text(parseError)
-        } }
+        } },
     )
 }
 
