@@ -1,11 +1,15 @@
 package com.example.budgiet.ui.utils
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
@@ -16,11 +20,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.MenuItemColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
@@ -29,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -51,60 +60,155 @@ val LIST_SHAPE = RoundedCornerShape(16.dp)
 val LIST_ITEM_SHAPE = RoundedCornerShape(4.dp)
 const val LIST_DEFAULT_VISIBLE_ITEMS = 3.5f
 
-/** Receiver scope for [ListColumn].
+/** Receiver scope for *Lists* (i.e. [ListColumn], [LazyDropdownMenu]).
  *
  * Emulates the same interface as [LazyListScope],
- * but instead exposes a custom [ListItemScope],
+ * but instead exposes a custom [ListColumnItemScope],
  * which itself exposes the correct composable items to use in [ListColumn]. */
-class ListColumnScope internal constructor(
+@Suppress("unused")
+class ListScope<ItemScope: ListItemScope> internal constructor(
     private val innerScope: LazyListScope,
-    /** Determines the height of the whole list,
-     * and also sets the height of *list items* that don't know what their height should be. */
-    internal val itemHeight: MutableState<Dp?>,
-    internal val itemShape: Shape,
+    private val newItemScope: (LazyItemScope) -> ItemScope,
 ) {
-    @Suppress("unused")
     /** See [LazyListScope.item]. */
     fun item(
         key: Any? = null,
         contentType: Any? = null,
-        content: @Composable ListItemScope.() -> Unit,
-    ) = this.innerScope.item(key, contentType) { newListItemScope(this).content() }
+        content: @Composable ItemScope.() -> Unit,
+    ) = this.innerScope.item(key, contentType) {
+        this@ListScope.newItemScope(this)
+            .content()
+    }
 
-    @Suppress("unused")
     /** See [LazyListScope.items] (overload with **count**). */
     fun items(
         count: Int,
         key: ((index: Int) -> Any)? = null,
         contentType: (index: Int) -> Any? = { null },
-        itemContent: @Composable ListItemScope.(index: Int) -> Unit,
+        itemContent: @Composable ItemScope.(index: Int) -> Unit,
     ) = this.innerScope.items(count, key, contentType) { i ->
-        newListItemScope(this).itemContent(i)
+        this@ListScope.newItemScope(this)
+            .itemContent(i)
     }
 
-    @Suppress("unused")
     /** See [LazyListScope.items] (overload with [List]). */
     fun <T> items(
         items: List<T>,
         key: ((item: T) -> Any)? = null,
         contentType: (item: T) -> Any? = { null },
-        itemContent: @Composable ListItemScope.(item: T) -> Unit,
+        itemContent: @Composable ItemScope.(item: T) -> Unit,
     ) = this.innerScope.items(items, key, contentType) { item ->
-        newListItemScope(this).itemContent(item)
+        this@ListScope.newItemScope(this)
+            .itemContent(item)
     }
 
-    @Suppress("unused")
     /** See [LazyListScope.itemsIndexed]. */
     fun <T> itemsIndexed(
         items: List<T>,
         key: ((Int, T) -> Any)? = null,
         contentType: (Int, T) -> Any? = { _, _ -> null },
-        itemContent: @Composable ListItemScope.(Int, T) -> Unit,
+        itemContent: @Composable ItemScope.(Int, T) -> Unit,
     ) = this.innerScope.itemsIndexed(items, key, contentType) { i, item ->
-        newListItemScope(this).itemContent(i, item)
+        this@ListScope.newItemScope(this)
+            .itemContent(i, item)
+    }
+}
+
+/** A custom improvement of the [LazyItemScope] interface.
+ * Implementors of the [LazyItemScope] in this codebase should use *this class* instead.
+ *
+ * This class exposes [itemWidth] and [itemHeight] to composables that are called in the context of a [ListItemScope] implementor.
+ * These 2 properties must be passed as [MutableState] to this constructor by the implementor.
+ *
+ * This class provides default implementations the [Modifier] methods that are not implemented in [LazyItemScope]. */
+abstract class ListItemScope internal constructor(
+    private val innerScope: LazyItemScope,
+    /** This is only used with [LazyDropdownMenu], as it is the only case where we need to manually set the width and height. */
+    private val _itemWidth: MutableState<Dp?>?,
+    private val _itemHeight: MutableState<Dp?>?,
+): LazyItemScope {
+    /** The declared **width** of an item in the *List*.
+     *
+     * The **width** of the *whole List* is set to this value.
+     * Other items that don't know what their **width** should be should have it set to this value. */
+    @Suppress("unused")
+    val itemWidth: Dp?
+        get() = this._itemWidth?.value
+
+    /** The declared **height** of an item in the *List*.
+     *
+     * Determines the **height** of the whole list,
+     * and also sets the height of *list items* that don't know what their height should be. */
+    val itemHeight: Dp?
+        get() = this._itemHeight?.value
+
+    /** Makes the [Composable] that this [Modifier] is used on to be able to control the [ListColumn]'s *width*.
+     * Even if multiple items call this *modifier*, only the first item will be able to set the value.
+     *
+     * This sets the **itemWidth** value in [ListColumnItemScope] to the actual width of the *first item* that is rendered on the list.
+     *
+     * This [Modifier] will only have an effect if the **List** Composable allows an *item* to set the **width**.*/
+    @Composable
+    fun Modifier.applyWidthToList(): Modifier {
+        var modifier = this
+        this@ListItemScope.run {
+            if (this._itemWidth != null) {
+                val density = LocalDensity.current
+
+                modifier = modifier.onGloballyPositioned { coords ->
+                    // Only set the height for the first rendered element
+                    if (this._itemWidth.value == null) {
+                        this._itemWidth.value = with(density) { coords.size.width.toDp() }
+                    }
+                }
+            }
+        }
+
+        return modifier
+    }
+    /** Makes the [Composable] that this [Modifier] is used on to be able to control the [ListColumn]'s *height*.
+     * Even if multiple items call this [Modifier], only the first item will be able to set the value.
+     *
+     * This sets the **itemHeight** value in [ListColumnItemScope] to the actual height of the *first item* that is rendered on the list.
+     *
+     * This [Modifier] will only have an effect if the **List** Composable allows an *item* to set the **height**. */
+    @Composable
+    fun Modifier.applyHeightToList(): Modifier {
+        var modifier = this
+        this@ListItemScope.run {
+            if (this._itemHeight != null) {
+                val density = LocalDensity.current
+
+                modifier = modifier.onGloballyPositioned { coords ->
+                    // Only set the height for the first rendered element
+                    if (this._itemHeight.value == null) {
+                        this._itemHeight.value = with(density) { coords.size.height.toDp() }
+                    }
+                }
+            }
+        }
+
+        return modifier
     }
 
-    private fun newListItemScope(innerScope: LazyItemScope) = ListItemScope(innerScope, this)
+    override fun Modifier.fillParentMaxWidth(fraction: Float): Modifier {
+        val modifier = this
+        return this@ListItemScope.innerScope.run {
+            modifier.fillParentMaxWidth(fraction)
+        }
+    }
+    override fun Modifier.fillParentMaxHeight(fraction: Float): Modifier {
+        val modifier = this
+        return this@ListItemScope.innerScope.run {
+            modifier.fillParentMaxHeight(fraction)
+        }
+    }
+    override fun Modifier.fillParentMaxSize(fraction: Float): Modifier {
+        val modifier = this
+        return this@ListItemScope.innerScope.run {
+            modifier.fillParentMaxSize(fraction)
+        }
+    }
 }
 
 /** A custom [LazyItemScope], which exposes the composables that should be used in [ListColumn].
@@ -121,10 +225,11 @@ class ListColumnScope internal constructor(
  *
  *     This occurs when an **Exception** is thrown when an item is being fetched.
  *     For example, when the [Pager] attempts to load a page, but the loader throws. */
-class ListItemScope internal constructor(
-    private val innerScope: LazyItemScope,
-    private val listScope: ListColumnScope,
-) : LazyItemScope {
+class ListColumnItemScope internal constructor(
+    innerScope: LazyItemScope,
+    itemHeight: MutableState<Dp?>,
+    val itemShape: Shape,
+) : ListItemScope(innerScope, _itemWidth = null, _itemHeight = itemHeight) {
     /** Represents *good data* in the [ListColumn]. */
     @Composable
     fun DataItem(
@@ -138,18 +243,10 @@ class ListItemScope internal constructor(
         tonalElevation: Dp = ListItemDefaults.Elevation,
         shadowElevation: Dp = ListItemDefaults.Elevation
     ) {
-        val localDensity = LocalDensity.current
-
         ListItem(
             headlineContent = headlineContent,
-            modifier = modifier
-                .onGloballyPositioned { coords ->
-                    // Only set the height for the first rendered element
-                    if (this.listScope.itemHeight.value == null) {
-                        this.listScope.itemHeight.value = with(localDensity) { coords.size.height.toDp() }
-                    }
-                }
-                .clip(this.listScope.itemShape),
+            modifier = modifier.applyHeightToList()
+                .clip(this.itemShape),
             overlineContent = overlineContent,
             supportingContent = supportingContent,
             leadingContent = leadingContent,
@@ -170,8 +267,8 @@ class ListItemScope internal constructor(
     ) {
         ListItem(
             modifier = modifier
-                .heightIn(min = listScope.itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT)
-                .clip(LIST_ITEM_SHAPE),
+                .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
+                .clip(this.itemShape),
             headlineContent = { Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -190,7 +287,7 @@ class ListItemScope internal constructor(
         ListItem(
             // This item does not need to be resized,
             // but it should also not set the List height because it has an irregular size due to the error message.
-            modifier = modifier.clip(this.listScope.itemShape),
+            modifier = modifier.clip(this.itemShape),
             leadingContent = { Icon(
                 painterResource(R.drawable.info_24px),
                 "Error",
@@ -200,19 +297,12 @@ class ListItemScope internal constructor(
             supportingContent = message?.let { { Text(message, color = color) } }
         )
     }
-
-    override fun Modifier.fillParentMaxHeight(fraction: Float): Modifier
-            = this@ListItemScope.innerScope::class.java.getMethod("fillParentMaxHeight").invoke(this, fraction) as Modifier
-    override fun Modifier.fillParentMaxSize(fraction: Float): Modifier
-            = this@ListItemScope.innerScope::class.java.getMethod("fillParentMaxSize").invoke(this, fraction) as Modifier
-    override fun Modifier.fillParentMaxWidth(fraction: Float): Modifier
-            = this@ListItemScope.innerScope::class.java.getMethod("fillParentMaxWidth").invoke(this, fraction) as Modifier
 }
 
 /** A [LazyColumn] that uses custom composables for the **items**,
  * giving the [LazyColumn] a more proper *"list" look*.
  *
- * See [ListItemScope] for details on these composables.
+ * See [ListColumnItemScope] for details on these composables.
  *
  * @param state The state object to be used to control or observe the list's state.
  *   May be omitted if the caller is not interested in handling the list's state.
@@ -227,11 +317,11 @@ class ListItemScope internal constructor(
  *   This allows setting the **roundness** of the list's corners.
  * @param itemShape The [Shape] around individual **items** in the list.
  *   This allows setting the **roundness** of the corners of all items.
- *   This value only has an effect if an **item** is using one of the composables in [ListItemScope].
+ *   This value only has an effect if an **item** is using one of the composables in [ListColumnItemScope].
  * @param dividerThickness How much **spacing** should be applied between each item in the list.
  * @param content The space to declare the items in the list.
  *   Use [LazyListScope.item] or [LazyListScope.items],
- *   and within those call one of the composables in [ListItemScope]. */
+ *   and within those call one of the composables in [ListColumnItemScope]. */
 @Composable
 fun ListColumn(
     modifier: Modifier = Modifier,
@@ -242,22 +332,27 @@ fun ListColumn(
     shape: Shape = LIST_SHAPE,
     itemShape: Shape = LIST_ITEM_SHAPE,
     dividerThickness: Dp = DividerDefaults.Thickness,
-    content: ListColumnScope.() -> Unit
+    content: ListScope<ListColumnItemScope>.() -> Unit
 ) {
-    // Get the height of the first item in the list to determine the size of the whole List widget.
     val itemHeight = remember { mutableStateOf<Dp?>(null) }
+    // Get the height of the first item in the list to determine the size of the whole List widget.
     val listMaxHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems + dividerThickness * 3
     val listMinHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * 1.25f + dividerThickness
 
     LazyColumn(
+        // List's height should be conscious of it's items' and dividers' heights.
+        modifier = modifier
+            .heightIn(min = listMinHeight, max = listMaxHeight)
+            .clip(shape),
         state = state,
         contentPadding = contentPadding,
         reverseLayout = reverseLayout,
         verticalArrangement = Arrangement.spacedBy(dividerThickness),
-        // List's height should be conscious of it's items' and dividers' heights.
-        modifier = modifier.heightIn(min = listMinHeight, max = listMaxHeight)
-            .clip(shape),
-    ) { ListColumnScope(this, itemHeight, itemShape).content() }
+    ) {
+        ListScope(this) { innerScope ->
+            ListColumnItemScope(innerScope, itemHeight, itemShape)
+        }.content()
+    }
 }
 
 /** Contains methods that allow *checking* and *controlling* the state of a [Pager].
@@ -331,7 +426,7 @@ class PagerController internal constructor() {
  * @param pagerController Allows the caller to trigger a *[refresh][PagerController.refresh]* on the [Pager]'s data.
  * @param itemKey A Callback that generates an *unique key* for every **item**. See [LazyListScope.items].
  * @param itemContent The [Composable] that will be called for *each item* in the [Pager]'s data.
- *   The caller *should* use [ListItemScope.DataItem], but it is not required.
+ *   The caller *should* use [ListColumnItemScope.DataItem], but it is not required.
  * @param loadingContent The [Composable] that will be called when the list can't show an item yet because it is still loading.
  * @param errorContent The [Composable] that will be called when the **pager** loads a page that throws an [Exception].
  *   Takes a **type**, which is the *full class name* of the [Exception], and the exception's [**message**][Throwable.message]. */
@@ -348,25 +443,25 @@ fun <T: Any> PagedListColumn(
     pager: ListPager<T>,
     pagerController: PagerController = remember { PagerController() },
     itemKey: (T) -> Any,
-    itemContent: @Composable ListItemScope.(T) -> Unit,
-    loadingContent: @Composable ListItemScope.() -> Unit = { this.LoadingItem() },
-    errorContent: @Composable ListItemScope.(type: String, message: String?) -> Unit
+    itemContent: @Composable ListColumnItemScope.(T) -> Unit,
+    loadingContent: @Composable ListColumnItemScope.() -> Unit = { this.LoadingItem() },
+    errorContent: @Composable ListColumnItemScope.(type: String, message: String?) -> Unit
         = { type, message -> this.ErrorItem(type = type, message = message) },
 ) {
     pagerController.bind(pager)
 
     ListColumn(modifier, state, contentPadding, reverseLayout, visibleItems, shape, itemShape, dividerThickness) {
         /** Renders the **LoadingItem**, **ErrorItem**, or **onLoaded** composables depending on the **status**. */
-        fun ListColumnScope.statusItems(status: LoadState, onLoaded: (ListColumnScope.() -> Unit)? = null) {
+        fun statusItems(status: LoadState, onLoaded: (ListScope<ListColumnItemScope>.() -> Unit)? = null) {
             when (status) {
-                is LoadState.Loading -> item {
+                is LoadState.Loading -> this.item {
                     loadingContent()
                 }
-                is LoadState.Error -> item {
+                is LoadState.Error -> this.item {
                     errorContent(status.error.javaClass.name, status.error.message)
                 }
                 else -> if (onLoaded != null) {
-                    onLoaded()
+                    this.onLoaded()
                 }
             }
         }
