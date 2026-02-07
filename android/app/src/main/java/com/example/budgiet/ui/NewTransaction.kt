@@ -53,7 +53,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
@@ -68,10 +67,11 @@ import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
+import com.example.budgiet.ui.utils.DIALOG_PROPERTIES
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ListColumn
-import com.example.budgiet.ui.utils.ListItemScope
+import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PagedListColumn
 import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
@@ -278,11 +278,7 @@ fun LocationPickerDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = true,
-        )
+        properties = DIALOG_PROPERTIES,
     ) {
         Card(
             modifier = modifier.fillMaxWidth() // PRO TIP: doesn't actually fill max width, it has a margin
@@ -309,7 +305,7 @@ fun LocationPickerDialog(
                 }
 
                 @Composable
-                fun ListItemScope.LocationItem(location: Location) {
+                fun ListColumnItemScope.LocationItem(location: Location) {
                     this.DataItem(
                         modifier = modifier.clickable(onClick = {
                             onSubmit(location)

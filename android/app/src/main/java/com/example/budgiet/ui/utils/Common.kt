@@ -35,9 +35,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.example.budgiet.R
 import com.example.budgiet.localDateFromUtcMillis
 import java.time.LocalDate
+
+val DIALOG_PROPERTIES = DialogProperties(
+    dismissOnBackPress = true,
+    dismissOnClickOutside = true,
+    usePlatformDefaultWidth = true,
+)
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
@@ -203,6 +210,7 @@ fun DatePickerDialog(
 
     DatePickerDialog(
         modifier = modifier,
+        properties = DIALOG_PROPERTIES,
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
