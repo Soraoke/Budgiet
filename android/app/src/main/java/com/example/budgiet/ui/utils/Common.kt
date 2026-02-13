@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Button
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.PopupProperties
 import com.example.budgiet.R
 import com.example.budgiet.localDateFromUtcMillis
 import java.time.LocalDate
@@ -44,6 +46,12 @@ val DIALOG_PROPERTIES = DialogProperties(
     dismissOnBackPress = true,
     dismissOnClickOutside = true,
     usePlatformDefaultWidth = true,
+)
+val POPUP_PROPERTIES = PopupProperties(
+    dismissOnBackPress = true,
+    dismissOnClickOutside = true,
+    focusable = true,
+    clippingEnabled = true,
 )
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
@@ -148,13 +156,19 @@ fun PlainToolTipBox(
  * The caller must update the search results when a *change in input* has been detected.
  * This is done through the **onQueryChange** Callback, which provides the *new search input*.
  *
- * The caller can also provide their own [TextFieldState] if they want to have control over the *search input*. */
+ * The caller can also provide their own [TextFieldState] if they want to have control over the *search input*.
+ *
+ * @param placeholder Placeholder text that is displayed when the query is empty.
+ * @param hideIconOnQuery Hide the **search Icon** when the user has text on the [SearchBar][PlainSearchBar]
+ *   (i.e. the query text is not empty). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlainSearchBar(
     modifier: Modifier = Modifier,
     onQueryChange: (CharSequence) -> Unit,
     state: TextFieldState = rememberTextFieldState(),
+    placeholder: @Composable () -> Unit = { Text("Search", autoSize = TextAutoSize.StepBased(), softWrap = false, maxLines = 1) },
+    hideIconOnQuery: Boolean = false,
 ) {
     SearchBarDefaults.InputField(
         modifier = modifier,
@@ -172,8 +186,10 @@ fun PlainSearchBar(
             focusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
             unfocusedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ),
-        placeholder = { Text("Search existing locations") },
-        leadingIcon = { Icon(painterResource(R.drawable.search_24px), null) },
+        placeholder = placeholder,
+        leadingIcon = if (!hideIconOnQuery || state.text.isEmpty()) { {
+            Icon(painterResource(R.drawable.search_24px), null)
+        } } else { null },
         trailingIcon = if (state.text.isNotEmpty()) { {
             PlainToolTipBox("Clear search") {
                 IconButton(onClick = { state.edit { replace(0, length, "") } }) {
