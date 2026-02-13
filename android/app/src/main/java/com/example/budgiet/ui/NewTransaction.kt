@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +72,8 @@ import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.DIALOG_PROPERTIES
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
+import com.example.budgiet.ui.utils.LazyDropdownMenu
+import com.example.budgiet.ui.utils.LazyMenuItemScope
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PagedListColumn
@@ -78,6 +82,7 @@ import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
 import com.example.budgiet.validatePriceInput
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
@@ -291,6 +296,7 @@ fun LocationPickerDialog(
                 PlainSearchBar(
                     onQueryChange = { searchPagerController.refresh() },
                     state = searchState,
+                    placeholder = { Text("Search existing locations") },
                 )
 
                 Spacer(Modifier.height(dialogPadding))
@@ -387,10 +393,9 @@ fun PriceField(
     modifier: Modifier = Modifier,
     selectedPrice: String,
     onPriceChange: (String) -> Unit,
-    selectedCurrency: Currency = Currency.getInstance(Locale.getDefault()),
+    selectedCurrency: Currency = remember { Currency.getInstance(Locale.getDefault()) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
-    var currencyMenuOpen by remember { mutableStateOf(false) }
     var parseError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
@@ -425,26 +430,10 @@ fun PriceField(
             onDone = { focusManager.clearFocus() }
         ),
         leadingIcon = {
-            PlainToolTipBox("Change currency") {
-                TextButton(
-                    modifier = Modifier.padding(start = 8.dp),
-                    onClick = { currencyMenuOpen = !currencyMenuOpen },
-                    contentPadding = PaddingValues(0.dp),
-                ) {
-                    val icon = getCurrencyIcon(selectedCurrency)
-                    val code = selectedCurrency.currencyCode
-
-                    Icon(painterResource(R.drawable.arrow_drop_down_24px), "Open currency menu")
-                    if (icon != null) {
-                        Icon(icon, null)
-                    }
-                    // Only show currency name in the field if it is not the local's currency.
-                    // If the icon is not shown, must show the currency code either way.
-                    if (code != Currency.getInstance(Locale.getDefault()).currencyCode || icon == null) {
-                        Text(code)
-                    }
-                }
-            }
+            CurrencySelectorButton(
+                selectedCurrency = selectedCurrency,
+                onCurrencyChange = onCurrencyChange,
+            )
         },
         placeholder = {
             Text(
@@ -459,6 +448,107 @@ fun PriceField(
             Text(parseError)
         } },
     )
+}
+
+@Composable
+fun CurrencySelectorButton(
+    modifier: Modifier = Modifier,
+    hideDefaultCurrencyCode: Boolean = true,
+    selectedCurrency: Currency = remember { Currency.getInstance(Locale.getDefault()) },
+    onCurrencyChange: (Currency) -> Unit,
+) {
+    var currencyMenuOpen by remember { mutableStateOf(false) }
+    val currencySearchState = rememberTextFieldState()
+    val currencyListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    val localeCurrency = remember { Currency.getInstance(Locale.getDefault()) }
+    // All other currencies apart from the Locale currency.
+    val otherCurrencies = remember {
+        val currencies = Currency.getAvailableCurrencies()
+        currencies.remove(localeCurrency)
+        // The Locale's currency should always go first.
+        listOf(localeCurrency) + currencies.toList()
+            .sortedBy { currency -> currency.currencyCode }
+    }
+
+    PlainToolTipBox("Change currency") {
+        TextButton(
+            modifier = modifier.padding(start = 8.dp),
+            onClick = { currencyMenuOpen = !currencyMenuOpen },
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            val icon = getCurrencyIcon(selectedCurrency)
+            val code = selectedCurrency.currencyCode
+
+            Icon(painterResource(R.drawable.arrow_drop_down_24px), "Open currency menu")
+            if (icon != null) {
+                Icon(icon, null)
+            }
+            // Only show currency name in the field if it is not the locale's currency.
+            // If the icon is not shown, must show the currency code either way.
+            if (code != localeCurrency.currencyCode
+            || icon == null
+            || !hideDefaultCurrencyCode) {
+                Text(code)
+            }
+        }
+    }
+
+    LazyDropdownMenu(
+        showDropdown = currencyMenuOpen,
+        onDismiss = { currencyMenuOpen = false },
+        shape = MaterialTheme.shapes.large,
+        state = currencyListState,
+        leadingContent = {
+            // FIXME: use shape large
+            PlainSearchBar(
+                modifier = Modifier.padding(4.dp),
+                state = currencySearchState,
+                onQueryChange = { coroutineScope.launch {
+                    currencyListState.scrollToItem(0)
+                } },
+                hideIconOnQuery = true,
+            )
+        }
+    ) {
+        // TODO: also sort by recently used
+        val searchedCurrencies = otherCurrencies.filter { currency ->
+            currency.currencyCode
+                .contains(currencySearchState.text,
+                    ignoreCase = true,
+                )
+            || currency.displayName
+                .contains(currencySearchState.text,
+                    ignoreCase = true,
+                )
+        }
+
+        this.items(
+            items = searchedCurrencies,
+            key = { currency -> currency.currencyCode }
+        ) { currency ->
+            this.MenuItem(
+                // Apply a scrim color for the one that is selected.
+                modifier = if (currency == selectedCurrency) {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceDim)
+                } else {
+                    Modifier
+                },
+                headlineContent = { Text(currency.currencyCode) },
+                // Even if there is no icon for this currency, activate leadingIcon to align all the currency codes.
+                leadingIcon = {
+                    getCurrencyIcon(currency)?.let { icon ->
+                        Icon(icon, null)
+                    }
+                },
+                onClick = {
+                    onCurrencyChange(currency)
+                    currencyMenuOpen = false
+                },
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -534,4 +624,10 @@ fun LocationPickerPreview() {
             onSubmit = {},
         )
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CurrenciesDropDownPreview() {
+
 }

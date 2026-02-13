@@ -2,6 +2,7 @@ package com.example.budgiet.ui.utils
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
@@ -39,11 +41,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.paging.LoadState
 import androidx.paging.Pager
 import androidx.paging.compose.LazyPagingItems
@@ -482,5 +487,122 @@ fun <T: Any> PagedListColumn(
             }
         }
         statusItems(pagerController.appendStatus)
+    }
+}
+
+class LazyMenuItemScope internal constructor(
+    innerScope: LazyItemScope,
+    itemWidth: MutableState<Dp?>,
+    itemHeight: MutableState<Dp?>,
+): ListItemScope(innerScope, _itemWidth = itemWidth, _itemHeight = itemHeight) {
+    /** Similar to [ListColumnItemScope.DataItem],
+     * but renders a [DropDownMenuItem][androidx.compose.material3.DropdownMenuItem] instead.
+     *
+     * This is specifically for use with [LazyDropdownMenu] to determine the height. */
+    @Composable
+    fun MenuItem(
+        modifier: Modifier = Modifier,
+        headlineContent: @Composable (() -> Unit),
+        leadingIcon: @Composable (() -> Unit)? = null,
+        trailingIcon: @Composable (() -> Unit)? = null,
+        onClick: () -> Unit = { },
+        enabled: Boolean = true,
+        colors: MenuItemColors = MenuDefaults.itemColors(),
+        contentPadding: PaddingValues = MenuDefaults.DropdownMenuItemContentPadding,
+        interactionSource: MutableInteractionSource? = null,
+    ) {
+        DropdownMenuItem(
+            modifier = modifier
+                .applyWidthToList()
+                .applyHeightToList(),
+            text = headlineContent,
+            onClick = onClick,
+            leadingIcon = leadingIcon,
+            trailingIcon = trailingIcon,
+            enabled = enabled,
+            colors = colors,
+            contentPadding = contentPadding,
+            interactionSource = interactionSource,
+        )
+    }
+}
+
+// TODO: doc: For dropdown menu that wants to have a lazyColumn; Must use ListColumnScope.MenuItem so that the list can have height
+@Composable
+fun LazyDropdownMenu(
+    modifier: Modifier = Modifier,
+    showDropdown: Boolean,
+    onDismiss: () -> Unit,
+    properties: PopupProperties = POPUP_PROPERTIES,
+    state: LazyListState = rememberLazyListState(),
+    reverseLayout: Boolean = false,
+    visibleItems: Float = LIST_DEFAULT_VISIBLE_ITEMS,
+    shape: Shape = MenuDefaults.shape,
+    containerColor: Color = MenuDefaults.containerColor,
+    tonalElevation: Dp = MenuDefaults.TonalElevation,
+    shadowElevation: Dp = MenuDefaults.ShadowElevation,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    border: BorderStroke? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
+    content: ListScope<LazyMenuItemScope>.() -> Unit,
+) {
+    // Get the size of the first item in the list to determine the size of the whole List widget.
+    val itemWidth = remember { mutableStateOf<Dp?>(null) }
+    val itemHeight = remember { mutableStateOf<Dp?>(null) }
+    val menuWidth = itemWidth.value ?: 125.dp
+    val menuHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems
+
+    DropdownMenu(
+        modifier = modifier
+            // DropdownMenu has a hardcoded padding of 8.dp which should be removed.
+            // Padding should be set on the LazyColumn Composable.
+            .layout { measurable, constraints ->
+                val verticalCrop = 8.dp
+                val placeable = measurable.measure(constraints)
+                fun Dp.toPxInt(): Int = this.toPx().toInt()
+
+                layout(
+                    placeable.width,
+                    placeable.height - (verticalCrop * 2).toPxInt()
+                ) {
+                    placeable.placeRelative(0, -verticalCrop.toPx().toInt())
+                }
+            }
+            .clip(shape),
+        expanded = showDropdown,
+        onDismissRequest = onDismiss,
+        properties = properties,
+        shape = shape,
+        containerColor = containerColor,
+        tonalElevation = tonalElevation,
+        shadowElevation = shadowElevation,
+        border = border,
+    ) {
+        if (leadingContent != null) {
+            Box(Modifier.width(menuWidth).heightIn(max = menuHeight)) {
+                leadingContent()
+            }
+        }
+
+        LazyColumn(
+            modifier = modifier
+                // FIXME: MenuItem does not set its width (it is intrinsic to the parent), so the List's width stays at the default (125).
+                .width(menuWidth)
+                .height(menuHeight),
+            state = state,
+            reverseLayout = reverseLayout,
+            contentPadding = contentPadding,
+        ) {
+            ListScope(this) { innerScope ->
+                LazyMenuItemScope(innerScope, itemWidth, itemHeight)
+            }.content()
+        }
+
+        if (trailingContent != null) {
+            Box(Modifier.width(menuWidth).heightIn(max = menuHeight)) {
+                trailingContent()
+            }
+        }
     }
 }
