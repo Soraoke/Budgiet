@@ -23,20 +23,11 @@ fun Currency.formatPrice(price: Double): String {
     formatter.minimumFractionDigits = this.defaultFractionDigits
     formatter.maximumFractionDigits = this.defaultFractionDigits
 
-    var formatted = formatter.format(price)
-
-    // Remove currency symbol
-    formatted = if (!formatted.first().isDigit()) {
-        formatted.removeRange(0..0)
-    } else if (!formatted.last().isDigit()) {
-        val i = formatted.length - 1
-        formatted.removeRange(i..i)
-    } else {
-        formatted
-    }
-
-    // Remove leading and trailing whitespace
-    return formatted.trim()
+    return formatter.format(price)
+        // Remove leading and trailing whitespace
+        .trim()
+        // Remove currency symbol
+        .trim { char -> char != '.' && char != ',' && !char.isDigit() }
 }
 
 /** Parse the value of the [PriceField][com.example.budgiet.ui.PriceField] input to a *decimal number* ([Double]).
