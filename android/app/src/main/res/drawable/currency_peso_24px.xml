@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="640"
+    android:viewportHeight="640"
+    android:tint="?android:attr/colorControlNormal">
+    <!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.-->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M208 96c-17.7 0-32 14.3-32 32v64h-24c-13.3 0-24 10.7-24 24s10.7 24 24 24h24v32h-24c-13.3 0-24 10.7-24 24s10.7 24 24 24h24v192c0 17.7 14.3 32 32 32s32-14.3 32-32v-96h96c65.6 0 122-39.5 146.7-96H520c13.3 0 24-10.7 24-24s-10.7-24-24-24h-24.8c0.5-5.3 0.8-10.6 0.8-16s-0.3-10.7-0.8-16H520c13.3 0 24-10.7 24-24s-10.7-24-24-24h-37.3C458 135.5 401.6 96 336 96H208z m199.6 96H240v-32h96c28.4 0 54 12.4 71.6 32zM240 240h190.7c0.9 5.2 1.3 10.5 1.3 16s-0.5 10.8-1.3 16H240v-32z m167.6 80c-17.6 19.6-43.1 32-71.6 32h-96v-32h167.6z"/>
+</vector>
