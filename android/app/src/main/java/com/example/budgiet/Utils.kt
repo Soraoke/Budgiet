@@ -217,21 +217,37 @@ fun LocalDate.formatRelativeToPresent(): String {
  *
  * @returns `null` if we do not recognize the currency's *symbol*.
  * In this case, the caller should omit the currency icon,
- * or default to using the **dollar** icon if an icon is required. */
+ * or default to using the **[dollar][R.drawable.currency_dollar_24px]** icon if an icon is required. */
 @Composable
 fun getCurrencyIcon(currency: Currency): Painter? {
-    return painterResource(when (currency.symbol) {
-        "$" -> R.drawable.currency_dollar_24px
-        "£" -> R.drawable.currency_pound_24px
-        "¥" -> R.drawable.currency_yen_24px
-        "€", "₠" -> R.drawable.currency_euro_24px
-        "₹", "र", "₨", "R", "s" -> R.drawable.currency_rupee_24px
-        "₽" -> R.drawable.currency_ruble_24px
-        "₣", "Ꞙ" -> R.drawable.currency_franc_24px
-        "₺", "₤" -> R.drawable.currency_lira_24px
-        "₿" -> R.drawable.currency_bitcoin_24px
-        else -> return null
-    })
+    val map = hashMapOf(
+        '$' to R.drawable.currency_dollar_24px,
+        '₱' to R.drawable.currency_peso_24px,
+        '£' to R.drawable.currency_pound_24px,
+        '¥' to R.drawable.currency_yen_24px,
+        '₩' to R.drawable.currency_won_24px,
+        '₪' to R.drawable.currency_shekel_24px,
+        '₽' to R.drawable.currency_ruble_24px,
+        '€' to R.drawable.currency_euro_24px,
+        '₠' to R.drawable.currency_euro_24px,
+        '₹' to R.drawable.currency_rupee_24px,
+        'र' to R.drawable.currency_rupee_24px,
+        '₨' to R.drawable.currency_rupee_24px,
+        '₣' to R.drawable.currency_franc_24px,
+        'Ꞙ' to R.drawable.currency_franc_24px,
+        '₺' to R.drawable.currency_lira_24px,
+        '₤' to R.drawable.currency_lira_24px,
+        '₿' to R.drawable.currency_bitcoin_24px,
+    )
+
+    // Check if the symbol string contains an actual symbol at all
+    for (c in currency.symbol) {
+        map[c]?.let { res ->
+            return painterResource(res)
+        }
+    }
+
+    return null
 }
 
 // TODO: Actual implementation in Rust
