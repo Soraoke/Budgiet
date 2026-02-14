@@ -73,7 +73,6 @@ import com.example.budgiet.ui.utils.DIALOG_PROPERTIES
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
-import com.example.budgiet.ui.utils.LazyMenuItemScope
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PagedListColumn
@@ -458,9 +457,6 @@ fun CurrencySelectorButton(
     onCurrencyChange: (Currency) -> Unit,
 ) {
     var currencyMenuOpen by remember { mutableStateOf(false) }
-    val currencySearchState = rememberTextFieldState()
-    val currencyListState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
     val localeCurrency = remember { Currency.getInstance(Locale.getDefault()) }
     // All other currencies apart from the Locale currency.
@@ -495,6 +491,21 @@ fun CurrencySelectorButton(
         }
     }
 
+    val currencySearchState = rememberTextFieldState()
+    val currencyListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    // TODO: also sort by recently used
+    val searchedCurrencies = otherCurrencies.filter { currency ->
+        currency.currencyCode
+            .contains(currencySearchState.text,
+                ignoreCase = true,
+            )
+        || currency.displayName
+            .contains(currencySearchState.text,
+                ignoreCase = true,
+            )
+    }
+
     LazyDropdownMenu(
         showDropdown = currencyMenuOpen,
         onDismiss = { currencyMenuOpen = false },
@@ -512,41 +523,31 @@ fun CurrencySelectorButton(
             )
         }
     ) {
-        // TODO: also sort by recently used
-        val searchedCurrencies = otherCurrencies.filter { currency ->
-            currency.currencyCode
-                .contains(currencySearchState.text,
-                    ignoreCase = true,
-                )
-            || currency.displayName
-                .contains(currencySearchState.text,
-                    ignoreCase = true,
-                )
-        }
-
         this.items(
             items = searchedCurrencies,
             key = { currency -> currency.currencyCode }
         ) { currency ->
-            this.MenuItem(
-                // Apply a scrim color for the one that is selected.
-                modifier = if (currency == selectedCurrency) {
-                    Modifier.background(MaterialTheme.colorScheme.surfaceDim)
-                } else {
-                    Modifier
-                },
-                headlineContent = { Text(currency.currencyCode) },
-                // Even if there is no icon for this currency, activate leadingIcon to align all the currency codes.
-                leadingIcon = {
-                    getCurrencyIcon(currency)?.let { icon ->
-                        Icon(icon, null)
-                    }
-                },
-                onClick = {
-                    onCurrencyChange(currency)
-                    currencyMenuOpen = false
-                },
-            )
+            PlainToolTipBox(currency.displayName) {
+                this.MenuItem(
+                    // Apply a scrim color for the one that is selected.
+                    modifier = if (currency == selectedCurrency) {
+                        Modifier.background(MaterialTheme.colorScheme.surfaceDim)
+                    } else {
+                        Modifier
+                    },
+                    headlineContent = { Text(currency.currencyCode) },
+                    // Even if there is no icon for this currency, activate leadingIcon to align all the currency codes.
+                    leadingIcon = {
+                        getCurrencyIcon(currency)?.let { icon ->
+                            Icon(icon, null)
+                        }
+                    },
+                    onClick = {
+                        onCurrencyChange(currency)
+                        currencyMenuOpen = false
+                    },
+                )
+            }
         }
     }
 }

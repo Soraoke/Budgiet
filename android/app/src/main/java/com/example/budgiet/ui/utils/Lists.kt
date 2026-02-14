@@ -2,7 +2,6 @@ package com.example.budgiet.ui.utils
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
@@ -47,7 +45,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.paging.LoadState
 import androidx.paging.Pager
@@ -307,7 +304,28 @@ class ListColumnItemScope internal constructor(
 /** A [LazyColumn] that uses custom composables for the **items**,
  * giving the [LazyColumn] a more proper *"list" look*.
  *
+ * Adding items in the **content** is very similar to [LazyColumn]:
+ * call `this.items()` with the list you want to display,
+ * and within that call a Composable in **[ListColumnItemScope]** (e.g. [DataItem][ListColumnItemScope.DataItem]).
+ * Using those Composables is important so that the Column element
+ * can define a *height* based on the height of its *items* (see the [visibleItems] parameter).
+ *
  * See [ListColumnItemScope] for details on these composables.
+ *
+ * ## Example
+ *
+ * ```
+ * ListColumn(visibleItems = 3.5) {
+ *     this.items(
+ *         items = (0..100).toList(),
+ *         key = { it },
+ *     ) { i ->
+ *         this.DataItem(headlineContent = {
+ *             Text(i.toString())
+ *         })
+ *     }
+ * }
+ * ```
  *
  * @param state The state object to be used to control or observe the list's state.
  *   May be omitted if the caller is not interested in handling the list's state.
@@ -325,7 +343,7 @@ class ListColumnItemScope internal constructor(
  *   This value only has an effect if an **item** is using one of the composables in [ListColumnItemScope].
  * @param dividerThickness How much **spacing** should be applied between each item in the list.
  * @param content The space to declare the items in the list.
- *   Use [LazyListScope.item] or [LazyListScope.items],
+ *   Use [ListScope.item] or [ListScope.items],
  *   and within those call one of the composables in [ListColumnItemScope]. */
 @Composable
 fun ListColumn(
@@ -345,7 +363,7 @@ fun ListColumn(
     val listMinHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * 1.25f + dividerThickness
 
     LazyColumn(
-        // List's height should be conscious of it's items' and dividers' heights.
+        // List's height should be conscious of its items' and dividers' heights.
         modifier = modifier
             .heightIn(min = listMinHeight, max = listMaxHeight)
             .clip(shape),
@@ -490,13 +508,19 @@ fun <T: Any> PagedListColumn(
     }
 }
 
+/** A custom [LazyItemScope], which exposes the composables that should be used in [LazyDropdownMenu].
+ * All composables in here are implemented with [DropdownMenuItem].
+ *
+ * * **[MenuItem]**. */
 class LazyMenuItemScope internal constructor(
     innerScope: LazyItemScope,
     itemWidth: MutableState<Dp?>,
     itemHeight: MutableState<Dp?>,
 ): ListItemScope(innerScope, _itemWidth = itemWidth, _itemHeight = itemHeight) {
-    /** Similar to [ListColumnItemScope.DataItem],
-     * but renders a [DropDownMenuItem][androidx.compose.material3.DropdownMenuItem] instead.
+    /** An item data composable for the [LazyDropdownMenu].
+     *
+     * Similar to [ListColumnItemScope.DataItem],
+     * but renders a [DropdownMenuItem] instead.
      *
      * This is specifically for use with [LazyDropdownMenu] to determine the height. */
     @Composable
@@ -527,7 +551,34 @@ class LazyMenuItemScope internal constructor(
     }
 }
 
-// TODO: doc: For dropdown menu that wants to have a lazyColumn; Must use ListColumnScope.MenuItem so that the list can have height
+/** A [DropdownMenu] that can hold a *list* of items and *lazily* display only the items that will be visible.
+ * This is very similar to [ListColumn].
+ *
+ * Place a call to this Composable ***directly after*** the UI element that you want the [DropdownMenu] to be anchored to.
+ *
+ * Adding items in the **listContent** is very similar to [ListColumn] (and by extension [LazyColumn]):
+ * call `this.items()` with the list you want to display,
+ * and within that call a Composable in **[LazyMenuItemScope]** (i.e. [MenuItem][LazyMenuItemScope.MenuItem]).
+ * Using those Composables is important so that the Column element
+ * can define a *height* based on the height of its *items* (see the [visibleItems] parameter).
+ *
+ * Not using [MenuItem][LazyMenuItemScope.MenuItem] will result in the app ***crashing***
+ * because [DropdownMenu] requires that all of its content have *absolute size* (both width and height).
+ *
+ * See [ListColumn] for the rest of the *parameters*.
+ *
+ * @param showDropdown Whether the **dropdown** popup is being displayed.
+ *   This includes [leadingContent], [listContent], and [trailingContent].
+ * @param onDismiss The action that will be activated when the user clicks *outside* the [DropdownMenu].
+ * @param properties Properties to customize the behavior of the [DropdownMenu].
+ * @param tonalElevation How much tint the [DropdownMenu]'s *surface color* will receive
+ *   (if it uses the default surface color).
+ * @param shadowElevation The strength (opacity, size) of the shadow surrounding the [DropdownMenu].
+ * @param leadingContent The Composable that is shown **before** the [ListColumn] in the [DropdownMenu].
+ * @param trailingContent The Composable that is shown **after** the [ListColumn] in the [DropdownMenu].
+ * @param listContent The items that will go in the [ListColumn].
+ *   Use [ListScope.item] or [ListScope.items],
+ *   and within those call [LazyMenuItemScope.MenuItem]. */
 @Composable
 fun LazyDropdownMenu(
     modifier: Modifier = Modifier,
@@ -545,7 +596,7 @@ fun LazyDropdownMenu(
     border: BorderStroke? = null,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
-    content: ListScope<LazyMenuItemScope>.() -> Unit,
+    listContent: ListScope<LazyMenuItemScope>.() -> Unit,
 ) {
     // Get the size of the first item in the list to determine the size of the whole List widget.
     val itemWidth = remember { mutableStateOf<Dp?>(null) }
@@ -586,7 +637,7 @@ fun LazyDropdownMenu(
         }
 
         LazyColumn(
-            modifier = modifier
+            modifier = Modifier
                 // FIXME: MenuItem does not set its width (it is intrinsic to the parent), so the List's width stays at the default (125).
                 .width(menuWidth)
                 .height(menuHeight),
@@ -596,7 +647,7 @@ fun LazyDropdownMenu(
         ) {
             ListScope(this) { innerScope ->
                 LazyMenuItemScope(innerScope, itemWidth, itemHeight)
-            }.content()
+            }.listContent()
         }
 
         if (trailingContent != null) {
