@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.budgiet.ui.NewTransactionForm
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import java.util.Collections
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +84,29 @@ fun MainPage(modifier: Modifier = Modifier) {
         ) {
             NewTransactionForm()
         }
+    }
+}
+
+private val orderedCurrencies: MutableList<String> = mutableStateListOf()
+
+/** Returns an ordered [List] of **currency codes**, sorted by *most recent use*. */
+// TODO: load from storage
+fun getRecentlySelectedCurrencies(): List<String> = orderedCurrencies
+/** Marks a [Currency][java.util.Currency] as recently used (a.k.a. it was just selected),
+ * moving it to the front of the [List] of recent currencies,
+ * which is **sorted** by latest use.
+ *
+ * See [getRecentlySelectedCurrencies] to read from this [List]. */
+// TODO: save to storage
+fun markCurrencyRecentlyUsed(currencyCode: String) {
+    // Find currency in the argument
+    when (val idx = orderedCurrencies.indexOf(currencyCode)) {
+        // The currency was already first in the list; do nothing.
+        0 -> { }
+        // Currency was not found in the List, so it must be prepended.
+        -1 -> orderedCurrencies.add(0, currencyCode)
+        // Swap the first currency with the target currency (arg).
+        else -> Collections.swap(orderedCurrencies, 0, idx)
     }
 }
 
