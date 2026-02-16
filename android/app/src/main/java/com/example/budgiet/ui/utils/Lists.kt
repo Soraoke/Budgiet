@@ -5,11 +5,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
@@ -58,6 +60,7 @@ import com.example.budgiet.rememberListPager
 /** When a [LazyColumn]'s [ListItem]'s **height** can't be determined because it has no content,
  * use this value for the **height** instead. */
 private val LIST_ITEM_DEFAULT_HEIGHT = 70.5.dp
+private val MENU_ITEM_DEFAULT_WIDTH = 125.dp
 val LIST_SHAPE = RoundedCornerShape(16.dp)
 val LIST_ITEM_SHAPE = RoundedCornerShape(4.dp)
 const val LIST_DEFAULT_VISIBLE_ITEMS = 3.5f
@@ -284,6 +287,13 @@ class ListColumnItemScope internal constructor(
      * This occurs when an **Exception** is thrown when an item is being fetched.
      * For example, when the [Pager] attempts to load a page, but the loader throws. */
     @Composable
+    fun ErrorItem(error: Throwable, modifier: Modifier = Modifier)
+        = ErrorItem(modifier, error.javaClass.name, error.message)
+    /** Represents *bad data* in the [ListColumn].
+     *
+     * This occurs when an **Exception** is thrown when an item is being fetched.
+     * For example, when the [Pager] attempts to load a page, but the loader throws. */
+    @Composable
     fun ErrorItem(modifier: Modifier = Modifier, type: String, message: String? = null) {
         val color = MaterialTheme.colorScheme.error
         ListItem(
@@ -291,7 +301,7 @@ class ListColumnItemScope internal constructor(
             // but it should also not set the List height because it has an irregular size due to the error message.
             modifier = modifier.clip(this.itemShape),
             leadingContent = { Icon(
-                painterResource(R.drawable.info_24px),
+                painterResource(R.drawable.error_24px),
                 "Error",
                 tint = color,
             ) },
@@ -549,6 +559,48 @@ class LazyMenuItemScope internal constructor(
             interactionSource = interactionSource,
         )
     }
+
+    @Composable
+    fun LoadingMenuItem(
+        modifier: Modifier = Modifier,
+        progressIndicator: @Composable () -> Unit = { CircularProgressIndicator() },
+    ) {
+        DropdownMenuItem(
+            modifier = modifier
+                .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
+                .widthIn(min = this.itemWidth ?: MENU_ITEM_DEFAULT_WIDTH),
+            text = { Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                progressIndicator()
+            } },
+            onClick = { }
+        )
+    }
+
+    @Composable
+    fun ErrorMenuItem(error: Throwable, modifier: Modifier = Modifier)
+        = ErrorMenuItem(modifier, error.javaClass.name, error.message)
+    @Composable
+    fun ErrorMenuItem(modifier: Modifier = Modifier, type: String, message: String? = null) {
+        val color = MaterialTheme.colorScheme.error
+        DropdownMenuItem(
+            // This item does not need to be resized,
+            // but it should also not set the List height because it has an irregular size due to the error message.
+            modifier = modifier,
+            leadingIcon = { Icon(
+                painterResource(R.drawable.error_24px),
+                "Error",
+                tint = color,
+            ) },
+            text = { Column {
+                Text("Error: $type", color = color, style = MaterialTheme.typography.labelLarge)
+                message?.let { Text(message, color = color) }
+            } },
+            onClick = { }
+        )
+    }
 }
 
 /** A [DropdownMenu] that can hold a *list* of items and *lazily* display only the items that will be visible.
@@ -601,7 +653,7 @@ fun LazyDropdownMenu(
     // Get the size of the first item in the list to determine the size of the whole List widget.
     val itemWidth = remember { mutableStateOf<Dp?>(null) }
     val itemHeight = remember { mutableStateOf<Dp?>(null) }
-    val menuWidth = itemWidth.value ?: 125.dp
+    val menuWidth = itemWidth.value ?: MENU_ITEM_DEFAULT_WIDTH
     val menuHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems
 
     DropdownMenu(
