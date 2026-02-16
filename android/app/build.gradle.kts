@@ -46,6 +46,20 @@ android {
         compose = true
     }
 
+    sourceSets {
+        val shareTestModule = "testUtils"
+        val sharedTestDir = "src/$shareTestModule/kotlin"
+
+        getByName("androidTest") {
+            java.directories.add(sharedTestDir)
+            kotlin.directories.add(sharedTestDir)
+        }
+        getByName("test") {
+            java.directories.add(sharedTestDir)
+            kotlin.directories.add(sharedTestDir)
+        }
+    }
+
     testOptions {
         @Suppress("UnstableApiUsage")
         managedDevices {
