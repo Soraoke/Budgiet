@@ -62,7 +62,7 @@ sealed class Result<out T> {
     class Ok<out T>(val value: T) : Result<T>()
     class Err(val error: Throwable) : Result<Nothing>()
 
-    /**  Unwraps the Result to retrieve it's Ok value
+    /** Unwraps the Result to retrieve it's Ok value
      * If the Result is Err, it will return null
      *
      * @return Ok Result value or null */
@@ -70,6 +70,17 @@ sealed class Result<out T> {
         return when (this) {
             is Ok -> this.value
             is Err -> null
+        }
+    }
+
+    /** Unwraps the Result to retrieve it's Ok value
+     * If the Result is Err, the exception value will be *thrown*.
+     *
+     * @return Ok Result value */
+    fun unwrap(): T {
+        return when (this) {
+            is Ok -> this.value
+            is Err -> throw this.error
         }
     }
 

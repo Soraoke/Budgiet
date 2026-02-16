@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.pressKey
+import com.example.budgiet.assert
+import com.example.budgiet.assertEquals
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.ui.DESCRIPTION_MAX_LENGTH
 import com.example.budgiet.ui.DescriptionField
@@ -41,9 +43,8 @@ private class TestState(private val rule: ComposeContentTestRule) {
     }
 
     /** Assert that the **character counter** Node is at a certain number. */
-    fun assertCounter(count: Int) = assertEquals(
-        count,
-        this.descriptionField
+    fun assertCounter(count: Int)
+         = this.descriptionField
             .getSemanticsProperty(SemanticsProperties.Text)
             .getOrThrow()
             // The counter Node is always the last in the TextField Node.
@@ -52,38 +53,33 @@ private class TestState(private val rule: ComposeContentTestRule) {
             .text
             .split('/', limit = 2)[0]
             .toInt()
-    )
+            .assertEquals(count)
 
     fun assertIsError() {
-        assertEquals(
-            "Invalid input",
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Error)
-                .getOrThrow(),
-        )
-        assertEquals(
-            "Description is too long!",
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Text)
-                .getOrThrow()
-                [0].text,
-        )
+        this.descriptionField
+            .getSemanticsProperty(SemanticsProperties.Error)
+            .getOrThrow()
+            .assertEquals("Invalid input")
+
+        this.descriptionField
+            .getSemanticsProperty(SemanticsProperties.Text)
+            .getOrThrow()
+            .let { it[0].text }
+            .assertEquals("Description is too long!")
+
     }
 
     fun assertIsNotError() {
-        assertEquals(
-            null,
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Error)
-                .getOrNull(),
-        )
-        assertEquals(
-            1,
-            this.descriptionField
-                .getSemanticsProperty(SemanticsProperties.Text)
-                .getOrThrow()
-                .size,
-        )
+        this.descriptionField
+            .getSemanticsProperty(SemanticsProperties.Error)
+            .getOrNull()
+            .assertEquals(null)
+
+        this.descriptionField
+            .getSemanticsProperty(SemanticsProperties.Text)
+            .getOrThrow()
+            .size
+            .assertEquals(1)
     }
 }
 
@@ -107,12 +103,11 @@ class DescriptionFieldTests {
         // Check that the field accepts multiple code units as 1 character.
         state.descriptionField.performTextInput("a".repeat(DESCRIPTION_MAX_LENGTH - 1))
         state.descriptionField.performTextInput(snowMan)
-        assert(state.descriptionField
+        state.descriptionField
             .getSemanticsProperty(SemanticsProperties.EditableText)
             .getOrThrow()
             .text
-            .contains(snowMan)
-        )
+            .assert({ it.contains(snowMan) }) { "DescriptionField's EditableText did not contain snowMan grapheme" }
         state.assertCounter(DESCRIPTION_MAX_LENGTH)
         state.assertIsNotError()
 
@@ -126,12 +121,11 @@ class DescriptionFieldTests {
         // Check that the field accepts multiple code points as 1 character.
         state.descriptionField.performTextInput(accentedE)
         // TODO: this will work later when grapheme string is implemented in rust. trust
-//        assert(state.descriptionField
+//        state.descriptionField
 //            .getSemanticsProperty(SemanticsProperties.EditableText)
 //            .getOrThrow()
 //            .text
-//            .contains(accentedE)
-//        )
+//            .assert({ it.contains(accentedE) }) { "DescriptionField's EditableText did not contain accentedE grapheme" }
         state.assertCounter(DESCRIPTION_MAX_LENGTH)
 //        state.assertIsNotError()
     }
@@ -149,13 +143,11 @@ class DescriptionFieldTests {
 
         // Field should NOT keep extra characters while in error state.
         state.assertCounter(DESCRIPTION_MAX_LENGTH)
-        assertEquals(
-            DESCRIPTION_MAX_LENGTH,
-            state.descriptionField
-                .getSemanticsProperty(SemanticsProperties.EditableText)
-                .getOrThrow()
-                .text.length,
-        )
+        state.descriptionField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text.length
+            .assertEquals(DESCRIPTION_MAX_LENGTH)
 
         @OptIn(ExperimentalTestApi::class)
         state.descriptionField.performKeyInput {
@@ -179,25 +171,21 @@ class DescriptionFieldTests {
             state.descriptionField.performTextInput("a")
         }
 
-        assertEquals(
-            "a".repeat(DESCRIPTION_MAX_LENGTH),
-            state.descriptionField
-                .getSemanticsProperty(SemanticsProperties.EditableText)
-                .getOrThrow()
-                .text,
-        )
+        state.descriptionField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text
+            .assertEquals("a".repeat(DESCRIPTION_MAX_LENGTH))
 
         // Check that the counter is updated.
         state.assertCounter(DESCRIPTION_MAX_LENGTH)
 
         // Type one more ASCII character, check that it is ignored/blocked.
         state.descriptionField.performTextInput("b")
-        assert(
-            !state.descriptionField
-                .getSemanticsProperty(SemanticsProperties.EditableText)
-                .getOrThrow()
-                .contains('b')
-        )
+        state.descriptionField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .assert( { !it.contains('b') }) { "DescriptionField contains characters that were typed after character limit was reached" }
 
         // Check that it is NOT in error state
         // FIXME: This panics in CI but not in local :/
