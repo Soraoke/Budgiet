@@ -1,7 +1,7 @@
 package com.example.budgiet
 
 import android.annotation.SuppressLint
-import java.util.Currency
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +15,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Currency
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -38,6 +39,11 @@ private val WORKER_THREAD = Executors.newSingleThreadExecutor()
  * as only the worker thread can modify this value. */
 private var WORKER_THREAD_ID: Long? = null
 private fun isWorkerThread(): Boolean = WORKER_THREAD_ID != null && Thread.currentThread().id == WORKER_THREAD_ID
+private fun setWorkerThreadId(executor: Executor) {
+    if (executor == WORKER_THREAD && WORKER_THREAD_ID == null) {
+        WORKER_THREAD_ID = Thread.currentThread().id
+    }
+}
 
 /** A *sum type* that represents an operation's **result**.
  *
@@ -88,14 +94,12 @@ sealed class Result<out T> {
     }
 }
 
-/** Run a **task** in a *single-threaded* work Executor,
+/** Run a **task** in a *single-threaded* work [Executor],
  * and [remember] the value in a [Composable].
  *
  * This function adds the **task** to the executor and immediately returns a `mutableStateOf(null)`.
  * While the task waits to be executed (and while it is being executed),
  * the *UI* thread can continue the rendering process without having to wait for work to be done.
- *
- * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
  *
  * After the **task** is finished, the returned [MutableState] is updated to contain a [Result]:
  * either the *success* value produced by the **task** Callback,
@@ -103,37 +107,52 @@ sealed class Result<out T> {
  * Throwing an [Exception] in a [Composable] is not ideal since it will crash the program if not caught,
  * so this function will automatically catch [Exception]s and put it in the [Result] instead.
  *
+ * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
+ *
+ * Optionally, the caller can pass a custom [MutableState] in the **state** argument.
+ * This allows using a persistent [MutableState] object to put the [Result] of the **task**.
+ * Note that the value must be `null`, or an [Exception] will be thrown (will not return [Result.Err]).
+ *
  * > Note: If this function detects that it is being called from the *default* **worker thread**,
  * > it will just run the *task* in the same thread without first pushing it to the Executor and waiting its turn.
  * > This optimizes the order of running *tasks* in case the caller calls [rememberWork] without knowing it is in the worker thread,
- * > Although this should be extremely rare. */
+ * > Although this should be extremely rare.
+ *
+ * @param state The object that will be updated with the [Result] state when the task is finished.
+ *   The value of the argument must be `null`.
+ *
+ * @throws IllegalArgumentException if the value of the **state** passed in is not `null`. */
 @Composable
-fun <T> rememberWork(executor: Executor = WORKER_THREAD, task: suspend () -> T): MutableState<Result<T>?> = remember {
+fun <T> rememberWork(
+    state: MutableState<Result<T>?> = mutableStateOf(null),
+    executor: Executor = WORKER_THREAD,
+    task: suspend () -> T
+): MutableState<Result<T>?> = remember {
+    suspend fun runTask()
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        = try {
+            Result.Ok(task())
+        } catch (e: Throwable) {
+            Result.Err(e)
+        }
+
     // Run on the current thread if it is the worker thread
     if (isWorkerThread()) {
         runBlocking {
-            // Don't allow an exception to terminate the worker thread; gotta catch em all.
-            mutableStateOf(try {
-                Result.Ok(task())
-            } catch (e: Throwable) {
-                Result.Err(e)
-            })
+            state.value = runTask()
+            state
         }
     } else {
-        val state = mutableStateOf<Result<T>?>(null)
+        if (state.value != null) {
+            throw IllegalArgumentException("Value of 'state' must start as null")
+        }
 
         executor.execute {
-            if (executor == WORKER_THREAD && WORKER_THREAD_ID == null) {
-                WORKER_THREAD_ID = Thread.currentThread().id
-            }
+            setWorkerThreadId(executor)
 
             runBlocking {
                 // Don't allow an exception to terminate the worker thread; gotta catch em all.
-                state.value = try {
-                    Result.Ok(task())
-                } catch (e: Throwable) {
-                    Result.Err(e)
-                }
+                state.value = runTask()
             }
         }
 
@@ -141,12 +160,12 @@ fun <T> rememberWork(executor: Executor = WORKER_THREAD, task: suspend () -> T):
     }
 }
 
-/** Run a **task** in a *single-threaded* work Executor,
+/** Run a **task** in a *single-threaded* work [Executor],
  * returning the value that the **task** produced.
  *
  * This function adds the **task** to the Executor and *suspends* while waiting for the **task** to produce a result.
- * Unlike [rememberWork], this function will *rethrow* any [Exception]s thrown by the **task**.
- * It is up to the caller to *catch* those [Exception]s.
+ * Like [rememberWork], this function *not rethrow* any [Exception]s thrown by the **task**.
+ * Instead, a [Result] is returned.
  *
  * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
  *
@@ -155,34 +174,61 @@ fun <T> rememberWork(executor: Executor = WORKER_THREAD, task: suspend () -> T):
  * > This optimizes the order of running *tasks* in case the caller calls [runWork] without knowing it is in the worker thread,
  * > Although this should be extremely rare. */
 suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> T): Result<T> {
-    return if (isWorkerThread()) {
+    suspend fun runTask()
         // Don't allow an exception to terminate the worker thread; gotta catch em all.
-        try {
+        = try {
             Result.Ok(task())
         } catch (e: Throwable) {
             Result.Err(e)
         }
+
+    return if (isWorkerThread()) {
+        runTask()
     } else {
         val channel = Channel<Result<T>>(capacity = 1)
 
         executor.execute {
-            if (executor == WORKER_THREAD && WORKER_THREAD_ID == null) {
-                WORKER_THREAD_ID = Thread.currentThread().id
-            }
+            setWorkerThreadId(executor)
 
-            // Don't know why it's complaining about this if the Runnable is not suspend, so it wouldn't compile anyways.
-            @Suppress("RunBlockingInSuspendFunction")
+            // Don't know why it's complaining about this if the Runnable is not suspend, so it wouldn't compile anyway.
             runBlocking {
-                // Don't allow an exception to terminate the worker thread; gotta catch em all.
-                channel.send(try {
-                    Result.Ok(task())
-                } catch (e: Throwable) {
-                    Result.Err(e)
-                })
+                channel.send(runTask())
             }
         }
 
         channel.receive()
+    }
+}
+
+/** Run a **task** in a *single-threaded* work [Executor].
+ * Use this if you don't want to *wait* for the value returned when the task is finished.
+ *
+ * Like [rememberWork], this function *not rethrow* any [Exception]s thrown by the **task**.
+ * Instead, it will be printed to log.
+ *
+ * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
+ *
+ * > Note: If this function detects that it is being called from the *default* **worker thread**,
+ * > it will just run the *task* in the same thread without first pushing it to the Executor and waiting its turn.
+ * > This optimizes the order of running *tasks* in case the caller calls [dispatchWork] without knowing it is in the worker thread,
+ * > Although this should be extremely rare. */
+fun dispatchWork(executor: Executor = WORKER_THREAD, task: suspend () -> Unit) {
+    fun runTask() = runBlocking {
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        try {
+            task()
+        } catch (e: Throwable) {
+            Log.e("dispatchWork", e.toString())
+        }
+    }
+
+    if (isWorkerThread()) {
+        runTask()
+    } else {
+        executor.execute {
+            setWorkerThreadId(executor)
+            runTask()
+        }
     }
 }
 
