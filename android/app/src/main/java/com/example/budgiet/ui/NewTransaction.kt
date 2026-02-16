@@ -42,11 +42,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
@@ -60,6 +60,7 @@ import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.clearRecentlyUsedCurrencies
 import com.example.budgiet.formatPrice
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
@@ -487,45 +488,44 @@ fun CurrencySelectorButton(
         }
     }
 
+    val recentCurrencies by getRecentlySelectedCurrencies()
+    // This list gets re-sorted (not recalculated) every time the state of recentCurrencies changes.
+    val orderedCurrencies = remember {
+        val currencies = Currency.getAvailableCurrencies()
+            // This can be a MutableList, and not a MutableStateList because the sort state lies in recentCurrencies.
+            .toMutableList()
+
+        // Sort Locale Currency to the first position.
+        currencies.remove(localeCurrency)
+        currencies.add(0, localeCurrency)
+
+        // Sort alphabetically (first, before recency order).
+        currencies
+            // ... but keep Locale currency first.
+            .subList(1, currencies.size)
+            .sortBy { currency -> currency.currencyCode }
+
+        currencies
+    }
+
     val currencySearchState = rememberTextFieldState()
     val currencyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    fun scrollToTop() {
+    val context = LocalContext.current
+    fun closeMenu() {
         coroutineScope.launch {
+            currencyMenuOpen = false
             currencyListState.scrollToItem(0)
         }
     }
 
-    // All other currencies apart from the Locale currency.
-    // FIXME: this is recalculated twice after user selects a currency, and once more when the menu is reopened.
-    //  Ideally it should only be recalculated once (when menu is reopened).
-    val sortedCurrencies = run {
-        val otherCurrencies = Currency.getAvailableCurrencies()
-        val recentCurrencies = getRecentlySelectedCurrencies()
-            .map { code -> Currency.getInstance(code) }
-
-        // Remove duplicate currencies found in adjacent collections.
-        otherCurrencies.remove(localeCurrency)
-        otherCurrencies.removeAll(recentCurrencies.toSet())
-
-        // The Locale's currency should always go first,
-        // then the recently used currencies (sorted by last used),
-        // and finally all other currencies (sorted alphabetically)
-        listOf(localeCurrency) +
-                recentCurrencies.dropWhile { it.currencyCode == localeCurrency.currencyCode } +
-                otherCurrencies.toList()
-                    // Sort currencies (excluding localeCurrency alphabetically)
-                    .sortedBy { currency -> currency.currencyCode }
-    }
-    val searchedCurrencies = sortedCurrencies.filter { currency ->
-        currency.currencyCode
-            .contains(currencySearchState.text,
-                ignoreCase = true,
-            )
-                || currency.displayName
-            .contains(currencySearchState.text,
-                ignoreCase = true,
-            )
+    fun List<Currency>.currencySearchFilter(query: CharSequence): List<Currency> {
+        return this.filter { currency ->
+            currency.currencyCode
+                .contains(query, ignoreCase = true)
+            || currency.displayName
+                .contains(query, ignoreCase = true)
+        }
     }
 
     LazyDropdownMenu(
@@ -538,13 +538,43 @@ fun CurrencySelectorButton(
             PlainSearchBar(
                 modifier = Modifier.padding(4.dp),
                 state = currencySearchState,
-                onQueryChange = { scrollToTop() },
+                onQueryChange = { closeMenu() },
                 hideIconOnQuery = true,
             )
         }
     ) {
+        when (recentCurrencies) {
+            // Don't show any extra items, but re-sort the currencies list.
+            is Result.Ok -> {
+                val recentCurrencies = (recentCurrencies as Result.Ok).value
+                // Slice list of ordered currencies to keep the locale currency at the beginning.
+                val orderedCurrencies = orderedCurrencies.subList(1, orderedCurrencies.size)
+
+                // Put recently used currencies before other currencies (except locale).
+                var insertIdx = 0
+                for (recent in recentCurrencies) {
+                    val idx = orderedCurrencies.indexOfFirst { it.currencyCode == recent }
+                    // Skip if currency is not in orderedCurrencies (i.e. locale).
+                    if (idx == -1) {
+                        continue
+                    }
+
+                    orderedCurrencies.add(insertIdx++, orderedCurrencies.removeAt(idx))
+                }
+            }
+            // Recent currencies not loaded yet.
+            // Show loading item at the top.
+            null -> this.item {
+                this.LoadingMenuItem()
+            }
+            // Show an error item at the top.
+            is Result.Err -> this.item {
+                this.ErrorMenuItem((recentCurrencies as Result.Err).error)
+            }
+        }
+
         this.items(
-            items = searchedCurrencies,
+            items = orderedCurrencies.currencySearchFilter(currencySearchState.text),
             key = { currency -> currency.currencyCode }
         ) { currency ->
             PlainToolTipBox(currency.displayName) {
@@ -563,13 +593,36 @@ fun CurrencySelectorButton(
                         }
                     },
                     onClick = {
-                        currencyMenuOpen = false
-                        markCurrencyRecentlyUsed(currency.currencyCode)
-                        scrollToTop()
+                        closeMenu()
+                        context.markCurrencyRecentlyUsed(currency.currencyCode)
                         onCurrencyChange(currency)
                     },
                 )
             }
+        }
+
+        this.item(key = "DELETE") {
+            PlainToolTipBox("Clear list of recent currencies to reset the list to its original state") { }
+            this.MenuItem(
+                leadingIcon = {
+                    Icon(
+                        painterResource(R.drawable.close_24px),
+                        "Clear recents",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                headlineContent = {
+                    Text("Reset", color = MaterialTheme.colorScheme.error)
+                },
+                onClick = {
+                    closeMenu()
+                    context.clearRecentlyUsedCurrencies()
+                    // Sort ordered currencies alphabetically to reset the list
+                    orderedCurrencies
+                        .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
+                        .sortBy { currency -> currency.currencyCode }
+                }
+            )
         }
     }
 }
