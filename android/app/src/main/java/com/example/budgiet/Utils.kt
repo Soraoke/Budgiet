@@ -95,6 +95,17 @@ sealed class Result<out T> {
         }
     }
 
+    /** Unwraps the Result to retrieve it's Err throwable
+     * If the Result is Ok, an exception will be *thrown*.
+     *
+     * @return Ok Result value */
+    fun unwrapErr(): Throwable {
+        return when (this) {
+            is Ok -> throw RuntimeException("Expected error value, found Ok(${this.value})")
+            is Err -> this.error
+        }
+    }
+
     /** Transforms the value of `this` if it is [Ok].
      * Does nothing otherwise. */
     fun <U> map(transform: (T) -> U): Result<U> {
