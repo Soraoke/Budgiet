@@ -396,7 +396,8 @@ fun PriceField(
     modifier: Modifier = Modifier,
     selectedPrice: String,
     onPriceChange: (String) -> Unit,
-    selectedCurrency: Currency = remember { Currency.getInstance(Locale.getDefault()) },
+    locale: Locale = Locale.getDefault(),
+    selectedCurrency: Currency = remember { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
     var parseError by remember { mutableStateOf<String?>(null) }
@@ -412,7 +413,7 @@ fun PriceField(
                 // to see if it is invalid (outputting an error doing so) or format the
                 // price accordingly if valid
                 if (!state.isFocused) {
-                    when (val result = selectedCurrency.validatePriceInput(selectedPrice)) {
+                    when (val result = selectedCurrency.validatePriceInput(selectedPrice, locale)) {
                         is Result.Ok -> {
                             onPriceChange(result.value)
                             parseError = null
@@ -440,7 +441,7 @@ fun PriceField(
         },
         placeholder = {
             Text(
-                selectedCurrency.formatPrice(0.0),
+                selectedCurrency.formatPrice(0.0, locale),
                 textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.outline,
@@ -457,13 +458,14 @@ fun PriceField(
 fun CurrencySelectorButton(
     modifier: Modifier = Modifier,
     hideDefaultCurrencyCode: Boolean = true,
-    selectedCurrency: Currency = remember { Currency.getInstance(Locale.getDefault()) },
+    locale: Locale = Locale.getDefault(),
+    selectedCurrency: Currency = remember { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
     var currencyMenuOpen by remember { mutableStateOf(false) }
 
-    // TODO: choose currency from settings instead, only default to locale if the setting is not set.
-    val localeCurrency = remember { Currency.getInstance(Locale.getDefault()) }
+    // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
+    val localeCurrency = remember { Currency.getInstance(locale) }
 
     PlainToolTipBox("Change currency") {
         TextButton(
