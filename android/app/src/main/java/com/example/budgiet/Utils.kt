@@ -173,7 +173,6 @@ fun <T> rememberWork(
             setWorkerThreadId(executor)
 
             runBlocking {
-                // Don't allow an exception to terminate the worker thread; gotta catch em all.
                 state.value = runTask()
             }
         }
@@ -212,7 +211,6 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
         executor.execute {
             setWorkerThreadId(executor)
 
-            // Don't know why it's complaining about this if the Runnable is not suspend, so it wouldn't compile anyway.
             runBlocking {
                 channel.send(runTask())
             }
