@@ -87,11 +87,6 @@ fun MainPage(modifier: Modifier = Modifier) {
     }
 }
 
-/** ***WARNING!***: Don't use this directly. Instead, use [getRecentlySelectedCurrencies], [clearRecentlyUsedCurrencies], or [markCurrencyRecentlyUsed].
- *
- * This should go in `Price.kt`, but putting it there prevents recomposition (for some reason) even when the MutableState is updated. */
-internal val recentlyUsedCurrencies: MutableState<Result<SnapshotStateList<String>>?> = mutableStateOf(null)
-
 class Location(
     val id: UInt,
     val name: String,

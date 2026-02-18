@@ -3,13 +3,15 @@ package com.example.budgiet
 import android.annotation.SuppressLint
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -24,11 +26,8 @@ import java.util.concurrent.Executors
 internal annotation class UsableInTestsOnly
 
 
-/** An [Executor][java.util.concurrent.Executor] containing the *single thread* that will run *blocking tasks*.
- *
- * A normal [Thread] could be used here, but it's better to use an [Executor][java.util.concurrent.Executor]
- * for ease of pushing tasks to the thread. */
-private val WORKER_THREAD = Executors.newSingleThreadExecutor()
+/** An [Executor][java.util.concurrent.Executor] containing the *single thread* that will run *blocking tasks*. */
+private val WORKER_THREAD = Executors.newSingleThreadScheduledExecutor()
 /** The **ID** of the [Thread] in the *single-threaded executor* [WORKER_THREAD].
  *
  * After it is first initialized, the **ID** will not change,
@@ -129,27 +128,13 @@ sealed class Result<out T> {
  * Throwing an [Exception] in a [Composable] is not ideal since it will crash the program if not caught,
  * so this function will automatically catch [Exception]s and put it in the [Result] instead.
  *
- * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
- *
- * Optionally, the caller can pass a custom [MutableState] in the **state** argument.
- * This allows using a persistent [MutableState] object to put the [Result] of the **task**.
- * Note that the value must be `null`, or an [Exception] will be thrown (will not return [Result.Err]).
- *
- * > Note: If this function detects that it is being called from the *default* **worker thread**,
- * > it will just run the *task* in the same thread without first pushing it to the Executor and waiting its turn.
- * > This optimizes the order of running *tasks* in case the caller calls [rememberWork] without knowing it is in the worker thread,
- * > Although this should be extremely rare.
- *
- * @param state The object that will be updated with the [Result] state when the task is finished.
- *   The value of the argument must be `null`.
- *
- * @throws IllegalArgumentException if the value of the **state** passed in is not `null`. */
+ * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**. */
 @Composable
 fun <T> rememberWork(
-    state: MutableState<Result<T>?> = mutableStateOf(null),
     executor: Executor = WORKER_THREAD,
     task: suspend () -> T
-): MutableState<Result<T>?> = remember {
+): MutableState<Result<T>?> {
+    val state = remember { mutableStateOf<Result<T>?>(null) }
     suspend fun runTask()
         // Don't allow an exception to terminate the worker thread; gotta catch em all.
         = try {
@@ -158,27 +143,15 @@ fun <T> rememberWork(
             Result.Err(e)
         }
 
-    // Run on the current thread if it is the worker thread
-    if (isWorkerThread()) {
-        runBlocking {
-            state.value = runTask()
-            state
-        }
-    } else {
-        if (state.value != null) {
-            throw IllegalArgumentException("Value of 'state' must start as null")
-        }
-
-        executor.execute {
+    LaunchedEffect(Unit) {
+        withContext(executor.asCoroutineDispatcher()) {
             setWorkerThreadId(executor)
 
-            runBlocking {
-                state.value = runTask()
-            }
+            state.value = runTask()
         }
-
-        state
     }
+
+    return state
 }
 
 /** Run a **task** in a *single-threaded* work [Executor],
@@ -206,17 +179,11 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
     return if (isWorkerThread()) {
         runTask()
     } else {
-        val channel = Channel<Result<T>>(capacity = 1)
-
-        executor.execute {
+        withContext(executor.asCoroutineDispatcher()) {
             setWorkerThreadId(executor)
 
-            runBlocking {
-                channel.send(runTask())
-            }
+            runTask()
         }
-
-        channel.receive()
     }
 }
 
