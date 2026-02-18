@@ -60,17 +60,15 @@ import androidx.compose.ui.window.Dialog
 import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
+import com.example.budgiet.RecentCurrencies
 import com.example.budgiet.Result
-import com.example.budgiet.clearRecentlyUsedCurrencies
 import com.example.budgiet.formatPrice
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
-import com.example.budgiet.getRecentlySelectedCurrencies
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
-import com.example.budgiet.markCurrencyRecentlyUsed
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -493,7 +491,7 @@ fun CurrencySelectorButton(
         }
     }
 
-    val recentCurrencies by getRecentlySelectedCurrencies()
+    val recentCurrencies by RecentCurrencies.get()
     // This list gets re-sorted (not recalculated) every time the state of recentCurrencies changes.
     val orderedCurrencies = remember {
         val currencies = Currency.getAvailableCurrencies()
@@ -605,7 +603,7 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        context.markCurrencyRecentlyUsed(currency.currencyCode)
+                        RecentCurrencies.moveToFront(currency.currencyCode, context)
                         onCurrencyChange(currency)
                     },
                 )
@@ -627,7 +625,7 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        context.clearRecentlyUsedCurrencies()
+                        RecentCurrencies.clear(context)
                         // Sort ordered currencies alphabetically to reset the list
                         orderedCurrencies
                             .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
