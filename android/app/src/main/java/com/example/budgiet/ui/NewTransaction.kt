@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
@@ -85,6 +86,7 @@ import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
 import com.example.budgiet.validatePriceInput
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Currency
@@ -430,6 +432,7 @@ fun PriceField(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done
         ),
+        singleLine = true,
         keyboardActions = KeyboardActions(
             onDone = { focusManager.clearFocus() }
         ),
@@ -514,11 +517,16 @@ fun CurrencySelectorButton(
     val currencyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    fun closeMenu() {
+    fun scrollToTop() {
         coroutineScope.launch {
-            currencyMenuOpen = false
+            delay(500)
             currencyListState.scrollToItem(0)
         }
+    }
+    fun closeMenu() {
+        currencyMenuOpen = false
+        currencySearchState.clearText()
+        scrollToTop()
     }
 
     fun List<Currency>.currencySearchFilter(query: CharSequence): List<Currency> {
@@ -532,7 +540,7 @@ fun CurrencySelectorButton(
 
     LazyDropdownMenu(
         showDropdown = currencyMenuOpen,
-        onDismiss = { currencyMenuOpen = false },
+        onDismiss = { closeMenu() },
         shape = MaterialTheme.shapes.large,
         state = currencyListState,
         leadingContent = {
@@ -540,7 +548,7 @@ fun CurrencySelectorButton(
             PlainSearchBar(
                 modifier = Modifier.padding(4.dp),
                 state = currencySearchState,
-                onQueryChange = { closeMenu() },
+                onQueryChange = { scrollToTop() },
                 hideIconOnQuery = true,
             )
         }
@@ -571,7 +579,8 @@ fun CurrencySelectorButton(
             }
             // Show an error item at the top.
             is Result.Err -> this.item {
-                this.ErrorMenuItem((recentCurrencies as Result.Err).error)
+                val err = (recentCurrencies as Result.Err).error
+                this.ErrorMenuItem(err)
             }
         }
 
@@ -604,27 +613,28 @@ fun CurrencySelectorButton(
         }
 
         this.item(key = "DELETE") {
-            PlainToolTipBox("Clear list of recent currencies to reset the list to its original state") { }
-            this.MenuItem(
-                leadingIcon = {
-                    Icon(
-                        painterResource(R.drawable.close_24px),
-                        "Clear recents",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                },
-                headlineContent = {
-                    Text("Reset", color = MaterialTheme.colorScheme.error)
-                },
-                onClick = {
-                    closeMenu()
-                    context.clearRecentlyUsedCurrencies()
-                    // Sort ordered currencies alphabetically to reset the list
-                    orderedCurrencies
-                        .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
-                        .sortBy { currency -> currency.currencyCode }
-                }
-            )
+            PlainToolTipBox("Clear list of recent currencies to reset the list to its original state") {
+                this.MenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painterResource(R.drawable.close_24px),
+                            "Clear recents",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    headlineContent = {
+                        Text("Reset", color = MaterialTheme.colorScheme.error)
+                    },
+                    onClick = {
+                        closeMenu()
+                        context.clearRecentlyUsedCurrencies()
+                        // Sort ordered currencies alphabetically to reset the list
+                        orderedCurrencies
+                            .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
+                            .sortBy { currency -> currency.currencyCode }
+                    }
+                )
+            }
         }
     }
 }

@@ -1,5 +1,14 @@
 package com.example.budgiet
 
+import android.content.Context
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
 import java.math.RoundingMode
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
@@ -60,7 +69,6 @@ fun Currency.parsePrice(price: String, locale: Locale): Result<Double?> {
     val symbols = DecimalFormatSymbols.getInstance(locale)
     // Separates the decimal digits from unit digits (locale-specific) (i.e. ',', '.').
     val decimalSeparator = symbols.decimalSeparator
-    // TODO: implement parsing with group separator
     // Separate digits in the thousands (local-specific).
     val groupSeparator = symbols.groupingSeparator
 
@@ -152,3 +160,98 @@ fun Currency.validatePriceInput(price: String, locale: Locale): Result<String>
                 this.formatPrice(price, locale)
             } ?: ""
         }
+
+const val RECENT_CURRENCIES_FILE_NAME = "recentCurrencies.txt"
+const val RECENT_CURRENCIES_LOG_TAG = "RecentlyUsedCurrencies"
+
+/** Returns an ordered [List] of **currency codes**, sorted by *most recent use*.
+ *
+ * The return value tells the state of the data:
+ *  * **`null`**: The data is still being loaded.
+ *  * **[Result.Err]**: There was an error loading the data.
+ *  * **[Result.Ok]**: The data finished loading successfully.
+ *
+ *  Since this is a [Composable] with an internal [MutableState],
+ *  changes in the state will propagate to the caller and it will be recomposed,
+ *  even if this function itself does not return a [MutableState]. */
+@Composable
+fun getRecentlySelectedCurrencies(): State<Result<List<String>>?> {
+    if (recentlyUsedCurrencies.value == null) {
+        // Load ordered currencies from storage.
+
+        val context = LocalContext.current
+        rememberWork(recentlyUsedCurrencies) {
+            // FIXME: Composable does not recompose when work is finished,
+            //  even though the recentlyUsedCurrencies MutableState is modified with the returned value.
+            //  btw, this only happens when recentlyUsedCurrencies is NOT in MainActivity.
+            // FIXME: its a timing issue!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//            delay(50)
+            val file = File(context.filesDir, RECENT_CURRENCIES_FILE_NAME)
+            // Read the entirety of the file to move around the elements.
+            file.createNewFile()
+            file.readText()
+                .split('\n')
+                // Last element will always be empty because the file always ends with newLine (unless it is empty).
+                .dropLast(1)
+                .toMutableStateList()
+        }
+    }
+
+    if (recentlyUsedCurrencies.value is Result.Err) {
+        Log.e(RECENT_CURRENCIES_LOG_TAG, "Error reading recent currencies from storage: ${(recentlyUsedCurrencies.value as Result.Err).error}")
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    return recentlyUsedCurrencies as State<Result<List<String>>?>
+}
+
+/** Removes (clears) all currencies from the *ordered list* in memory and from the file in storage. */
+fun Context.clearRecentlyUsedCurrencies() {
+    // Clear in memory
+    recentlyUsedCurrencies.value = Result.Ok(mutableStateListOf())
+    // Clear in storage
+    dispatchWork {
+        Log.i(RECENT_CURRENCIES_LOG_TAG, "Clear recently used currencies in storage.")
+        val file = File(this.filesDir, RECENT_CURRENCIES_FILE_NAME)
+        file.writeText("")
+    }
+}
+
+/** Marks a [Currency][java.util.Currency] as recently used (a.k.a. it was just selected),
+ * moving it to the front of the [List] of recent currencies,
+ * which is **sorted** by latest use.
+ *
+ * This function will also write to the [File] in storage the same content as the [List] in memory.
+ *
+ * See [getRecentlySelectedCurrencies] to read from this [List]. */
+fun Context.markCurrencyRecentlyUsed(currencyCode: String) {
+    when (recentlyUsedCurrencies.value) {
+        null, is Result.Err -> recentlyUsedCurrencies.value = Result.Ok(mutableStateListOf())
+        is Result.Ok -> { }
+    }
+    val orderedCurrencies = recentlyUsedCurrencies.value!!.unwrap() as MutableList<String>
+
+    Log.i(RECENT_CURRENCIES_LOG_TAG, "Moving Currency \"$currencyCode\" to the front of MutableStateList in memory.")
+
+    // Apply to mutable list in memory
+    // Find currency in the argument
+    when (val idx = orderedCurrencies.indexOf(currencyCode)) {
+        // The currency was already first in the list; do nothing.
+        0 -> { }
+        // Currency was not found in the List, so it must be prepended.
+        -1 -> orderedCurrencies.add(0, currencyCode)
+        // Remove target currency (arg) from the List, and put it in the front.
+        else -> {
+            orderedCurrencies.add(0, orderedCurrencies.removeAt(idx))
+        }
+    }
+
+    // Apply to storage
+    dispatchWork {
+        Log.i(RECENT_CURRENCIES_LOG_TAG, "Moving Currency \"$currencyCode\" to the front of File in storage.")
+        val file = File(this.filesDir, RECENT_CURRENCIES_FILE_NAME)
+        file.createNewFile()
+        // Write the modified list
+        file.writeText(orderedCurrencies.joinToString(separator = "", truncated = "") { code -> "$code\n" })
+    }
+}
