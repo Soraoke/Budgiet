@@ -281,7 +281,7 @@ class PriceFieldTests {
             PriceAssertion(
                 null,
                 null,
-                "Your locale uses '.' as decimal",
+                "Digits must be in groups of 3 if using a group separator (',')",
                 false
             )
         ))
