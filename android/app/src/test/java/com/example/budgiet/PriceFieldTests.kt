@@ -18,13 +18,18 @@ val itl: Locale = Locale.ITALY
 class PriceFieldTests {
     // TODO: test with locales that use different digits.
 
-    @Test
-    fun parsePrice() {
-        // Test in terms of locale
-        fun Locale.parsePrice(price: String)
-            = Currency.getInstance(this)
-                .parsePrice(price, this)
+    // Test in terms of locale
+    fun Locale.parsePrice(price: String)
+        = Currency.getInstance(this)
+            .parsePrice(price, this)
 
+    // Test in terms of locale
+    fun Locale.formatPrice(price: Double)
+        = Currency.getInstance(this)
+            .formatPrice(price, this)
+
+    @Test
+    fun parsePriceTest() {
         // Parse Integer.
         usd.parsePrice("1").unwrap()
             .assertEquals(1.0)
@@ -134,12 +139,7 @@ class PriceFieldTests {
     }
 
     @Test
-    fun formatPrice() {
-        // Test in terms of locale
-        fun Locale.formatPrice(price: Double)
-            = Currency.getInstance(this)
-                .formatPrice(price, this)
-
+    fun formatPriceTest() {
         // Integer value
         usd.formatPrice(10.0)
             .assertEquals("10.00")
