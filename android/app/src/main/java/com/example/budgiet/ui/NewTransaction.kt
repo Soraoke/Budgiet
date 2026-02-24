@@ -400,6 +400,7 @@ fun PriceField(
     selectedCurrency: Currency = remember { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
+    var currencyMenuOpen by remember { mutableStateOf(false) }
     var parseError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
@@ -436,6 +437,8 @@ fun PriceField(
         ),
         leadingIcon = {
             CurrencySelectorButton(
+                showCurrencyMenu = currencyMenuOpen,
+                onMenuStateChange = { currencyMenuOpen = it },
                 selectedCurrency = selectedCurrency,
                 onCurrencyChange = onCurrencyChange,
             )
@@ -455,16 +458,28 @@ fun PriceField(
     )
 }
 
+/** Display a [Button][TextButton] that gives the user the option of choosing the [Currency] for the value of the [PriceField].
+ *
+ * @param hideDefaultCurrencyCode Whether the **currency code** (e.g. `"USD"`)
+ *   will be displayed on the button if [selectedCurrency] is the **default** currency of the [locale].
+ *   This should be set to true on production code.
+ * @param showCurrencyMenu Whether the [DropdownMenu][androidx.compose.material3.DropdownMenu] listing all the currencies should be displayed.
+ * @param onMenuStateChange What to do when the Composable requests a change in the
+ *   [DropdownMenu][androidx.compose.material3.DropdownMenu]'s state (i.e. *open* or *close*).
+ * @param locale Determines which [Currency] is shown in the menu first,
+ *   and whether the **currency code** is displayed on the button (according to [hideDefaultCurrencyCode]).
+ * @param selectedCurrency The [Currency] (code and icon) to display on the button.
+ * @param onCurrencyChange What to do when the Composable requests a change in the [selectedCurrency]. */
 @Composable
 fun CurrencySelectorButton(
     modifier: Modifier = Modifier,
     hideDefaultCurrencyCode: Boolean = true,
+    showCurrencyMenu: Boolean,
+    onMenuStateChange: (Boolean) -> Unit,
     locale: Locale = Locale.getDefault(),
     selectedCurrency: Currency = remember { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
-    var currencyMenuOpen by remember { mutableStateOf(false) }
-
     // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
     val localeCurrency = remember { Currency.getInstance(locale) }
 
@@ -522,7 +537,7 @@ fun CurrencySelectorButton(
         }
     }
     fun closeMenu() {
-        currencyMenuOpen = false
+        onMenuStateChange(false)
         currencySearchState.clearText()
         scrollToTop()
     }
@@ -537,7 +552,7 @@ fun CurrencySelectorButton(
     }
 
     LazyDropdownMenu(
-        showDropdown = currencyMenuOpen,
+        showDropdown = showCurrencyMenu,
         onDismiss = { closeMenu() },
         shape = MaterialTheme.shapes.large,
         state = currencyListState,
@@ -712,8 +727,20 @@ fun LocationPickerPreview() {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 150, heightDp = 400)
 @Composable
 fun CurrenciesDropDownPreview() {
-
+    BudgietTheme {
+        CurrencySelectorButton(
+            modifier = Modifier.padding(8.dp)
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer,
+                    MaterialTheme.shapes.extraLarge,
+                ),
+            hideDefaultCurrencyCode = false,
+            showCurrencyMenu = true,
+            onMenuStateChange = { },
+            onCurrencyChange = { },
+        )
+    }
 }
