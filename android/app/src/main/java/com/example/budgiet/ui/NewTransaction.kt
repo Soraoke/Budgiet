@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -24,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -49,11 +52,13 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
@@ -486,8 +491,15 @@ fun CurrencySelectorButton(
     PlainToolTipBox("Change currency") {
         TextButton(
             modifier = modifier.padding(start = 8.dp),
-            onClick = { currencyMenuOpen = !currencyMenuOpen },
-            contentPadding = PaddingValues(0.dp),
+            onClick = { onMenuStateChange(!showCurrencyMenu) },
+            contentPadding = ButtonDefaults.TextButtonContentPadding.let { padding ->
+                PaddingValues(
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding(),
+                    start = padding.calculateStartPadding(LocalLayoutDirection.current) / 3,
+                    end = 0.dp,
+                )
+            },
         ) {
             val icon = getCurrencyIcon(selectedCurrency)
             val code = selectedCurrency.currencyCode
@@ -502,6 +514,9 @@ fun CurrencySelectorButton(
             || icon == null
             || !hideDefaultCurrencyCode) {
                 Text(code)
+                Spacer(Modifier.width(
+                    ButtonDefaults.TextButtonContentPadding.calculateEndPadding(LocalLayoutDirection.current)
+                ))
             }
         }
     }
