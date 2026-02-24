@@ -7,7 +7,7 @@ import java.util.Locale
 // basic style.
 val usd: Locale = Locale.US
 // Uses 3 decimal places, and space-like group separator.
-val tnd: Locale = Locale("fr", "TN")
+val tnd: Locale = Locale.Builder().setLanguage("fr").setRegion("TN").build()
 //val bhd: Locale = Locale.of("ar", "BH")
 // Uses period for digit separator, and comma for decimal separator (reversed).
 val itl: Locale = Locale.ITALY
