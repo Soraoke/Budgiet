@@ -55,16 +55,18 @@ class CurrencySelectorTests {
 
         val searchBar
             get() = run {
-                this.openMenu()
+                this.showCurrencyMenu = true
                 this.rule.onNodeWithContentDescription("Search")
             }
 
         /** NOTE: each currency item node is wrapped in a TooltipBox node, which are the actual children of the LazyColumn. */
         val currenciesList
             get() = run {
-                this.openMenu()
+                this.showCurrencyMenu = true
                 this.rule.onNode(hasScrollAction() and hasScrollToIndexAction())
             }
+
+        private var showCurrencyMenu by mutableStateOf(false)
 
         init {
             this.rule.setContent {
@@ -74,16 +76,11 @@ class CurrencySelectorTests {
                     modifier = Modifier.testTag(CURRENCY_SELECTOR_BUTTON_TEST_TAG),
                     hideDefaultCurrencyCode = hideDefaultCurrencyCode,
                     locale = defaultLocale,
+                    showCurrencyMenu = showCurrencyMenu,
+                    onMenuStateChange = { showCurrencyMenu = it },
                     selectedCurrency = selectedCurrency,
                     onCurrencyChange = { selectedCurrency = it },
                 )
-            }
-        }
-
-        /** Clicks on the **button** to open the `DropdownMenu`. */
-        fun openMenu() {
-            if (this.rule.onNode(isPopup()).isNotDisplayed()) {
-                this.button.performClick()
             }
         }
 
