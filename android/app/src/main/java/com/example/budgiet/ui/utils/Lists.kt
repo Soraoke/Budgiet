@@ -54,6 +54,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.example.budgiet.ListPager
+import com.example.budgiet.ListPagingSource
 import com.example.budgiet.R
 import com.example.budgiet.rememberListPager
 
@@ -393,16 +394,29 @@ fun ListColumn(
  * The controller is *bound* to a [Pager] after it is passed to a [Composable] that uses a [Pager].
  * Before the controller is *bound* none of its methods will have any effect and will return *default values*. */
 class PagerController internal constructor() {
-    private lateinit var _items: LazyPagingItems<*>
-    private lateinit var pager: ListPager<*>
+    private sealed class InnerState {
+        object UnInit : InnerState()
+        class Init(
+            val pager: ListPager<*>,
+            val items: LazyPagingItems<*>,
+        ): InnerState()
+
+        fun isInit(): Init? = when (this) {
+            is Init -> this
+            is UnInit -> null
+        }
+    }
+    private var state: InnerState = InnerState.UnInit
 
     /** Initializes the controller to operate on the provided [Pager] **items**. */
     @SuppressLint("ComposableNaming")
     @Composable
     internal fun <T: Any> bind(pager: ListPager<T>) {
-        if (itemsNullable == null) {
-            this.pager = pager
-            this._items = pager.flow.collectAsLazyPagingItems()
+        if (this.state is InnerState.UnInit) {
+            state = InnerState.Init(
+                pager = pager,
+                items = pager.flow.collectAsLazyPagingItems(),
+            )
         }
     }
 
@@ -411,7 +425,12 @@ class PagerController internal constructor() {
      * @throws IllegalArgumentException if the caller does not use the same pager that this controller was bound to.
      * @throws UninitializedPropertyAccessException if this controller has not been bound to a pager yet. */
     internal fun <T: Any> items(pager: ListPager<T>): LazyPagingItems<T> {
-        if (this.pager !== pager) {
+        if (this.state is InnerState.UnInit) {
+            throw UninitializedPropertyAccessException("Must call PagerController.bind() before calling PagerController.items()")
+        }
+        val state = this.state as InnerState.Init
+
+        if (state.pager !== pager) {
             throw IllegalArgumentException("Used a different pager than the one that this controller was bound to")
         }
         /* SAFETY: This cast will always work because _items is tied to the pager,
@@ -419,28 +438,24 @@ class PagerController internal constructor() {
          * and the values never change after they're initialized.
          * */
         @Suppress("UNCHECKED_CAST")
-        return this._items as LazyPagingItems<T>
+        return state.items as LazyPagingItems<T>
     }
-
-    /** Exposed methods MUST use this instead of [items]. */
-    private val itemsNullable: LazyPagingItems<*>?
-        get() = if (this::_items.isInitialized) { this._items } else { null }
 
     /** Trigger a **refresh* in the [Pager]'s data,
      * invalidating *all loaded items* in the [Pager].
      *
      * Wrapper for [LazyPagingItems.refresh]. */
-    fun refresh() = this.itemsNullable?.refresh()
+    fun refresh() = this.state.isInit()?.items?.refresh()
 
     /** Check the **status** of the *Page* of items that are being **prepended** to the list. */
     val prependStatus: LoadState
-        get() = this.itemsNullable?.loadState?.prepend ?: LoadState.NotLoading(false)
+        get() = this.state.isInit()?.run { this.items.loadState.prepend } ?: LoadState.NotLoading(false)
     /** Check the **status** of *Pages* after a [refresh]. */
     val refreshStatus: LoadState
-        get() = this.itemsNullable?.loadState?.refresh ?: LoadState.NotLoading(false)
+        get() = this.state.isInit()?.run { this.items.loadState.refresh } ?: LoadState.NotLoading(false)
     /** Check the **status** of the *Page* of items that are being **appended** to the list. */
     val appendStatus: LoadState
-        get() = this.itemsNullable?.loadState?.append ?: LoadState.NotLoading(false)
+        get() = this.state.isInit()?.run { this.items.loadState.append } ?: LoadState.NotLoading(false)
 }
 
 /** A [ListColumn] that uses a [Pager] to load items.

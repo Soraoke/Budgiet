@@ -192,7 +192,10 @@ fun PlainSearchBar(
         } } else { null },
         trailingIcon = if (state.text.isNotEmpty()) { {
             PlainToolTipBox("Clear search") {
-                IconButton(onClick = { state.edit { replace(0, length, "") } }) {
+                IconButton(onClick = {
+                    state.edit { replace(0, length, "") }
+                    onQueryChange(state.text)
+                }) {
                     Icon(painterResource(R.drawable.close_24px), "Clear search")
                 }
             }

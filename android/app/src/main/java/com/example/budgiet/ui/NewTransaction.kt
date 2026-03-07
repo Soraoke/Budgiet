@@ -289,8 +289,15 @@ fun LocationPickerDialog(
     // These are the items shown if the search does not have a query
     val recentItems by rememberWork { getRecentLocations() }
 
+    fun close() {
+        onDismiss()
+        // Cancel pending page loading jobs.
+        searchState.clearText()
+        searchPagerController.refresh()
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { close() },
         properties = DIALOG_PROPERTIES,
     ) {
         Card(
@@ -300,7 +307,6 @@ fun LocationPickerDialog(
                 modifier = Modifier.padding(all = dialogPadding)
                 // TODO: Animate height
             ) {
-                // TODO: cancel getPage when the clear button is clicked
                 PlainSearchBar(
                     onQueryChange = { searchPagerController.refresh() },
                     state = searchState,
@@ -323,7 +329,7 @@ fun LocationPickerDialog(
                     this.DataItem(
                         modifier = modifier.clickable(onClick = {
                             onSubmit(location)
-                            onDismiss()
+                            close()
                         }),
                         headlineContent = { Text(location.name) },
                         supportingContent = { Text(location.address) },
@@ -378,8 +384,7 @@ fun LocationPickerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // TODO: cancel work on getRecentLocations and getPage when this is clicked
-                    TextButton(onClick = onDismiss) {
+                    TextButton(onClick = { close() }) {
                         Text("Cancel")
                     }
 
