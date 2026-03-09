@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,27 +21,32 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.ui.NewTransactionForm
+import com.example.budgiet.ui.NewTransactionViewModel
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val newTransactionViewModel by this.viewModels<NewTransactionViewModel>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             BudgietTheme {
-                MainPage(modifier = Modifier.fillMaxSize())
+                MainPage(modifier = Modifier.fillMaxSize(), newTransactionViewModel)
             }
         }
     }
@@ -48,9 +54,17 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainPage(modifier: Modifier = Modifier) {
-    var showBottomSheet by remember { mutableStateOf(false) }
+fun MainPage(modifier: Modifier = Modifier, newTransactionViewModel: NewTransactionViewModel) {
+    var showBottomSheet by rememberSaveable { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+    val coroutineScope = rememberCoroutineScope()
+
+    val dismissBottomSheet: () -> Unit = {
+        coroutineScope.launch {
+            sheetState.hide()
+            showBottomSheet = false
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -68,7 +82,9 @@ fun MainPage(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Press the '+ Transaction' button to get started.")
+            Text("Press the '+ Transaction' button to get started.",
+                Modifier.padding(horizontal = 6.dp)
+            )
         }
     }
 
@@ -77,12 +93,12 @@ fun MainPage(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxHeight()
                 .windowInsetsPadding(WindowInsets.statusBars),
             sheetState = sheetState,
-            onDismissRequest = {
-                @Suppress("AssignedValueIsNeverRead")
-                showBottomSheet = false
-            },
+            onDismissRequest = dismissBottomSheet,
         ) {
-            NewTransactionForm()
+            NewTransactionForm(
+                viewModel = newTransactionViewModel,
+                onDismiss = dismissBottomSheet,
+            )
         }
     }
 }
@@ -124,6 +140,6 @@ fun getLocationsSearchPage(query: CharSequence, start: UInt, len: UInt): List<Lo
 @Composable
 fun MainPagePreview() {
     BudgietTheme {
-        MainPage()
+        MainPage(newTransactionViewModel = viewModel<NewTransactionViewModel>())
     }
 }

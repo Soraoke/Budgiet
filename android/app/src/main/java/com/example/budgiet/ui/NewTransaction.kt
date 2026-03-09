@@ -58,10 +58,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
@@ -104,16 +105,36 @@ val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
 val FIELD_MAX_WIDTH = 275.dp
 
+class NewTransactionViewModel: ViewModel() {
+    var date by mutableStateOf<LocalDate>(LocalDate.now())
+    var location by mutableStateOf<Location?>(null)
+    var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
+    var totalPrice by mutableStateOf("")
+    var description by mutableStateOf("")
+
+    fun submit() {
+        TODO()
+    }
+
+    fun cancel() {
+        this.date = LocalDate.now()
+        this.location = null
+        // Currency should persist even after a cancel
+        // this.currency = Currency.getInstance(Locale.getDefault())
+        this.totalPrice = ""
+        this.description = ""
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewTransactionForm(modifier: Modifier = Modifier) {
+fun NewTransactionForm(
+    modifier: Modifier = Modifier,
+    viewModel: NewTransactionViewModel,
+    onDismiss: () -> Unit,
+) {
     var showDatePicker by remember { mutableStateOf(false) }
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var showLocationPicker by remember { mutableStateOf(false) }
-    var selectedLocation by remember { mutableStateOf<Location?>(null) }
-    var selectedPrice by remember { mutableStateOf("") }
-    var selectedCurrency by remember { mutableStateOf(Currency.getInstance(Locale.getDefault())) }
-    var description by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier,
@@ -122,7 +143,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
             OutlinedTextField(
                 readOnly = true,
                 onValueChange = {},
-                value = selectedDate.formatRelativeToPresent(),
+                value = viewModel.date.formatRelativeToPresent(),
                 shape = MaterialTheme.shapes.medium,
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
@@ -147,8 +168,8 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                 )
             ) {
                 Text(
-                    if (selectedLocation != null) {
-                        selectedLocation!!.name
+                    if (viewModel.location != null) {
+                        viewModel.location!!.name
                     } else {
                         "Select Location"
                     }
@@ -169,24 +190,30 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
         }
         FormField("Price") {
             PriceField(
-                selectedPrice = selectedPrice,
-                onPriceChange = { selectedPrice = it },
-                selectedCurrency = selectedCurrency,
-                onCurrencyChange = { selectedCurrency = it }
+                selectedPrice = viewModel.totalPrice,
+                onPriceChange = { viewModel.totalPrice = it },
+                selectedCurrency = viewModel.currency,
+                onCurrencyChange = { viewModel.currency = it }
             )
         }
         FormField("Description", labelPosition = LabelPosition.AboveContent) {
-            DescriptionField(fieldValue = description) { description = it }
+            DescriptionField(fieldValue = viewModel.description) { viewModel.description = it }
         }
 
         FormField(null, horizontalArrangement = Arrangement.SpaceBetween) {
             TextIconButton(
-                onClick = { TODO() },
+                onClick = {
+                    onDismiss()
+                    viewModel.cancel()
+                },
                 icon = { Icon(painterResource(R.drawable.close_24px), "Cancel") },
                 text = { Text("Cancel") }
             )
             FilledTextIconButton(
-                onClick = { TODO() },
+                onClick = {
+                    onDismiss()
+                    viewModel.submit()
+                },
                 icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
                 text = { Text("Submit") },
             )
@@ -195,12 +222,12 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
 
     if (showDatePicker) {
         DatePickerDialog(
-            selectedDate = selectedDate,
+            selectedDate = viewModel.date,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 showDatePicker = false
             },
-            onSubmit = { selectedDate = it },
+            onSubmit = { viewModel.date = it },
         )
     }
 
@@ -210,7 +237,7 @@ fun NewTransactionForm(modifier: Modifier = Modifier) {
                 @Suppress("AssignedValueIsNeverRead")
                 showLocationPicker = false
             },
-            onSubmit = { location -> selectedLocation = location }
+            onSubmit = { location -> viewModel.location = location }
         )
     }
 
@@ -731,7 +758,10 @@ fun DescriptionField(
 fun NewTransactionPreview() {
     BudgietTheme {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
-            NewTransactionForm()
+            NewTransactionForm(
+                viewModel = viewModel<NewTransactionViewModel>(),
+                onDismiss = { }
+            )
         }
     }
 }
