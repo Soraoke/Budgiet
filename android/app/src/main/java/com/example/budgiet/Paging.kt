@@ -1,14 +1,21 @@
 package com.example.budgiet
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.paging.LoadState
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import org.jetbrains.annotations.Range
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+
+const val DEFAULT_MAX_PAGES = 4u
 
 // NOTE: key is NOT a Location ID, but an index in the pagination
 typealias PagingKey = UInt
@@ -65,7 +72,10 @@ typealias PageGetter<T> = suspend (UInt, UInt) -> List<T>
  *
  * If the getter does not need a query, use [rememberListPager] with [PageGetter] instead.
  *
- * See [ListPagingSource] for parameters.  */
+ * @param getPage See [ListPagingSource].
+ * @param queryState See [ListPagingSource].
+ * @param pageSize The number of *items* that a **page** can hold (i.e. how many items are requested at a time).
+ * @param maxPages The number of **pages** that can be loaded. Loading more pages than this will cause previous pages to get *unloaded*. */
 @Composable
 fun <T: Any> rememberQueryListPager(
     /**```kotlin
@@ -74,13 +84,18 @@ fun <T: Any> rememberQueryListPager(
      * See [QueryPageGetter]. */
     getPage: QueryPageGetter<T>,
     queryState: TextFieldState,
-    config: PagingConfig,
-): ListPager<T> = remember {
-    Pager(config) { ListPagingSource.withQuery(getPage, queryState) }
-}
+    pageSize: UInt,
+    maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) UInt = DEFAULT_MAX_PAGES,
+): PagerController<T> = PagerController.new(Pager(defaultPageConfig(pageSize.toInt(), maxPages.toInt())) {
+    ListPagingSource.withQuery(getPage, queryState)
+})
 /** Create a [Pager] for a **list** that persists in a [Composable].
  *
- * Same as [rememberQueryListPager], but does not use a **query** for getting pages. */
+ * Same as [rememberQueryListPager], but does not use a **query** for getting pages.
+ *
+ * @param getPage See [ListPagingSource].
+ * @param pageSize The number of *items* that a **page** can hold (i.e. how many items are requested at a time).
+ * @param maxPages The number of **pages** that can be loaded. Loading more pages than this will cause previous pages to get *unloaded*.*/
 @Composable
 fun <T: Any> rememberListPager(
     /**```kotlin
@@ -88,23 +103,72 @@ fun <T: Any> rememberListPager(
      * ```
      * See [PageGetter]. */
     getPage: PageGetter<T>,
-    config: PagingConfig,
-): ListPager<T> = remember {
-    Pager(config) { ListPagingSource.withoutQuery(getPage) }
-}
+    pageSize: UInt,
+    maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) UInt = DEFAULT_MAX_PAGES,
+): PagerController<T> = PagerController.new(Pager(defaultPageConfig(pageSize.toInt(), maxPages.toInt())) {
+    ListPagingSource.withoutQuery(getPage)
+})
 
 /** Same as [rememberListPager], but allows passing a custom executor to run [getPage] on.
  * The executor should be [Executors.newSingleThreadExecutor].
  *
- * This was specifically made to be called ***ONLY*** from semantic tests. */
+ * This was specifically made to be called ***ONLY*** from semantic tests.
+ *
+ * @param getPage See [ListPagingSource].
+ * @param pageSize The number of *items* that a **page** can hold (i.e. how many items are requested at a time).
+ * @param maxPages The number of **pages** that can be loaded. Loading more pages than this will cause previous pages to get *unloaded*.*/
 @UsableInTestsOnly
 @Composable
 internal fun <T: Any> rememberTestListPager(
     getPage: PageGetter<T>,
-    config: PagingConfig,
+    pageSize: UInt,
+    maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) UInt = DEFAULT_MAX_PAGES,
     executor: Executor,
-): ListPager<T> = remember {
-    Pager(config) { ListPagingSource.forTest(getPage, executor) }
+): PagerController<T> = PagerController.new(Pager(defaultPageConfig(pageSize.toInt(), maxPages.toInt())) {
+    ListPagingSource.forTest(getPage, executor)
+})
+
+private fun defaultPageConfig(pageSize: Int, maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) Int) = PagingConfig(
+    pageSize = pageSize,
+    initialLoadSize = pageSize,
+    // Must be > pageSize * 3
+    maxSize = pageSize * maxPages,
+    // Don't let the pager return a bunch of unloaded items, we are going to show a single unloaded item at a time.
+    enablePlaceholders = false,
+)
+
+/** Contains methods that allow *checking* and *controlling* the state of a [Pager].
+ *
+ * The controller is *bound* to a [Pager] after it is passed to a [Composable] that uses a [Pager].
+ * Before the controller is *bound* none of its methods will have any effect and will return *default values*. */
+class PagerController<T: Any> private constructor(
+    val items: LazyPagingItems<T>,
+) {
+    /** Trigger a **refresh* in the [Pager]'s data,
+     * invalidating *all loaded items* in the [Pager].
+     *
+     * Wrapper for [LazyPagingItems.refresh]. */
+    fun refresh() = this.items.refresh()
+
+    /** Check the **status** of the *Page* of items that are being **prepended** to the list. */
+    val prependStatus: LoadState
+        get() = this.items.loadState.prepend
+    /** Check the **status** of *Pages* after a [refresh]. */
+    val refreshStatus: LoadState
+        get() = this.items.loadState.refresh
+    /** Check the **status** of the *Page* of items that are being **appended** to the list. */
+    val appendStatus: LoadState
+        get() = this.items.loadState.append
+
+    companion object {
+        /** Initializes the controller to operate on the provided [Pager] **items**. */
+        @SuppressLint("ComposableNaming")
+        @Composable
+        internal fun <T: Any> new(pager: ListPager<T>): PagerController<T> {
+            val pager = remember { pager }
+            return PagerController(pager.flow.collectAsLazyPagingItems())
+        }
+    }
 }
 
 /** A generic [PagingSource] over a list of items.

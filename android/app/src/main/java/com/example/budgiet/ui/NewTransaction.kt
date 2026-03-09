@@ -65,7 +65,6 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.paging.PagingConfig
 import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.RecentCurrencies
@@ -88,7 +87,6 @@ import com.example.budgiet.ui.utils.LazyDropdownMenu
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PagedListColumn
-import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
@@ -313,11 +311,14 @@ fun LocationPickerDialog(
 ) {
     val dialogPadding = 8.dp
     val searchColumnSize = 3.5f
-    // Page size should have enough items to scroll down several times the number of items showed.
-    val searchPageSize = ceil(searchColumnSize).toInt() * 3
     val searchState = rememberTextFieldState()
 
-    val searchPagerController = remember { PagerController() }
+    val searchPager = rememberQueryListPager(
+        queryState = searchState,
+        getPage = { query, start, len -> getLocationsSearchPage(query, start, len) },
+        // Page size should have enough items to scroll down several times the number of items showed.
+        pageSize = ceil(searchColumnSize).toUInt() * 3u,
+    )
     // These are the items shown if the search does not have a query
     val recentItems by rememberWork { getRecentLocations() }
 
@@ -325,7 +326,7 @@ fun LocationPickerDialog(
         onDismiss()
         // Cancel pending page loading jobs.
         searchState.clearText()
-        searchPagerController.refresh()
+        searchPager.refresh()
     }
 
     Dialog(
@@ -340,7 +341,7 @@ fun LocationPickerDialog(
                 // TODO: Animate height
             ) {
                 PlainSearchBar(
-                    onQueryChange = { searchPagerController.refresh() },
+                    onQueryChange = { searchPager.refresh() },
                     state = searchState,
                     placeholder = { Text("Search existing locations") },
                 )
@@ -391,19 +392,7 @@ fun LocationPickerDialog(
                 } else {
                     PagedListColumn(
                         visibleItems = searchColumnSize,
-                        pager = rememberQueryListPager(
-                            queryState = searchState,
-                            getPage = { query, start, len -> getLocationsSearchPage(query, start, len) },
-                            config = PagingConfig(
-                                pageSize = searchPageSize,
-                                initialLoadSize = searchPageSize,
-                                // Must be > pageSize * 3, let's make it 4 pages.
-                                maxSize = searchPageSize * 4,
-                                // Don't let the pager return a bunch of unloaded items, we are going to show a single unloaded item at a time.
-                                enablePlaceholders = false,
-                            )
-                        ),
-                        pagerController = searchPagerController,
+                        pager = searchPager,
                         itemKey = { location -> location.id.toInt() },
                         itemContent = { location -> this.LocationItem(location) }
                     )

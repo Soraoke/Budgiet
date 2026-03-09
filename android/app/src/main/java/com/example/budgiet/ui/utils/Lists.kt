@@ -1,6 +1,5 @@
 package com.example.budgiet.ui.utils
 
-import android.annotation.SuppressLint
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -50,11 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
 import androidx.paging.LoadState
 import androidx.paging.Pager
-import androidx.paging.compose.LazyPagingItems
-import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
-import com.example.budgiet.ListPager
-import com.example.budgiet.ListPagingSource
+import com.example.budgiet.PagerController
 import com.example.budgiet.R
 import com.example.budgiet.rememberListPager
 
@@ -389,75 +385,6 @@ fun ListColumn(
     }
 }
 
-/** Contains methods that allow *checking* and *controlling* the state of a [Pager].
- *
- * The controller is *bound* to a [Pager] after it is passed to a [Composable] that uses a [Pager].
- * Before the controller is *bound* none of its methods will have any effect and will return *default values*. */
-class PagerController internal constructor() {
-    private sealed class InnerState {
-        object UnInit : InnerState()
-        class Init(
-            val pager: ListPager<*>,
-            val items: LazyPagingItems<*>,
-        ): InnerState()
-
-        fun isInit(): Init? = when (this) {
-            is Init -> this
-            is UnInit -> null
-        }
-    }
-    private var state: InnerState = InnerState.UnInit
-
-    /** Initializes the controller to operate on the provided [Pager] **items**. */
-    @SuppressLint("ComposableNaming")
-    @Composable
-    internal fun <T: Any> bind(pager: ListPager<T>) {
-        if (this.state is InnerState.UnInit) {
-            state = InnerState.Init(
-                pager = pager,
-                items = pager.flow.collectAsLazyPagingItems(),
-            )
-        }
-    }
-
-    /** Don't forget to call [bind] before reading from this value!
-     *
-     * @throws IllegalArgumentException if the caller does not use the same pager that this controller was bound to.
-     * @throws UninitializedPropertyAccessException if this controller has not been bound to a pager yet. */
-    internal fun <T: Any> items(pager: ListPager<T>): LazyPagingItems<T> {
-        if (this.state is InnerState.UnInit) {
-            throw UninitializedPropertyAccessException("Must call PagerController.bind() before calling PagerController.items()")
-        }
-        val state = this.state as InnerState.Init
-
-        if (state.pager !== pager) {
-            throw IllegalArgumentException("Used a different pager than the one that this controller was bound to")
-        }
-        /* SAFETY: This cast will always work because _items is tied to the pager,
-         * so they're going to have the same `T`,
-         * and the values never change after they're initialized.
-         * */
-        @Suppress("UNCHECKED_CAST")
-        return state.items as LazyPagingItems<T>
-    }
-
-    /** Trigger a **refresh* in the [Pager]'s data,
-     * invalidating *all loaded items* in the [Pager].
-     *
-     * Wrapper for [LazyPagingItems.refresh]. */
-    fun refresh() = this.state.isInit()?.items?.refresh()
-
-    /** Check the **status** of the *Page* of items that are being **prepended** to the list. */
-    val prependStatus: LoadState
-        get() = this.state.isInit()?.run { this.items.loadState.prepend } ?: LoadState.NotLoading(false)
-    /** Check the **status** of *Pages* after a [refresh]. */
-    val refreshStatus: LoadState
-        get() = this.state.isInit()?.run { this.items.loadState.refresh } ?: LoadState.NotLoading(false)
-    /** Check the **status** of the *Page* of items that are being **appended** to the list. */
-    val appendStatus: LoadState
-        get() = this.state.isInit()?.run { this.items.loadState.append } ?: LoadState.NotLoading(false)
-}
-
 /** A [ListColumn] that uses a [Pager] to load items.
  *
  * See [ListColumn] for the rest of the *parameters*.
@@ -471,7 +398,7 @@ class PagerController internal constructor() {
  *
  *   See [rememberListPager] of how to create a [Pager] in a composable.
  *
- * @param pagerController Allows the caller to trigger a *[refresh][PagerController.refresh]* on the [Pager]'s data.
+ * @param pager Allows the caller to trigger a *[refresh][PagerController.refresh]* on the [Pager]'s data.
  * @param itemKey A Callback that generates an *unique key* for every **item**. See [LazyListScope.items].
  * @param itemContent The [Composable] that will be called for *each item* in the [Pager]'s data.
  *   The caller *should* use [ListColumnItemScope.DataItem], but it is not required.
@@ -488,16 +415,13 @@ fun <T: Any> PagedListColumn(
     shape: Shape = LIST_SHAPE,
     itemShape: Shape = LIST_ITEM_SHAPE,
     dividerThickness: Dp = DividerDefaults.Thickness,
-    pager: ListPager<T>,
-    pagerController: PagerController = remember { PagerController() },
+    pager: PagerController<T>,
     itemKey: (T) -> Any,
     itemContent: @Composable ListColumnItemScope.(T) -> Unit,
     loadingContent: @Composable ListColumnItemScope.() -> Unit = { this.LoadingItem() },
     errorContent: @Composable ListColumnItemScope.(type: String, message: String?) -> Unit
         = { type, message -> this.ErrorItem(type = type, message = message) },
 ) {
-    pagerController.bind(pager)
-
     ListColumn(modifier, state, contentPadding, reverseLayout, visibleItems, shape, itemShape, dividerThickness) {
         /** Renders the **LoadingItem**, **ErrorItem**, or **onLoaded** composables depending on the **status**. */
         fun statusItems(status: LoadState, onLoaded: (ListScope<ListColumnItemScope>.() -> Unit)? = null) {
@@ -514,9 +438,9 @@ fun <T: Any> PagedListColumn(
             }
         }
 
-        statusItems(pagerController.prependStatus)
-        statusItems(pagerController.refreshStatus) {
-            val items = pagerController.items(pager)
+        statusItems(pager.prependStatus)
+        statusItems(pager.refreshStatus) {
+            val items = pager.items
             this.items(items.itemCount,
                 key = items.itemKey { item -> itemKey(item) }
             ) { item ->
@@ -529,7 +453,7 @@ fun <T: Any> PagedListColumn(
                 }
             }
         }
-        statusItems(pagerController.appendStatus)
+        statusItems(pager.appendStatus)
     }
 }
 

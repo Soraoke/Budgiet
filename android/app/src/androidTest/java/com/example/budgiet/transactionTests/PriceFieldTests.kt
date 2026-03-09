@@ -37,7 +37,7 @@ private data class PriceAssertion(
 class PriceFieldTests {
     private class TestState(
         private val rule: ComposeContentTestRule,
-        initialPrice: String = "",
+        initialPrice: Double = 0.0,
         initialCurrency: Currency = Currency.getInstance("USD"),
     ) {
         val priceInputNode
@@ -111,7 +111,7 @@ class PriceFieldTests {
 
     @Test
     fun showsPlaceHolderValue() {
-        val state = TestState(this.composeTestRule, initialPrice = "")
+        val state = TestState(this.composeTestRule, initialPrice = 0.0)
 
         // Placeholder text should be visible when input is empty.
         state.priceInputNode
