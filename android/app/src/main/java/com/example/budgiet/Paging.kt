@@ -211,7 +211,11 @@ class ListPagingSource<T: Any> private constructor(
         return LoadResult.Page(
             data = data,
             // This will be the startKey of the next load() if it's going backwards
-            prevKey = ensureValidKey(start.toInt() - data.size),
+            prevKey = if (data.isEmpty()) {
+                null
+            } else {
+                ensureValidKey(start.toInt() - data.size)
+            },
             // Only provide a nextKey if there are potentially more items to load
             nextKey = if (data.size >= params.loadSize) {
                 start + data.size.toUInt()
