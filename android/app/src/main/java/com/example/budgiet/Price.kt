@@ -57,9 +57,9 @@ fun Currency.formatPrice(price: Double, locale: Locale): String {
  * The parsing is done according to **[Currency]** requirements (i.e. punctuation and decimal places).
  *
  * If the parsing fails, this function returns an [Result.Err] with the reason. */
-fun Currency.parsePrice(price: String, locale: Locale): Result<Double?> {
+fun Currency.parsePrice(price: String, locale: Locale): Result<Double> {
     if (price == "") {
-        return Result.Ok(null)
+        return Result.Err(NumberFormatException("price string must not be empty"))
     }
 
     val currency = this
@@ -147,20 +147,6 @@ fun Currency.parsePrice(price: String, locale: Locale): Result<Double?> {
         Result.Err(e)
     }
 }
-
-/** Validates correctness of Transaction [PriceField][com.example.budgiet.ui.PriceField]'s input
- * and *formats* the number appropriately on success to display in the field.
- *
- * @param price the price input in Transaction form
- * @param this the currency code of the price (e.g. USD)
- * @return a result of formatted price input or a specific price parsing error */
-fun Currency.validatePriceInput(price: String, locale: Locale): Result<String>
-    = this.parsePrice(price, locale)
-        .map { price ->
-            price?.let {
-                this.formatPrice(price, locale)
-            } ?: ""
-        }
 
 private const val RECENT_CURRENCIES_FILE_NAME = "recentCurrencies.txt"
 private const val RECENT_CURRENCIES_LOG_TAG = "RecentlyUsedCurrencies"

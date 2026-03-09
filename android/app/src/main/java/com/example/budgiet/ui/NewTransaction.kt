@@ -41,7 +41,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,6 +77,7 @@ import com.example.budgiet.getLocationsSearchPage
 import com.example.budgiet.getRecentLocations
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
+import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -89,9 +92,9 @@ import com.example.budgiet.ui.utils.PagerController
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
-import com.example.budgiet.validatePriceInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.DecimalFormatSymbols
 import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
@@ -104,12 +107,14 @@ val DESCRIPTION_FIELD_MIN_HEIGHT = 125.dp
 val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
 val FIELD_MAX_WIDTH = 275.dp
+// How much time (in ms) should pass after an input on a field for its input to be validated.
+private const val FIELD_TIMEOUT = 500L
 
 class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location by mutableStateOf<Location?>(null)
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
-    var totalPrice by mutableStateOf("")
+    var totalPrice by mutableDoubleStateOf(0.0)
     var description by mutableStateOf("")
 
     fun submit() {
@@ -121,7 +126,7 @@ class NewTransactionViewModel: ViewModel() {
         this.location = null
         // Currency should persist even after a cancel
         // this.currency = Currency.getInstance(Locale.getDefault())
-        this.totalPrice = ""
+        this.totalPrice = 0.0
         this.description = ""
     }
 }
@@ -431,37 +436,48 @@ fun LocationPickerDialog(
 @Composable
 fun PriceField(
     modifier: Modifier = Modifier,
-    selectedPrice: String,
-    onPriceChange: (String) -> Unit,
+    selectedPrice: Double,
+    onPriceChange: (Double) -> Unit,
     locale: Locale = Locale.getDefault(),
     selectedCurrency: Currency = remember { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
+    var fieldValue by remember { mutableStateOf(if (selectedPrice == 0.0) "" else {
+        selectedCurrency.formatPrice(selectedPrice, locale)
+    }) }
     var currencyMenuOpen by remember { mutableStateOf(false) }
     var parseError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
+    fun validateInput() {
+        if (fieldValue.isNotEmpty()) {
+            val price = fieldValue.filter { c -> c != DecimalFormatSymbols.getInstance(locale).groupingSeparator }
+            when (val result = selectedCurrency.parsePrice(price, locale)) {
+                is Result.Ok -> {
+                    onPriceChange(result.value)
+                    fieldValue = selectedCurrency.formatPrice(result.value, locale)
+                    parseError = null
+                }
+                is Result.Err -> parseError = result.error.message
+            }
+        }
+    }
+
+    // Set a timer to run validateInput() on timeout.
+    LaunchedEffect(fieldValue) {
+        delay(FIELD_TIMEOUT)
+        validateInput()
+    }
+
     OutlinedTextField(
         modifier = modifier
-            .widthIn(min = 150.dp, max = FIELD_MAX_WIDTH)
             // FIXME: TextField does not grow with the input text's width
-            .width(IntrinsicSize.Min) // Must place this AFTER the clamp.
-            .onFocusChanged { state ->
-                // When we lose focus on this text field, we should parse the price input
-                // to see if it is invalid (outputting an error doing so) or format the
-                // price accordingly if valid
-                if (!state.isFocused) {
-                    when (val result = selectedCurrency.validatePriceInput(selectedPrice, locale)) {
-                        is Result.Ok -> {
-                            onPriceChange(result.value)
-                            parseError = null
-                        }
-                        is Result.Err -> parseError = result.error.message
-                    }
-                }
-            },
-        onValueChange = onPriceChange,
-        value = selectedPrice,
+            .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
+            .width(IntrinsicSize.Min)
+            // If another UI element is focused before the timeout, validate the input here and cancel the timer.
+            .onFocusChanged { _ -> validateInput() },
+        value = fieldValue,
+        onValueChange = { fieldValue = it },
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
         shape = MaterialTheme.shapes.medium,
         keyboardOptions = KeyboardOptions.Default.copy(
