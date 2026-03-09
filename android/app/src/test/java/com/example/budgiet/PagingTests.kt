@@ -8,6 +8,7 @@ import junit.framework.AssertionFailedError
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import kotlin.collections.listOf
 import kotlin.math.min
 
 class PagingUnitTests {
@@ -222,7 +223,7 @@ class PagingUnitTests {
     /** Test that the Pager ignores last items when the data size is larger than the page size. */
     @Test
     fun largerDataSize() {
-        /** How many pages should be have the exact amount of items requested.
+        /** How many pages should have the exact amount of items requested.
          *
          * Use maxPages to avoid unload of first page.
          * That is tested in pageByPageTest(). */
@@ -273,6 +274,20 @@ class PagingUnitTests {
                 actual = largerPager.pages(),
                 expected = expectedPages(0u, (pageSize * numExactPages) + extraPageSize)
             )
+        }
+    }
+
+    @Test
+    fun emptyDataSize() {
+        val emptyPager = newPager(ListPagingSource.withoutQuery { _, _ -> listOf<Int>() })
+
+        runBlocking {
+            emptyPager.refresh(0u)
+                .assert({ it is LoadResult.Page && it.data.isEmpty() })
+            assertEquals(emptyPager.pages(), listOf(listOf<Int>()))
+
+            emptyPager.append().assertEquals(null)
+            assertEquals(emptyPager.pages(), listOf(listOf<Int>()))
         }
     }
 
