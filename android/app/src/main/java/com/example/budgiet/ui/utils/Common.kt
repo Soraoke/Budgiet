@@ -3,8 +3,15 @@ package com.example.budgiet.ui.utils
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.input.TextFieldState
@@ -13,6 +20,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CardElevation
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DockedSearchBar
@@ -32,10 +43,13 @@ import androidx.compose.material3.getSelectedDate
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.PopupProperties
 import com.example.budgiet.R
@@ -56,6 +70,7 @@ val POPUP_PROPERTIES = PopupProperties(
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
+val DIALOG_CONTENT_PADDING = PaddingValues(24.dp)
 
 /** A *filled* [Button] that contains an [Icon] and some [Text].
  *
@@ -203,6 +218,54 @@ fun PlainSearchBar(
             null
         },
     )
+}
+
+/** Like an [AlertDialog][androidx.compose.material3.AlertDialog], but offers more freedom when placing the **action** buttons and title content.
+ *
+ * See [Card] for details on all other arguments.
+ *
+ * @param actions A set of buttons (or any other composable) that
+ *   are laid out **horizontally** *below* the dialog **content**.
+ * @param actionsSpacerHeight How much space to put between the [actions] and [content]. */
+@Composable
+fun ActionDialog(
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    shape: Shape = MaterialTheme.shapes.extraLarge,
+    colors: CardColors = CardDefaults.cardColors(),
+    elevation: CardElevation = CardDefaults.cardElevation(),
+    border: BorderStroke? = null,
+    contentPadding: PaddingValues = DIALOG_CONTENT_PADDING,
+    actionsSpacerHeight: Dp = contentPadding.calculateBottomPadding(),
+    actions: @Composable RowScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DIALOG_PROPERTIES,
+    ) {
+        // PRO TIP: doesn't actually fill max width, it has a margin
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            shape = shape,
+            colors = colors,
+            elevation = elevation,
+            border = border,
+        ) {
+            Column(Modifier.padding(contentPadding)) {
+                this.content()
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = actionsSpacerHeight),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = actions,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -134,6 +134,9 @@ fun getLocationsSearchPage(query: CharSequence, start: UInt, len: UInt): List<Lo
         }
     }
 }
+fun addNewLocation(name: String, address: String) {
+
+}
 
 
 @Preview(showBackground = true)

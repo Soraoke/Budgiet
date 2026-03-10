@@ -1,5 +1,7 @@
 package com.example.budgiet.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,10 +14,12 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,12 +31,12 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
@@ -40,8 +44,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,13 +69,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.Location
 import com.example.budgiet.R
 import com.example.budgiet.RecentCurrencies
 import com.example.budgiet.Result
+import com.example.budgiet.addNewLocation
 import com.example.budgiet.formatPrice
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
@@ -80,7 +87,7 @@ import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
-import com.example.budgiet.ui.utils.DIALOG_PROPERTIES
+import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
@@ -303,11 +310,40 @@ fun FormField(
     }
 }
 
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun LocationPickerDialog(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     onSubmit: (Location) -> Unit,
+) {
+    var showNewLocationDialog by remember { mutableStateOf(false) }
+
+    if (showNewLocationDialog) {
+        NewLocationDialog(
+            modifier = modifier,
+            onDismiss = { showNewLocationDialog = false },
+            onSubmit = { name, address ->
+                addNewLocation(name, address)
+                // TODO: Highlight (flashing skim) newly added location in the search dialog list (should be the first item).
+            }
+        )
+    } else {
+        LocationSearchDialog(
+            modifier = modifier,
+            onDismiss = onDismiss,
+            onSubmit = onSubmit,
+            onOpenNewLocationDialog = { showNewLocationDialog = true }
+        )
+    }
+}
+
+@Composable
+private fun LocationSearchDialog(
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    onSubmit: (Location) -> Unit,
+    onOpenNewLocationDialog: () -> Unit,
 ) {
     val dialogPadding = 8.dp
     val searchColumnSize = 3.5f
@@ -329,50 +365,55 @@ fun LocationPickerDialog(
         searchPager.refresh()
     }
 
-    Dialog(
-        onDismissRequest = { close() },
-        properties = DIALOG_PROPERTIES,
-    ) {
-        Card(
-            modifier = modifier.fillMaxWidth() // PRO TIP: doesn't actually fill max width, it has a margin
-        ) {
-            Column(
-                modifier = Modifier.padding(all = dialogPadding)
-                // TODO: Animate height
-            ) {
-                PlainSearchBar(
-                    onQueryChange = { searchPager.refresh() },
-                    state = searchState,
-                    placeholder = { Text("Search existing locations") },
+    ActionDialog(
+        onDismiss = { close() },
+        contentPadding = PaddingValues(all = dialogPadding),
+        actionsSpacerHeight = dialogPadding / 2,
+        actions = {
+            TextButton(onClick = { close() }) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Add new location") {
+                FilledTextIconButton(
+                    onClick = onOpenNewLocationDialog,
+                    icon = { Icon(painterResource(R.drawable.add_24px), "New Location") },
+                    text = { Text("New") },
                 )
+            }
+        }
+    ) {
+        PlainSearchBar(
+            onQueryChange = { searchPager.refresh() },
+            state = searchState,
+            placeholder = { Text("Search existing locations") },
+        )
+        Spacer(Modifier.height(dialogPadding))
 
-                Spacer(Modifier.height(dialogPadding))
+        AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
+            @Composable
+            fun ListColumnItemScope.LocationItem(location: Location) {
+                this.DataItem(
+                    modifier = modifier.clickable(onClick = {
+                        onSubmit(location)
+                        close()
+                    }),
+                    headlineContent = { Text(location.name) },
+                    supportingContent = { Text(location.address) },
+                )
+            }
 
+            Column {
                 // Show search results if the SearchBar has a query,
-                // otherwise show recent locations.
-                if (searchState.text.isEmpty()) {
+                // otherwise show recent locations
+                if (queryIsEmpty) {
                     Text("Recent",
                         modifier = Modifier.fillMaxWidth()
                             .padding(start = dialogPadding)
                     )
-                }
 
-                @Composable
-                fun ListColumnItemScope.LocationItem(location: Location) {
-                    this.DataItem(
-                        modifier = modifier.clickable(onClick = {
-                            onSubmit(location)
-                            close()
-                        }),
-                        headlineContent = { Text(location.name) },
-                        supportingContent = { Text(location.address) },
-                    )
-                }
-
-                // Show search results if the SearchBar has a query,
-                // otherwise show recent locations
-                if (searchState.text.isEmpty()) {
-                    ListColumn(visibleItems = searchColumnSize) {
+                    ListColumn(
+                        visibleItems = searchColumnSize) {
                         when (recentItems) {
                             is Result.Ok -> {
                                 items(
@@ -391,31 +432,121 @@ fun LocationPickerDialog(
                     }
                 } else {
                     PagedListColumn(
+                        modifier = Modifier.animateContentSize(),
                         visibleItems = searchColumnSize,
                         pager = searchPager,
                         itemKey = { location -> location.id.toInt() },
                         itemContent = { location -> this.LocationItem(location) }
                     )
                 }
+            }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = dialogPadding / 2),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+        }
+    }
+}
+
+@Composable
+private fun NewLocationDialog(
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    onSubmit: (name: String, address: String) -> Unit
+) {
+    val spacerHeight = 16.dp
+
+    val locationName = remember { mutableStateOf("") }
+    val locationAddress = remember { mutableStateOf("") }
+    val nameError = remember { mutableStateOf(false) }
+    val addressError = remember { mutableStateOf(false) }
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Submit new location") {
+                FilledTextIconButton(
+                    onClick = {
+                        nameError.value = locationName.value.isEmpty()
+                        addressError.value = locationAddress.value.isEmpty()
+
+                        if (!nameError.value && !addressError.value) {
+                            onSubmit(locationName.value, locationAddress.value)
+                            onDismiss()
+                        }
+                    },
+                    icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                    text = { Text("Done") },
+                )
+            }
+        }
+    ) {
+        Text("New location",
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        Spacer(Modifier.height(spacerHeight))
+
+        @Composable
+        fun Field(
+            modifier: Modifier = Modifier,
+            label: String,
+            value: MutableState<String>,
+            isError: MutableState<Boolean>,
+        ) {
+            TextField(
+                modifier = modifier.fillMaxWidth(),
+                label = { Text(label) },
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                value = value.value,
+                onValueChange = { newValue ->
+                    isError.value = newValue.isEmpty()
+                    value.value = newValue
+                },
+                isError = isError.value,
+                supportingText = if (!isError.value) null else {{
+                    Text("Must not be empty")
+                }},
+            )
+        }
+
+        // TODO: suggest names of existing locations
+        Field(
+            label = "Name",
+            value = locationName,
+            isError = nameError,
+        )
+
+        Spacer(Modifier.height(spacerHeight))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Field(
+                modifier = Modifier.weight(1.0f)
+                    .padding(end = 8.dp),
+                label = "Address",
+                value = locationAddress,
+                isError = addressError,
+            )
+            PlainToolTipBox("Get address from GPS coordinates") {
+                FilledIconButton(
+                    onClick = { TODO() },
+                    modifier = Modifier.size(TextFieldDefaults.MinHeight - 4.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryFixed,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryFixed,
+                    )
                 ) {
-                    TextButton(onClick = { close() }) {
-                        Text("Cancel")
-                    }
-
-                    PlainToolTipBox("Add new location") {
-                        FilledTextIconButton(
-                            onClick = { TODO() },
-                            icon = { Icon(painterResource(R.drawable.add_24px), "New Location") },
-                            text = { Text("New") },
-                        )
-                    }
+                    Icon(painterResource(R.drawable.location_on_24px),
+                        "Auto-detect Address",
+                        modifier = Modifier.fillMaxSize()
+                            .padding(8.dp)
+                    )
                 }
             }
         }
@@ -773,11 +904,22 @@ fun NewTransactionPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun LocationPickerPreview() {
+fun LocationSearchPreview() {
     BudgietTheme {
-        LocationPickerDialog(
+        LocationSearchDialog(
             onDismiss = {},
             onSubmit = {},
+            onOpenNewLocationDialog = {}
+        )
+    }
+}
+@Preview(showBackground = true)
+@Composable
+fun NewLocationPreview() {
+    BudgietTheme {
+        NewLocationDialog(
+            onDismiss = {},
+            onSubmit = { _, _ -> }
         )
     }
 }
