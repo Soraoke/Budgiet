@@ -347,16 +347,15 @@ private fun LocationSearchDialog(
 ) {
     val dialogPadding = 8.dp
     val searchColumnSize = 3.5f
+    val pageSize = ceil(searchColumnSize).toUInt() * 3u
     val searchState = rememberTextFieldState()
 
     val searchPager = rememberQueryListPager(
         queryState = searchState,
         getPage = { query, start, len -> getLocationsSearchPage(query, start, len) },
         // Page size should have enough items to scroll down several times the number of items showed.
-        pageSize = ceil(searchColumnSize).toUInt() * 3u,
+        pageSize = pageSize,
     )
-    // These are the items shown if the search does not have a query
-    val recentItems by rememberWork { getRecentLocations() }
 
     fun close() {
         onDismiss()
@@ -412,29 +411,19 @@ private fun LocationSearchDialog(
                             .padding(start = dialogPadding)
                     )
 
-                    ListColumn(
-                        visibleItems = searchColumnSize) {
-                        when (recentItems) {
-                            is Result.Ok -> {
-                                items(
-                                    items = (recentItems as Result.Ok).value,
-                                    key = { location -> location.id.toInt() }, // Why can't use UInt ....
-                                ) { location -> this.LocationItem(location) }
-                            }
-                            // Show the item as an Error if the task threw an Exception
-                            is Result.Err -> {
-                                val error = (recentItems as Result.Err).error
-                                item { this.ErrorItem(type = error.javaClass.name, message = error.localizedMessage) }
-                            }
-                            // Show loading indicator while the items are being obtained
-                            null -> item { this.LoadingItem() }
-                        }
+                    val recentsPager = rememberListPager(
+                        getPage = { start, len -> getRecentLocations(start, len) },
+                        pageSize = pageSize,
+                    )
+
+                    ListColumn(visibleItems = searchColumnSize) {
+                        this.pagedItems(
+                            pager = recentsPager,
+                            itemKey = { location -> location.id.toInt() }, // Why can't use UInt ....
+                        ) { location -> this.LocationItem(location) }
                     }
                 } else {
-                    ListColumn(
-                        modifier = Modifier.animateContentSize(),
-                        visibleItems = searchColumnSize,
-                    ) {
+                    ListColumn(visibleItems = searchColumnSize) {
                         this.pagedItems(
                             pager = searchPager,
                             itemKey = { location -> location.id.toInt() },
