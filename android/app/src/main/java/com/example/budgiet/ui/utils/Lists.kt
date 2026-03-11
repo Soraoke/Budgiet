@@ -40,7 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -570,21 +569,7 @@ fun LazyDropdownMenu(
     val menuHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems
 
     DropdownMenu(
-        modifier = modifier
-            // DropdownMenu has a hardcoded padding of 8.dp which should be removed.
-            // Padding should be set on the LazyColumn Composable.
-            .layout { measurable, constraints ->
-                val verticalCrop = 8.dp
-                val placeable = measurable.measure(constraints)
-                fun Dp.toPxInt(): Int = this.toPx().toInt()
-
-                layout(
-                    placeable.width,
-                    placeable.height - (verticalCrop * 2).toPxInt()
-                ) {
-                    placeable.placeRelative(0, -verticalCrop.toPx().toInt())
-                }
-            }
+        modifier = modifier.hideDropdownMenuPadding()
             .clip(shape),
         expanded = showDropdown,
         onDismissRequest = onDismiss,

@@ -1,7 +1,6 @@
 package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +30,10 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -57,7 +59,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -84,8 +88,8 @@ import com.example.budgiet.getRecentLocations
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.parsePrice
+import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
-import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.DatePickerDialog
@@ -93,10 +97,10 @@ import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
-import com.example.budgiet.ui.utils.PagedListColumn
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
+import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DecimalFormatSymbols
@@ -436,13 +440,17 @@ private fun LocationSearchDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewLocationDialog(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     onSubmit: (name: String, address: String) -> Unit
 ) {
-    val spacerHeight = 16.dp
+    val fieldSpacerHeight = 16.dp
+    val menuShape = MaterialTheme.shapes.medium
+    val menuItemPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+    val maxMenuItems = 10u
 
     val locationName = remember { mutableStateOf("") }
     val locationAddress = remember { mutableStateOf("") }
@@ -474,12 +482,6 @@ private fun NewLocationDialog(
             }
         }
     ) {
-        Text("New location",
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Spacer(Modifier.height(spacerHeight))
-
         @Composable
         fun Field(
             modifier: Modifier = Modifier,
@@ -507,14 +509,62 @@ private fun NewLocationDialog(
             )
         }
 
-        // TODO: suggest names of existing locations
-        Field(
-            label = "Name",
-            value = locationName,
-            isError = nameError,
+        Text("New location",
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.headlineSmall,
         )
+        Spacer(Modifier.height(fieldSpacerHeight))
 
-        Spacer(Modifier.height(spacerHeight))
+        val suggestedNames = remember(key1 = locationName.value) {
+            getLocationsSearchPage(locationName.value, 0u, maxMenuItems)
+                .map { it.name }
+                // Only allow a single instance of a name to exist.
+                // Due to the list becoming a set, some items wil be culled,
+                // so the size won't necessarily be the same as maxMenuItems.
+                .toSet()
+        }
+
+        var shouldShowMenu by remember { mutableStateOf(false) }
+        val expanded = shouldShowMenu
+            && locationName.value.isNotEmpty()
+            && suggestedNames.isNotEmpty()
+
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { shouldShowMenu = it },
+        ) {
+            Field(
+                modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                    .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
+                label = "Name",
+                value = locationName,
+                isError = nameError,
+            )
+            ExposedDropdownMenu(
+                modifier = Modifier.hideDropdownMenuPadding()
+                    .heightIn(max = 150.dp),
+                expanded = expanded,
+                onDismissRequest = { shouldShowMenu = false },
+                matchAnchorWidth = false,
+                shape = menuShape,
+            ) {
+                suggestedNames.forEach { name ->
+                    DropdownMenuItem(
+                        modifier = Modifier.widthIn(min = 0.dp)
+                            .padding(menuItemPadding)
+                            .clip(menuShape),
+                        text = { Text(name) },
+                        onClick = {
+                            locationName.value = name
+                            shouldShowMenu = false
+                        }
+                    )
+                }
+            }
+        }
+
+
+        Spacer(Modifier.height(fieldSpacerHeight))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Field(
@@ -762,12 +812,12 @@ fun CurrencySelectorButton(
             // Recent currencies not loaded yet.
             // Show loading item at the top.
             null -> this.item {
-                this.LoadingMenuItem()
+                this.LoadingItem()
             }
             // Show an error item at the top.
             is Result.Err -> this.item {
                 val err = (recentCurrencies as Result.Err).error
-                this.ErrorMenuItem(err)
+                this.ErrorItem(err)
             }
         }
 

@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -316,5 +317,19 @@ fun DatePickerDialog(
             state = datePickerState,
             showModeToggle = true,
         )
+    }
+}
+
+/** DropdownMenu has a *hardcoded* vertical padding of `8.dp`, which should be so that the caller can apply their own padding. */
+fun Modifier.hideDropdownMenuPadding(): Modifier = this.layout { measurable, constraints ->
+    val verticalCrop = 8.dp
+    val placeable = measurable.measure(constraints)
+    fun Dp.toPxInt(): Int = this.toPx().toInt()
+
+    layout(
+        placeable.width,
+        placeable.height - (verticalCrop * 2).toPxInt()
+    ) {
+        placeable.placeRelative(0, -verticalCrop.toPx().toInt())
     }
 }
