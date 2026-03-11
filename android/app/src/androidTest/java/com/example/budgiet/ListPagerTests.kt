@@ -13,11 +13,10 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onChild
 import androidx.compose.ui.test.onChildren
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
-import com.example.budgiet.ui.utils.PagedListColumn
+import com.example.budgiet.ui.utils.ListColumn
 import kotlinx.coroutines.delay
 import org.junit.Rule
 import org.junit.Test
@@ -45,24 +44,26 @@ class ListPagerTests {
 
         init {
             rule.setContent {
-                PagedListColumn(
-                    modifier = Modifier.testTag(LIST_TAG),
-                    pager = rememberTestListPager(
-                        getPage = this.getPage,
-                        executor = this.executor,
-                        pageSize = PAGE_SIZE.toUInt(),
-                        maxPages = MAX_PAGES.toUInt(),
-                    ),
-                    itemKey = { it },
-                    itemContent = { i -> this.DataItem(
+                val pager = rememberTestListPager(
+                    getPage = this.getPage,
+                    executor = this.executor,
+                    pageSize = PAGE_SIZE.toUInt(),
+                    maxPages = MAX_PAGES.toUInt(),
+                )
+
+                ListColumn(modifier = Modifier.testTag(LIST_TAG)) {
+                    this.pagedItems(
+                        pager = pager,
+                        itemKey = { it },
+                        loadingContent = { this.LoadingItem(modifier = Modifier.testTag(LOADING_ITEM_TAG)) },
+                        errorContent = { type, message ->
+                            this.ErrorItem(modifier = Modifier.testTag(ERROR_ITEM_TAG), type, message)
+                        }
+                    ) { i -> this.DataItem(
                         modifier = Modifier.testTag(ITEM_TAG),
                         headlineContent = { Text("Item: $i") },
-                    ) },
-                    loadingContent = { this.LoadingItem(modifier = Modifier.testTag(LOADING_ITEM_TAG)) },
-                    errorContent = { type, message ->
-                        this.ErrorItem(modifier = Modifier.testTag(ERROR_ITEM_TAG), type, message)
-                    }
-                )
+                    ) }
+                }
             }
         }
     }
@@ -92,7 +93,7 @@ class ListPagerTests {
     @Test
     fun refreshLoading() {
         val state = TestState(this.rule) { start, length ->
-            delay(LOAD_TIME);
+            delay(LOAD_TIME)
             List(length.toInt()) { i -> start.toInt() + i }
         }
 
