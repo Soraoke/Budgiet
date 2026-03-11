@@ -114,6 +114,58 @@ class ListScope<ItemScope: ListItemScope> internal constructor(
         this@ListScope.newItemScope(this)
             .itemContent(i, item)
     }
+
+    /** Adds a [List] of items to the List Composable, but only a sublist of that exists at a time.
+     * Items are *created* and *destroyed* on the fly as needed, depending on the scroll position of the Composable.
+     *
+     * @param pager The [Pager] is responsible for *loading* and *unloading* the data.
+     *   Use [rememberListPager] to create a [Pager] in a composable.
+     * @param itemKey A Callback that generates an *unique key* for every **item**. See [LazyListScope.items].
+     * @param itemContent The [Composable] that will be called for *each item* in the [Pager]'s data.
+     *   The caller *should* use [ListColumnItemScope.DataItem], but it is not required.
+     * @param loadingContent The [Composable] that will be called when the list can't show an item yet because it is still loading.
+     * @param errorContent The [Composable] that will be called when the **pager** loads a page that throws an [Exception].
+     *   Takes a **type**, which is the *full class name* of the [Exception], and the exception's [**message**][Throwable.message]. */
+    fun <T: Any> pagedItems(
+        pager: PagerController<T>,
+        itemKey: (T) -> Any,
+        loadingContent: @Composable ItemScope.() -> Unit = { this.LoadingItem() },
+        errorContent: @Composable ItemScope.(type: String, message: String?) -> Unit
+            = { type, message -> this.ErrorItem(type = type, message = message) },
+        itemContent: @Composable ItemScope.(T) -> Unit,
+    ) {
+        /** Renders the **LoadingItem**, **ErrorItem**, or **onLoaded** composables depending on the **status**. */
+        fun statusItems(status: LoadState, onLoaded: (ListScope<ItemScope>.() -> Unit)? = null) {
+            when (status) {
+                is LoadState.Loading -> this.item {
+                    loadingContent()
+                }
+                is LoadState.Error -> this.item {
+                    errorContent(status.error.javaClass.name, status.error.message)
+                }
+                else -> if (onLoaded != null) {
+                    this.onLoaded()
+                }
+            }
+        }
+
+        statusItems(pager.prependStatus)
+        statusItems(pager.refreshStatus) {
+            val items = pager.items
+            this.items(items.itemCount,
+                key = items.itemKey { item -> itemKey(item) }
+            ) { item ->
+                items[item]?.let { item ->
+                    itemContent(item)
+                } ?: run {
+                    // This will never be null as long as enablePlaceholders = false in the Pager.
+                    // Leave it here tho, in case we change it to true and forget about it.
+                    loadingContent()
+                }
+            }
+        }
+        statusItems(pager.appendStatus)
+    }
 }
 
 /** A custom improvement of the [LazyItemScope] interface.
@@ -121,6 +173,15 @@ class ListScope<ItemScope: ListItemScope> internal constructor(
  *
  * This class exposes [itemWidth] and [itemHeight] to composables that are called in the context of a [ListItemScope] implementor.
  * These 2 properties must be passed as [MutableState] to this constructor by the implementor.
+ *
+ * This class also exposes [Composables][Composable] that should be used to display certain types of data in the list:
+ * * **[LoadingItem]**: Renders an item with a **progress indicator** composable as the content,
+ *     indicating that the [ListColumn] is waiting for more items to **load**.
+ *
+ * * **[ErrorItem]**: Represents *bad data* in the list.
+ *
+ *     This occurs when an **Exception** is thrown when an item is being fetched.
+ *     For example, when the [Pager] attempts to load a page, but the loader throws an **Exception**.
  *
  * This class provides default implementations the [Modifier] methods that are not implemented in [LazyItemScope]. */
 abstract class ListItemScope internal constructor(
@@ -211,22 +272,34 @@ abstract class ListItemScope internal constructor(
             modifier.fillParentMaxSize(fraction)
         }
     }
+
+    /** Renders an item with a **progress indicator** composable as the content,
+     * indicating that the [ListColumn] is waiting for more items to **load**.
+     *
+     * This is primarily used in the [ListScope.pagedItems]. */
+    @Composable
+    abstract fun LoadingItem(
+        modifier: Modifier = Modifier,
+        progressIndicator: @Composable () -> Unit = { CircularProgressIndicator() },
+    )
+
+    /** Represents *bad data* in the [ListColumn].
+     *
+     * This occurs when an **Exception** is thrown when an item is being fetched.
+     * For example, when the [Pager] attempts to load a page, but the loader throws. */
+    @Composable
+    abstract fun ErrorItem(modifier: Modifier = Modifier, type: String, message: String? = null)
+
+    /** Represents *bad data* in the [ListColumn].
+     *
+     * This occurs when an **Exception** is thrown when an item is being fetched.
+     * For example, when the [Pager] attempts to load a page, but the loader throws. */
+    @Composable
+    fun ErrorItem(error: Throwable, modifier: Modifier = Modifier) = ErrorItem(modifier, error.javaClass.name, error.message)
 }
 
 /** A custom [LazyItemScope], which exposes the composables that should be used in [ListColumn].
- * All composables in here are implemented with [ListItem].
- *
- * * **[DataItem]**: Represents *good data* in the list.
- *
- * * **[LoadingItem]**: Renders an item with a **progress indicator** composable as the content,
- *     indicating that the [ListColumn] is waiting for more items to **load**.
- *
- *     This is primarily used in the [PagedListColumn].
- *
- * * **[ErrorItem]**: Represents *bad data* in the list.
- *
- *     This occurs when an **Exception** is thrown when an item is being fetched.
- *     For example, when the [Pager] attempts to load a page, but the loader throws. */
+ * All composables in here are implemented with [ListItem]. */
 class ListColumnItemScope internal constructor(
     innerScope: LazyItemScope,
     itemHeight: MutableState<Dp?>,
@@ -258,15 +331,8 @@ class ListColumnItemScope internal constructor(
             shadowElevation = shadowElevation,
         )
     }
-    /** Renders an item with a **progress indicator** composable as the content,
-     * indicating that the [ListColumn] is waiting for more items to **load**.
-     *
-     * This is primarily used in the [PagedListColumn]. */
     @Composable
-    fun LoadingItem(
-        modifier: Modifier = Modifier,
-        progressIndicator: @Composable () -> Unit = { CircularProgressIndicator() },
-    ) {
+    override fun LoadingItem(modifier: Modifier, progressIndicator: @Composable () -> Unit) {
         ListItem(
             modifier = modifier
                 .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
@@ -279,19 +345,8 @@ class ListColumnItemScope internal constructor(
             } }
         )
     }
-    /** Represents *bad data* in the [ListColumn].
-     *
-     * This occurs when an **Exception** is thrown when an item is being fetched.
-     * For example, when the [Pager] attempts to load a page, but the loader throws. */
     @Composable
-    fun ErrorItem(error: Throwable, modifier: Modifier = Modifier)
-        = ErrorItem(modifier, error.javaClass.name, error.message)
-    /** Represents *bad data* in the [ListColumn].
-     *
-     * This occurs when an **Exception** is thrown when an item is being fetched.
-     * For example, when the [Pager] attempts to load a page, but the loader throws. */
-    @Composable
-    fun ErrorItem(modifier: Modifier = Modifier, type: String, message: String? = null) {
+    override fun ErrorItem(modifier: Modifier, type: String, message: String?) {
         val color = MaterialTheme.colorScheme.error
         ListItem(
             // This item does not need to be resized,
@@ -385,82 +440,8 @@ fun ListColumn(
     }
 }
 
-/** A [ListColumn] that uses a [Pager] to load items.
- *
- * See [ListColumn] for the rest of the *parameters*.
- *
- * @param pager The [Pager] is responsible for *loading* and *unloading* the data.
- *
- *   Since the [Pager] itself doesn't expose any methods to check state or read items,
- *   the caller must provide a [PagerController] to do any of that.
- *   If the caller is not interested in having any control over the [Pager],
- *   they may omit the **pagerController** argument, and an *inaccessible* [PagerController] will be used.
- *
- *   See [rememberListPager] of how to create a [Pager] in a composable.
- *
- * @param pager Allows the caller to trigger a *[refresh][PagerController.refresh]* on the [Pager]'s data.
- * @param itemKey A Callback that generates an *unique key* for every **item**. See [LazyListScope.items].
- * @param itemContent The [Composable] that will be called for *each item* in the [Pager]'s data.
- *   The caller *should* use [ListColumnItemScope.DataItem], but it is not required.
- * @param loadingContent The [Composable] that will be called when the list can't show an item yet because it is still loading.
- * @param errorContent The [Composable] that will be called when the **pager** loads a page that throws an [Exception].
- *   Takes a **type**, which is the *full class name* of the [Exception], and the exception's [**message**][Throwable.message]. */
-@Composable
-fun <T: Any> PagedListColumn(
-    modifier: Modifier = Modifier,
-    state: LazyListState = rememberLazyListState(),
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-    reverseLayout: Boolean = false,
-    visibleItems: Float = LIST_DEFAULT_VISIBLE_ITEMS,
-    shape: Shape = LIST_SHAPE,
-    itemShape: Shape = LIST_ITEM_SHAPE,
-    dividerThickness: Dp = DividerDefaults.Thickness,
-    pager: PagerController<T>,
-    itemKey: (T) -> Any,
-    itemContent: @Composable ListColumnItemScope.(T) -> Unit,
-    loadingContent: @Composable ListColumnItemScope.() -> Unit = { this.LoadingItem() },
-    errorContent: @Composable ListColumnItemScope.(type: String, message: String?) -> Unit
-        = { type, message -> this.ErrorItem(type = type, message = message) },
-) {
-    ListColumn(modifier, state, contentPadding, reverseLayout, visibleItems, shape, itemShape, dividerThickness) {
-        /** Renders the **LoadingItem**, **ErrorItem**, or **onLoaded** composables depending on the **status**. */
-        fun statusItems(status: LoadState, onLoaded: (ListScope<ListColumnItemScope>.() -> Unit)? = null) {
-            when (status) {
-                is LoadState.Loading -> this.item {
-                    loadingContent()
-                }
-                is LoadState.Error -> this.item {
-                    errorContent(status.error.javaClass.name, status.error.message)
-                }
-                else -> if (onLoaded != null) {
-                    this.onLoaded()
-                }
-            }
-        }
-
-        statusItems(pager.prependStatus)
-        statusItems(pager.refreshStatus) {
-            val items = pager.items
-            this.items(items.itemCount,
-                key = items.itemKey { item -> itemKey(item) }
-            ) { item ->
-                items[item]?.let { item ->
-                    itemContent(item)
-                } ?: run {
-                    // This will never be null as long as enablePlaceholders = false in the Pager.
-                    // Leave it here tho, in case we change it to true and forget about it.
-                    loadingContent()
-                }
-            }
-        }
-        statusItems(pager.appendStatus)
-    }
-}
-
 /** A custom [LazyItemScope], which exposes the composables that should be used in [LazyDropdownMenu].
- * All composables in here are implemented with [DropdownMenuItem].
- *
- * * **[MenuItem]**. */
+ * All composables in here are implemented with [DropdownMenuItem].  */
 class LazyMenuItemScope internal constructor(
     innerScope: LazyItemScope,
     itemWidth: MutableState<Dp?>,
@@ -500,10 +481,7 @@ class LazyMenuItemScope internal constructor(
     }
 
     @Composable
-    fun LoadingMenuItem(
-        modifier: Modifier = Modifier,
-        progressIndicator: @Composable () -> Unit = { CircularProgressIndicator() },
-    ) {
+    override fun LoadingItem(modifier: Modifier, progressIndicator: @Composable () -> Unit) {
         DropdownMenuItem(
             modifier = modifier
                 .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
@@ -517,12 +495,8 @@ class LazyMenuItemScope internal constructor(
             onClick = { }
         )
     }
-
     @Composable
-    fun ErrorMenuItem(error: Throwable, modifier: Modifier = Modifier)
-        = ErrorMenuItem(modifier, error.javaClass.name, error.message)
-    @Composable
-    fun ErrorMenuItem(modifier: Modifier = Modifier, type: String, message: String? = null) {
+    override fun ErrorItem(modifier: Modifier, type: String, message: String?) {
         val color = MaterialTheme.colorScheme.error
         DropdownMenuItem(
             // This item does not need to be resized,

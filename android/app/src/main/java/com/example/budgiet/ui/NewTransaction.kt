@@ -431,13 +431,15 @@ private fun LocationSearchDialog(
                         }
                     }
                 } else {
-                    PagedListColumn(
+                    ListColumn(
                         modifier = Modifier.animateContentSize(),
                         visibleItems = searchColumnSize,
-                        pager = searchPager,
-                        itemKey = { location -> location.id.toInt() },
-                        itemContent = { location -> this.LocationItem(location) }
-                    )
+                    ) {
+                        this.pagedItems(
+                            pager = searchPager,
+                            itemKey = { location -> location.id.toInt() },
+                        ) { location -> this.LocationItem(location) }
+                    }
                 }
             }
 
