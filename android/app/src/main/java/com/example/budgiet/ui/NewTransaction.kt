@@ -1,6 +1,11 @@
 package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -261,12 +266,12 @@ fun NewTransactionForm(
  *
  * Whether the main content is **small** and the label should appear [Beside][LabelPosition.BesidesContent] (to the left of) the content,
  * or the main content is **large** and the label should appear directly [Above][LabelPosition.AboveContent] the content. */
-enum class LabelPosition {
+private enum class LabelPosition {
     AboveContent, BesidesContent,
 }
 
 @Composable
-fun FormField(
+private fun FormField(
     label: String?,
     modifier: Modifier = Modifier,
     labelPosition: LabelPosition = LabelPosition.BesidesContent,
@@ -323,34 +328,49 @@ fun LocationPickerDialog(
 ) {
     var showNewLocationDialog by remember { mutableStateOf(false) }
 
+    var newLocationAdded by remember { mutableStateOf(false) }
+
     if (showNewLocationDialog) {
         NewLocationDialog(
             modifier = modifier,
             onDismiss = { showNewLocationDialog = false },
             onSubmit = { name, address ->
                 addNewLocation(name, address)
-                // TODO: Highlight (flashing skim) newly added location in the search dialog list (should be the first item).
-            }
+                newLocationAdded = true
+            },
         )
     } else {
         LocationSearchDialog(
             modifier = modifier,
             onDismiss = onDismiss,
             onSubmit = onSubmit,
-            onOpenNewLocationDialog = { showNewLocationDialog = true }
+            onNewClick = { showNewLocationDialog = true },
+            newLocationAdded = newLocationAdded,
         )
     }
 }
 
+/** Display a [Dialog][ActionDialog] that contains a [List][ListColumn] of [Location]s
+ * and a [SearchBar][PlainSearchBar] to filter through all the locations in the list.
+ *
+ * The user can click a [Location] item to select it.
+ *
+ * @param newLocationAdded When a new [Location] item was added to the list of locations,
+ *   The first item in the list of *Recents* will have an *animated scrim* to indicate that that item was just added.
+ * @param onNewClick The action to run when the `"New Location"` button is clicked.  */
 @Composable
 private fun LocationSearchDialog(
     modifier: Modifier = Modifier,
+    newLocationAdded: Boolean = false,
     onDismiss: () -> Unit,
     onSubmit: (Location) -> Unit,
-    onOpenNewLocationDialog: () -> Unit,
+    onNewClick: () -> Unit,
 ) {
     val dialogPadding = 8.dp
     val searchColumnSize = 3.5f
+    val scrimAnimationSpeed = 250 // In millis
+    val scrimAnimationDuration = scrimAnimationSpeed * 5 // Repeat n times; In millis
+    val scrimColor = MaterialTheme.colorScheme.secondaryContainer
     val pageSize = ceil(searchColumnSize).toUInt() * 3u
     val searchState = rememberTextFieldState()
 
@@ -358,6 +378,10 @@ private fun LocationSearchDialog(
         queryState = searchState,
         getPage = { query, start, len -> getLocationsSearchPage(query, start, len) },
         // Page size should have enough items to scroll down several times the number of items showed.
+        pageSize = pageSize,
+    )
+    val recentsPager = rememberListPager(
+        getPage = { start, len -> getRecentLocations(start, len) },
         pageSize = pageSize,
     )
 
@@ -379,7 +403,7 @@ private fun LocationSearchDialog(
 
             PlainToolTipBox("Add new location") {
                 FilledTextIconButton(
-                    onClick = onOpenNewLocationDialog,
+                    onClick = onNewClick,
                     icon = { Icon(painterResource(R.drawable.add_24px), "New Location") },
                     text = { Text("New") },
                 )
@@ -395,12 +419,35 @@ private fun LocationSearchDialog(
 
         AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
             @Composable
-            fun ListColumnItemScope.LocationItem(location: Location) {
+            fun ListColumnItemScope.LocationItem(location: Location, animateScrim: Boolean = false) {
+                var runAnimation by remember { mutableStateOf(animateScrim) }
+                val containerColor = if (runAnimation) {
+                    LaunchedEffect(Unit) {
+                        delay(scrimAnimationDuration.toLong())
+                        runAnimation = false
+                    }
+                    rememberInfiniteTransition()
+                        .animateColor(
+                            initialValue = ListItemDefaults.containerColor,
+                            targetValue = scrimColor,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(scrimAnimationSpeed),
+                                repeatMode = RepeatMode.Reverse,
+                            ),
+                        )
+                        .value
+                } else {
+                    ListItemDefaults.containerColor
+                }
+
                 this.DataItem(
                     modifier = modifier.clickable(onClick = {
                         onSubmit(location)
                         close()
                     }),
+                    colors = ListItemDefaults.colors(
+                        containerColor = containerColor,
+                    ),
                     headlineContent = { Text(location.name) },
                     supportingContent = { Text(location.address) },
                 )
@@ -411,20 +458,22 @@ private fun LocationSearchDialog(
                 // otherwise show recent locations
                 if (queryIsEmpty) {
                     Text("Recent",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .padding(start = dialogPadding)
                     )
 
-                    val recentsPager = rememberListPager(
-                        getPage = { start, len -> getRecentLocations(start, len) },
-                        pageSize = pageSize,
-                    )
-
                     ListColumn(visibleItems = searchColumnSize) {
-                        this.pagedItems(
+                        this.pagedItemsIndexed(
                             pager = recentsPager,
-                            itemKey = { location -> location.id.toInt() }, // Why can't use UInt ....
-                        ) { location -> this.LocationItem(location) }
+                            itemKey = { _, location -> location.id.toInt() }, // Why can't use UInt ....
+                        ) { idx, location ->
+                            if (idx == 0) {
+                                LocationItem(location, newLocationAdded)
+                            } else {
+                                LocationItem(location)
+                            }
+                        }
                     }
                 } else {
                     ListColumn(visibleItems = searchColumnSize) {
@@ -440,6 +489,7 @@ private fun LocationSearchDialog(
     }
 }
 
+/** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to create. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewLocationDialog(
@@ -534,14 +584,16 @@ private fun NewLocationDialog(
             onExpandedChange = { shouldShowMenu = it },
         ) {
             Field(
-                modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                modifier = Modifier
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
                     .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
                 label = "Name",
                 value = locationName,
                 isError = nameError,
             )
             ExposedDropdownMenu(
-                modifier = Modifier.hideDropdownMenuPadding()
+                modifier = Modifier
+                    .hideDropdownMenuPadding()
                     .heightIn(max = 150.dp),
                 expanded = expanded,
                 onDismissRequest = { shouldShowMenu = false },
@@ -550,7 +602,8 @@ private fun NewLocationDialog(
             ) {
                 suggestedNames.forEach { name ->
                     DropdownMenuItem(
-                        modifier = Modifier.widthIn(min = 0.dp)
+                        modifier = Modifier
+                            .widthIn(min = 0.dp)
                             .padding(menuItemPadding)
                             .clip(menuShape),
                         text = { Text(name) },
@@ -568,7 +621,8 @@ private fun NewLocationDialog(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Field(
-                modifier = Modifier.weight(1.0f)
+                modifier = Modifier
+                    .weight(1.0f)
                     .padding(end = 8.dp),
                 label = "Address",
                 value = locationAddress,
@@ -585,7 +639,8 @@ private fun NewLocationDialog(
                 ) {
                     Icon(painterResource(R.drawable.location_on_24px),
                         "Auto-detect Address",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
                             .padding(8.dp)
                     )
                 }
@@ -888,7 +943,8 @@ fun DescriptionField(
     var pasteOverflow by remember { mutableStateOf(false) }
 
     OutlinedTextField(
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
             .heightIn(min = DESCRIPTION_FIELD_MIN_HEIGHT, max = DESCRIPTION_FIELD_MAX_HEIGHT),
         value = fieldValue,
         onValueChange = { newDescription ->
@@ -950,7 +1006,7 @@ fun LocationSearchPreview() {
         LocationSearchDialog(
             onDismiss = {},
             onSubmit = {},
-            onOpenNewLocationDialog = {}
+            onNewClick = {}
         )
     }
 }
@@ -970,7 +1026,8 @@ fun NewLocationPreview() {
 fun CurrenciesDropDownPreview() {
     BudgietTheme {
         CurrencySelectorButton(
-            modifier = Modifier.padding(8.dp)
+            modifier = Modifier
+                .padding(8.dp)
                 .background(
                     MaterialTheme.colorScheme.primaryContainer,
                     MaterialTheme.shapes.extraLarge,

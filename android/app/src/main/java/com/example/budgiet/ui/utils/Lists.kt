@@ -132,38 +132,62 @@ class ListScope<ItemScope: ListItemScope> internal constructor(
         errorContent: @Composable ItemScope.(type: String, message: String?) -> Unit
             = { type, message -> this.ErrorItem(type = type, message = message) },
         itemContent: @Composable ItemScope.(T) -> Unit,
+    ) = this.pagedItemsIndexed(
+        pager = pager,
+        itemKey = { _, item -> itemKey(item) },
+        loadingContent = { loadingContent() },
+        errorContent = { _, type, message -> errorContent(type, message) },
+        itemContent = { _, item -> itemContent(item) },
+    )
+
+    /** Same as [pagedItems], but provides an additional **index** argument to each callback.
+     *
+     * The **index** is based of the [pager] items.
+     * The [List][ListColumn] Composable can display a *loading item* as the first item.
+     * When this is the case, [itemContent] will receive an **index** of `0`,
+     * even though it is actually the *second* item. */
+    fun <T: Any> pagedItemsIndexed(
+        pager: PagerController<T>,
+        itemKey: (idx: Int, T) -> Any,
+        loadingContent: @Composable ItemScope.(idx: Int) -> Unit = { this.LoadingItem() },
+        errorContent: @Composable ItemScope.(idx: Int, type: String, message: String?) -> Unit
+            = { idx, type, message -> this.ErrorItem(type = type, message = message) },
+        itemContent: @Composable ItemScope.(idx: Int, T) -> Unit,
     ) {
         /** Renders the **LoadingItem**, **ErrorItem**, or **onLoaded** composables depending on the **status**. */
-        fun statusItems(status: LoadState, onLoaded: (ListScope<ItemScope>.() -> Unit)? = null) {
+        fun statusItems(idx: Int, status: LoadState, onLoaded: (ListScope<ItemScope>.(idx: Int) -> Unit)? = null) {
             when (status) {
-                is LoadState.Loading -> this.item {
-                    loadingContent()
-                }
                 is LoadState.Error -> this.item {
-                    errorContent(status.error.javaClass.name, status.error.message)
+                    errorContent(idx, status.error.javaClass.name, status.error.message)
                 }
-                else -> if (onLoaded != null) {
-                    this.onLoaded()
+                is LoadState.Loading -> this.item {
+                    loadingContent(idx)
+                }
+                is LoadState.NotLoading -> if (onLoaded != null) {
+                    this.onLoaded(idx)
                 }
             }
         }
 
-        statusItems(pager.prependStatus)
-        statusItems(pager.refreshStatus) {
+        statusItems(0, pager.refreshStatus) {
+            statusItems(0, pager.prependStatus)
+
             val items = pager.items
-            this.items(items.itemCount,
-                key = items.itemKey { item -> itemKey(item) }
-            ) { item ->
-                items[item]?.let { item ->
-                    itemContent(item)
+            this.items(
+                count = items.itemCount,
+                key = { idx -> items.itemKey { itemKey(idx, it) }(idx) },
+            ) { idx ->
+                items[idx]?.let { item ->
+                    itemContent(idx, item)
                 } ?: run {
                     // This will never be null as long as enablePlaceholders = false in the Pager.
                     // Leave it here tho, in case we change it to true and forget about it.
-                    loadingContent()
+                    loadingContent(idx)
                 }
             }
+
+            statusItems(items.itemCount, pager.appendStatus)
         }
-        statusItems(pager.appendStatus)
     }
 }
 
