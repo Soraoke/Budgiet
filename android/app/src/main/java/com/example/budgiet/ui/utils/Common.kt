@@ -71,7 +71,6 @@ val POPUP_PROPERTIES = PopupProperties(
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
-val DIALOG_CONTENT_PADDING = PaddingValues(24.dp)
 
 /** A *filled* [Button] that contains an [Icon] and some [Text].
  *
@@ -221,13 +220,37 @@ fun PlainSearchBar(
     )
 }
 
+/** Structured padding values for [ActionDialog].
+ *
+ * Default values respect the [Material 3 Spec](https://m3.material.io/components/dialogs/specs).
+ *
+ * @param dialogEdges Padding to apply *around* all the content within the [Dialog][ActionDialog].
+ * @param titleSpacerHeight How much space to put between the **title** and **content** Composables in the [Dialog][ActionDialog].
+ * @param actionsSpacerHeight How much space to put between the **actions** and **content** Composables in the [Dialog][ActionDialog]. */
+data class ActionDialogPadding(
+    val dialogEdges: PaddingValues = PaddingValues(24.dp),
+    val titleSpacerHeight: Dp = 16.dp,
+    val actionsSpacerHeight: Dp = 24.dp,
+) {
+    companion object {
+        /** Default values respecting the [Material 3 Spec](https://m3.material.io/components/dialogs/specs). */
+        val Default = ActionDialogPadding()
+
+        val TightlyPacked = ActionDialogPadding(
+            dialogEdges = PaddingValues(all = 8.dp),
+            titleSpacerHeight = 8.dp,
+            actionsSpacerHeight = 4.dp,
+        )
+    }
+}
+
 /** Like an [AlertDialog][androidx.compose.material3.AlertDialog], but offers more freedom when placing the **action** buttons and title content.
  *
  * See [Card] for details on all other arguments.
  *
- * @param actions A set of buttons (or any other composable) that
- *   are laid out **horizontally** *below* the dialog **content**.
- * @param actionsSpacerHeight How much space to put between the [actions] and [content]. */
+ * @param padding Structured padding values. See [ActionDialogPadding].
+ * @param title A Composable to be displayed **above** of the [content].
+ * @param actions A set of buttons (or any other composable) that are displayed **below** the [content] and laid out **horizontally**. */
 @Composable
 fun ActionDialog(
     modifier: Modifier = Modifier,
@@ -236,8 +259,8 @@ fun ActionDialog(
     colors: CardColors = CardDefaults.cardColors(),
     elevation: CardElevation = CardDefaults.cardElevation(),
     border: BorderStroke? = null,
-    contentPadding: PaddingValues = DIALOG_CONTENT_PADDING,
-    actionsSpacerHeight: Dp = contentPadding.calculateBottomPadding(),
+    padding: ActionDialogPadding = ActionDialogPadding.Default,
+    title: @Composable ColumnScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -253,13 +276,15 @@ fun ActionDialog(
             elevation = elevation,
             border = border,
         ) {
-            Column(Modifier.padding(contentPadding)) {
+            Column(Modifier.padding(padding.dialogEdges)) {
+                this.title()
+                Spacer(Modifier.height(padding.titleSpacerHeight))
                 this.content()
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = actionsSpacerHeight),
+                        .padding(top = padding.actionsSpacerHeight),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                     content = actions,

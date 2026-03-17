@@ -366,7 +366,6 @@ private fun LocationSearchDialog(
     onSubmit: (Location) -> Unit,
     onNewClick: () -> Unit,
 ) {
-    val dialogPadding = 8.dp
     val searchColumnSize = 3.5f
     val scrimAnimationSpeed = 250 // In millis
     val scrimAnimationDuration = scrimAnimationSpeed * 5 // Repeat n times; In millis
@@ -394,8 +393,14 @@ private fun LocationSearchDialog(
 
     ActionDialog(
         onDismiss = { close() },
-        contentPadding = PaddingValues(all = dialogPadding),
-        actionsSpacerHeight = dialogPadding / 2,
+        padding = ActionDialogPadding.TightlyPacked,
+        title = {
+            PlainSearchBar(
+                onQueryChange = { searchPager.refresh() },
+                state = searchState,
+                placeholder = { Text("Search existing locations") },
+            )
+        },
         actions = {
             TextButton(onClick = { close() }) {
                 Text("Cancel")
@@ -410,13 +415,6 @@ private fun LocationSearchDialog(
             }
         }
     ) {
-        PlainSearchBar(
-            onQueryChange = { searchPager.refresh() },
-            state = searchState,
-            placeholder = { Text("Search existing locations") },
-        )
-        Spacer(Modifier.height(dialogPadding))
-
         AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
             @Composable
             fun ListColumnItemScope.LocationItem(location: Location, animateScrim: Boolean = false) {
@@ -460,7 +458,7 @@ private fun LocationSearchDialog(
                     Text("Recent",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = dialogPadding)
+                            .padding(start = ActionDialogPadding.TightlyPacked.dialogEdges.calculateStartPadding(LocalLayoutDirection.current))
                     )
 
                     ListColumn(visibleItems = searchColumnSize) {
@@ -484,7 +482,6 @@ private fun LocationSearchDialog(
                     }
                 }
             }
-
         }
     }
 }
@@ -497,7 +494,6 @@ private fun NewLocationDialog(
     onDismiss: () -> Unit,
     onSubmit: (name: String, address: String) -> Unit
 ) {
-    val fieldSpacerHeight = 16.dp
     val menuShape = MaterialTheme.shapes.medium
     val menuItemPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
     val maxMenuItems = 10u
@@ -510,6 +506,12 @@ private fun NewLocationDialog(
     ActionDialog(
         modifier = modifier,
         onDismiss = onDismiss,
+        title = {
+            Text("New location",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
         actions = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
@@ -558,12 +560,6 @@ private fun NewLocationDialog(
                 }},
             )
         }
-
-        Text("New location",
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Spacer(Modifier.height(fieldSpacerHeight))
 
         val suggestedNames = remember(key1 = locationName.value) {
             getLocationsSearchPage(locationName.value, 0u, maxMenuItems)
@@ -616,8 +612,7 @@ private fun NewLocationDialog(
             }
         }
 
-
-        Spacer(Modifier.height(fieldSpacerHeight))
+        Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Field(
