@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -30,6 +33,7 @@ import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SearchBarDefaults
@@ -56,6 +60,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.example.budgiet.R
 import com.example.budgiet.localDateFromUtcMillis
 import java.time.LocalDate
+import kotlin.experimental.and
+import kotlin.experimental.or
 
 val DIALOG_PROPERTIES = DialogProperties(
     dismissOnBackPress = true,
@@ -173,7 +179,7 @@ fun PlainToolTipBox(
  *
  * The caller can also provide their own [TextFieldState] if they want to have control over the *search input*.
  *
- * @param placeholder Placeholder text that is displayed when the query is empty.
+ * @param placeholderText Placeholder text that is displayed when the query is empty.
  * @param hideIconOnQuery Hide the **search Icon** when the user has text on the [SearchBar][PlainSearchBar]
  *   (i.e. the query text is not empty). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -182,7 +188,7 @@ fun PlainSearchBar(
     modifier: Modifier = Modifier,
     onQueryChange: (CharSequence) -> Unit,
     state: TextFieldState = rememberTextFieldState(),
-    placeholder: @Composable () -> Unit = { Text("Search", autoSize = TextAutoSize.StepBased(), softWrap = false, maxLines = 1) },
+    placeholderText: String = "Search",
     hideIconOnQuery: Boolean = false,
 ) {
     SearchBarDefaults.InputField(
@@ -201,7 +207,14 @@ fun PlainSearchBar(
             focusedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
             unfocusedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ),
-        placeholder = placeholder,
+        placeholder = {
+            Text(
+                text = placeholderText,
+                softWrap = false,
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(maxFontSize = LocalTextStyle.current.fontSize),
+            )
+        },
         leadingIcon = if (!hideIconOnQuery || state.text.isEmpty()) { {
             Icon(painterResource(R.drawable.search_24px), null)
         } } else { null },
@@ -357,4 +370,49 @@ fun Modifier.hideDropdownMenuPadding(): Modifier = this.layout { measurable, con
     ) {
         placeable.placeRelative(0, -verticalCrop.toPx().toInt())
     }
+}
+
+/** Indicates any of the 4 *sides* of a rectangular shape.
+ *
+ * This enum supports bitwise operations (e.g. **or**) to allow combinations of multiple variants. */
+@Suppress("unused")
+class Corner private constructor(private val bitFlag: Byte) {
+    companion object {
+        val TopLeft = Corner(0b0001)
+        val TopRight = Corner(0b0010)
+        val BottomLeft = Corner(0b0100)
+        val BottomRight = Corner(0b1000)
+        val Top = TopLeft or TopRight
+        val Bottom = BottomLeft or BottomRight
+        val Left = TopLeft or BottomLeft
+        val Right = TopRight or BottomRight
+    }
+
+    /** Bit-wise operator **or**. */
+    // No operator symbol |? this is ass...
+    infix fun or(other: Corner): Corner
+        = Corner(this.bitFlag or other.bitFlag)
+
+    /** Whether the receiver (`this`) includes the specified [Corner] in its bitFlag. */
+    infix fun includes(other: Corner): Boolean
+        = (this.bitFlag and other.bitFlag) != 0.toByte()
+}
+
+/** Assign *fully-rounded* shape to all corners of a UI element (e.g. [Button]),
+ * except for the corners specified in the **sharpSide** argument.
+ * Those sides specified are assigned a *sharp* shape (small corner radius). */
+@Composable
+fun halfRoundedCornerShape(sharpSide: Corner): RoundedCornerShape {
+    val sharpRadius = MaterialTheme.shapes.extraSmall.bottomEnd
+    val roundRadius = CornerSize(percent = 50)
+    val corner = { corner: Corner ->
+        if (sharpSide includes corner) sharpRadius else roundRadius
+    }
+
+    return RoundedCornerShape(
+        topStart = corner(Corner.TopLeft),
+        bottomStart = corner(Corner.BottomLeft),
+        topEnd = corner(Corner.TopRight),
+        bottomEnd = corner(Corner.BottomRight),
+    )
 }

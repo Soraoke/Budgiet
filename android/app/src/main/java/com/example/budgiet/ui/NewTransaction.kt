@@ -174,17 +174,10 @@ fun NewTransactionForm(
             )
         }
         FormField("Location") {
-            /** The border-radius of the shape of the two buttons in this field.
-             * This only applies to the corners that connect the buttons. */
-            val inBetweenBorderRadius = MaterialTheme.shapes.extraSmall.bottomEnd
-
             FilledTonalButton(
                 onClick = { showLocationPicker = true },
                 // Modify the shape on the left-side of the button to connect with the auto-select location button.
-                shape = RoundedCornerShape(
-                    topStart = CornerSize(percent = 50), bottomStart = CornerSize(percent = 50),
-                    topEnd = inBetweenBorderRadius, bottomEnd = inBetweenBorderRadius,
-                )
+                shape = halfRoundedCornerShape(Corner.Right),
             ) {
                 Text(
                     if (viewModel.location != null) {
@@ -197,11 +190,7 @@ fun NewTransactionForm(
             PlainToolTipBox("Auto-select Location") {
                 FilledIconButton(
                     onClick = { TODO() },
-                    // Modify the shape on the right-side of the button to connect with the select location button.
-                    shape = RoundedCornerShape(
-                        topEnd = CornerSize(percent = 50), bottomEnd = CornerSize(percent = 50),
-                        topStart = inBetweenBorderRadius, bottomStart = inBetweenBorderRadius,
-                    )
+                    shape = halfRoundedCornerShape(Corner.Left)
                 ) {
                     Icon(painterResource(R.drawable.location_on_24px), "Auto-select Location")
                 }
@@ -396,9 +385,9 @@ private fun LocationSearchDialog(
         padding = ActionDialogPadding.TightlyPacked,
         title = {
             PlainSearchBar(
+                placeholderText = "Search existing locations",
                 onQueryChange = { searchPager.refresh() },
                 state = searchState,
-                placeholder = { Text("Search existing locations") },
             )
         },
         actions = {
@@ -529,7 +518,7 @@ private fun NewLocationDialog(
                         }
                     },
                     icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
-                    text = { Text("Done") },
+                    text = { Text("Submit") },
                 )
             }
         }
