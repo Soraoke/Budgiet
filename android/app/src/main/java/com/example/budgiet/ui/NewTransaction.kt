@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,9 +27,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CornerSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
@@ -49,6 +52,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -58,7 +62,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -97,6 +103,7 @@ import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
+import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
@@ -104,7 +111,9 @@ import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.TextIconButton
+import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -124,11 +133,18 @@ val FIELD_MAX_WIDTH = 275.dp
 // How much time (in ms) should pass after an input on a field for its input to be validated.
 private const val FIELD_TIMEOUT = 500L
 
+val TAG_GRID_MAX_HEIGHT = 400.dp
+val TAG_SELECTED_BORDER_COLOR = Color.Yellow // TODO: WIP
+val TAG_SHAPE
+    @Composable get() = MaterialTheme.shapes.medium
+
+
 class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location by mutableStateOf<Location?>(null)
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
     var totalPrice by mutableDoubleStateOf(0.0)
+    var tags = mutableStateListOf<Tag>()
     var description by mutableStateOf("")
 
     fun submit() {
@@ -143,8 +159,26 @@ class NewTransactionViewModel: ViewModel() {
         this.totalPrice = 0.0
         this.description = ""
     }
+
+    companion object {
+        fun getAllTags(): List<Tag> {
+            TODO()
+        }
+        fun createNewTag(tag: Tag) {
+            TODO("create tag $tag")
+        }
+    }
 }
 
+data class Tag(
+    val name: String,
+    val icon: String?,
+    val color: Color,
+)
+
+private enum class DialogState {
+    None, DatePicker, LocationPicker, TagsPicker;
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewTransactionForm(
@@ -152,8 +186,8 @@ fun NewTransactionForm(
     viewModel: NewTransactionViewModel,
     onDismiss: () -> Unit,
 ) {
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showLocationPicker by remember { mutableStateOf(false) }
+    var dialogState by remember { mutableStateOf(DialogState.None) }
+    val dialogDismiss = { dialogState = DialogState.None }
 
     Column(
         modifier = modifier,
@@ -166,7 +200,7 @@ fun NewTransactionForm(
                 shape = MaterialTheme.shapes.medium,
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
-                        IconButton(onClick = { showDatePicker = true }) {
+                        IconButton(onClick = { dialogState = DialogState.DatePicker }) {
                             Icon(painterResource(R.drawable.date_range_24px), "Select Date")
                         }
                     }
@@ -175,7 +209,7 @@ fun NewTransactionForm(
         }
         FormField("Location") {
             FilledTonalButton(
-                onClick = { showLocationPicker = true },
+                onClick = { dialogState = DialogState.LocationPicker },
                 // Modify the shape on the left-side of the button to connect with the auto-select location button.
                 shape = halfRoundedCornerShape(Corner.Right),
             ) {
@@ -204,6 +238,42 @@ fun NewTransactionForm(
                 onCurrencyChange = { viewModel.currency = it }
             )
         }
+        FormField("Tags") {
+            if (viewModel.tags.isNotEmpty()) {
+                Row(Modifier
+                    .widthIn(max = FIELD_MAX_WIDTH)
+                    .border(
+                        width = OutlinedTextFieldDefaults.UnfocusedBorderThickness,
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.outline,
+                    ),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+
+                }
+            }
+            PlainToolTipBox("Attach a Tag to this transaction") {
+                val onClick = { dialogState = DialogState.TagsPicker }
+                val tagIcon = @Composable {
+                    Icon(painterResource(R.drawable.label_24px), "Attach tag")
+                }
+
+                if (viewModel.tags.isEmpty()) {
+                    FilledTextIconButton(
+                        onClick = onClick,
+                        icon = tagIcon,
+                        text = { Text("Attach tag") },
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                    )
+                } else {
+                    IconButton(
+                        onClick = onClick,
+                        shape = halfRoundedCornerShape(Corner.Left),
+                        content = tagIcon,
+                    )
+                }
+            }
+        }
         FormField("Description", labelPosition = LabelPosition.AboveContent) {
             DescriptionField(fieldValue = viewModel.description) { viewModel.description = it }
         }
@@ -228,27 +298,23 @@ fun NewTransactionForm(
         }
     }
 
-    if (showDatePicker) {
-        DatePickerDialog(
+    when (dialogState) {
+        DialogState.None -> { }
+        DialogState.DatePicker -> DatePickerDialog(
             selectedDate = viewModel.date,
-            onDismiss = {
-                @Suppress("AssignedValueIsNeverRead")
-                showDatePicker = false
-            },
+            onDismiss = dialogDismiss,
             onSubmit = { viewModel.date = it },
         )
-    }
-
-    if (showLocationPicker) {
-        LocationPickerDialog(
-            onDismiss = {
-                @Suppress("AssignedValueIsNeverRead")
-                showLocationPicker = false
-            },
-            onSubmit = { location -> viewModel.location = location }
+        DialogState.LocationPicker -> LocationPickerDialog(
+            onDismiss = dialogDismiss,
+            onSubmit = { viewModel.location = it },
+        )
+        DialogState.TagsPicker -> TagsPickerDialog(
+            selectedTags = viewModel.tags,
+            onSubmit = { viewModel.tags.addAll(it) },
+            onDismiss = dialogDismiss,
         )
     }
-
 }
 
 /** Dictates how the *[FormField]*'s **label/title** is positioned in the element.
@@ -915,6 +981,191 @@ fun CurrencySelectorButton(
     }
 }
 
+@Composable
+fun TagsPickerDialog(
+    modifier: Modifier = Modifier,
+    selectedTags: List<Tag>,
+    onSubmit: (List<Tag>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val gridPadding = 4.dp
+    val searchState = rememberTextFieldState()
+    val allTags = NewTransactionViewModel.getAllTags()
+
+    var showTagCreator by remember { mutableStateOf(false) }
+    val innerSelectedTags = remember { mutableStateSetOf<Tag>() }
+    innerSelectedTags.addAll(selectedTags)
+
+    if (showTagCreator) {
+        TagCreatorDialog(
+            modifier = modifier,
+            onSubmit = { NewTransactionViewModel.createNewTag(it) },
+            onDismiss = {
+                @Suppress("AssignedValueIsNeverRead")
+                showTagCreator = false
+            },
+        )
+    } else {
+        ActionDialog(
+            modifier = modifier,
+            onDismiss = onDismiss,
+            title = {
+                PlainSearchBar(
+                    state = searchState,
+                    placeholderText = "Search tags",
+                    onQueryChange = { },
+                )
+            },
+            actions = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+
+                PlainToolTipBox("Submit selected tags") {
+                    FilledTextIconButton(
+                        onClick = {
+                            onSubmit(innerSelectedTags.toList())
+                            onDismiss()
+                        },
+                        icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                        text = { Text("Done") },
+                    )
+                }
+            },
+        ) {
+            val modifier = Modifier.fillMaxWidth()
+                .heightIn(min = TextFieldDefaults.MinHeight, max = TAG_GRID_MAX_HEIGHT)
+                .border(width = 1.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.outline)
+
+            if (allTags.isEmpty()) {
+                Box(modifier) {
+                    Column(
+                        modifier = Modifier.padding(ActionDialogPadding.Default.dialogEdges),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text("There are no tags.", textAlign = TextAlign.Center)
+                        Text("Press \"New Tag\" to create one.", textAlign = TextAlign.Center)
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    modifier = modifier,
+                    contentPadding = PaddingValues(gridPadding),
+                    columns = GridCells.Adaptive(minSize = 1.dp),
+                    horizontalArrangement = Arrangement.Start,
+                ) {
+                    this.items(
+                        items = allTags,
+                        key = { it.name },
+                        span = { _ -> GridItemSpan(this.maxLineSpan) },
+                    ) { tag ->
+                        TagFrame(
+                            tag = tag,
+                            modifier = Modifier.clickable { innerSelectedTags.add(tag) },
+                            isSelected = innerSelectedTags.contains(tag),
+                        )
+                    }
+                }
+            }
+
+            FilledTextIconButton(
+                modifier = Modifier.align(Alignment.End)
+                    .padding(top = ActionDialogPadding.Default.titleSpacerHeight),
+                colors = ButtonDefaults.filledTonalButtonColors(),
+                icon = { Icon(painterResource(R.drawable.add_24px), "New tag") },
+                text = { Text("New tag") },
+                onClick = {
+                    @Suppress("AssignedValueIsNeverRead")
+                    showTagCreator = true
+                },
+            )
+        }
+    }
+}
+
+@Composable
+fun TagCreatorDialog(
+    modifier: Modifier = Modifier,
+    onSubmit: (Tag) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var icon by remember { mutableStateOf<String?>(null) }
+    var name by remember { mutableStateOf("") }
+    var color by remember { mutableStateOf(Color.Cyan) } // TODO: select random color
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        title = { Text("Create new tag") },
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Submit new tag") {
+                FilledTextIconButton(
+                    onClick = {
+                        onSubmit(Tag(name, icon, color))
+                        onDismiss()
+                    },
+                    icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                    text = { Text("Submit") },
+                )
+            }
+        },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlainToolTipBox("Select tag icon") {
+                IconButton(
+                    modifier = Modifier.border(width = 2.dp, shape = IconButtonDefaults.standardShape, color = MaterialTheme.colorScheme.outline),
+                    onClick = { TODO() }
+                ) {
+
+                }
+            }
+            TextField(
+                label = { Text("Tag name") },
+                value = name,
+                onValueChange = { name = it },
+            )
+            // TODO: color picker
+        }
+    }
+}
+
+// TODO: doc: onRemove shows an X button if not null
+@Composable
+fun TagFrame(
+    modifier: Modifier = Modifier,
+    tag: Tag,
+    isSelected: Boolean = false,
+    onRemove: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier.apply {
+            background(color = tag.color, shape = TAG_SHAPE)
+            if (isSelected) {
+                border(width = 2.dp, shape = TAG_SHAPE, color = TAG_SELECTED_BORDER_COLOR)
+            }
+        },
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(TODO()), null)
+        Text(tag.name)
+        if (onRemove != null) {
+            IconButton(onClick = onRemove) {
+                Icon(painterResource(R.drawable.close_24px), "Remove tag")
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DescriptionField(
@@ -976,7 +1227,11 @@ fun NewTransactionPreview() {
     BudgietTheme {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
-                viewModel = viewModel<NewTransactionViewModel>(),
+                viewModel = viewModel<NewTransactionViewModel>().apply {
+                    tags.add(Tag(name = "Tag1", icon = "dog", color = Color.Cyan))
+                    tags.add(Tag(name = "Tag2", icon = "cat", color = Color.Yellow))
+                    tags.add(Tag(name = "Tag3", icon = "shopping_cart", color = Color.Black))
+                },
                 onDismiss = { }
             )
         }
@@ -1001,6 +1256,29 @@ fun NewLocationPreview() {
         NewLocationDialog(
             onDismiss = {},
             onSubmit = { _, _ -> }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TagsPickerPreview() {
+    BudgietTheme {
+        TagsPickerDialog(
+            selectedTags = listOf(),
+            onSubmit = { },
+            onDismiss = { },
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TagCreatorPreview() {
+    BudgietTheme {
+        TagCreatorDialog(
+            onSubmit = { },
+            onDismiss = { },
         )
     }
 }
