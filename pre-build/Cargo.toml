@@ -1,0 +1,11 @@
+[package]
+name = "pre-build"
+description = "Functions to run before running build of the front-end apps"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.0", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde-xml-rs = "0.8.2"
+xml = "1.2.1"
