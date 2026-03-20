@@ -1,10 +1,9 @@
 mod android;
+mod utils;
 
-use std::{cell::RefCell, fmt::{Debug, Display, Write}, io};
-
+use std::{fmt::{Debug, Display, Write}, fs, io, path::{Path, PathBuf}, process::exit};
 use clap::{Parser, Subcommand};
-
-use crate::android::Svg;
+use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, utils::read_dir_with};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -25,35 +24,91 @@ enum Commands {
     /// Convert an SVG file to Android's Vector Drawable proprietary format.
     Svg2Drawable {
         /// The SVG file to convert.
+        /// Can be a directory.
         /// Takes input from **stdin** input is `-`.
         #[arg(short, long)]
-        input: String,
+        input: PathBuf,
         /// The XML file to output to.
+        /// Must be a file or directory, depening on the value of **input**.
         /// Outputs to **stdout** if not passed.
         #[arg(short, long)]
-        output: Option<String>,
+        output: Option<PathBuf>,
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    if let Err(err) = _main() {
+        eprintln!("{err}");
+        exit(1);
+    }
+}
+fn _main() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
         Commands::Android { dry } => {
             // TODO: write gitignore to res/drawable
-            android::copy_icons(dry)?;
-            android::crate_icons_array(dry)?;
+            android::svg2drawable::copy_icons(dry)?;
+            println!("\nConverted SVG files to usable Vector Drawables; now adding array with icon names...\n");
+            android::create_icons_array(dry)?;
+            println!("\nDone!");
         },
         Commands::Svg2Drawable { input, output } => {
-            let svg = Svg::read_file(match input.as_str() {
-                "-" => "/dev/stdin",
-                path => path,
-            })?;
-            svg.write_drawable_to_file(output.as_ref().map(String::as_str).unwrap_or("/dev/stdout"))?;
+            // Don't have to worry about symlinks here, metadata follows them.
+            let input_is_file = input.metadata()
+                .map_err(|err| IoError::from(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                .is_file()
+                // consider stdin to be a file.
+                || input.as_os_str() == "-";
+            let output_is_file = match &output {
+                Some(output) => output.metadata()
+                    .map_err(|err| IoError::from(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                    .is_file(),
+                // Consider stdout to be a file.
+                None => true,
+            };
+            // Unwrap input and output paths.
+            let input = &if input.as_os_str() == "-" {
+                PathBuf::from("/dev/stdin")
+            } else {
+                input
+            };
+            let output = output.as_ref().map(PathBuf::as_path).unwrap_or(Path::new("/dev/stdout"));
+
+            // Check that input and output are BOTH file or directory.
+            if input_is_file && !output_is_file {
+                return Err(format!("Expected output \"{}\", to be a file", output.display()).into());
+            } else if !input_is_file && output_is_file {
+                return Err(format!("Expected output \"{}\", to be a directory, but it is a file", output.display()).into());
+            }
+
+            let tmp_output = &svg_to_bad_drawable(input)?;
+            fn delete_tmp_file(path: &Path) -> Result<(), IoError> {
+                // Delete the temporary, bad drawable file.
+                fs::remove_file(path)
+                    .map_err(|err| IoError::from(err, format!("Error deleting file \"{}\"", path.display())))
+            }
+
+            if output_is_file {
+                // tmp file must be removed regardless of result.
+                let result = BadDrawable::read_file(tmp_output)
+                    .and_then(|drawable| drawable.write_to_file(output));
+
+                delete_tmp_file(&tmp_output)?;
+                result?
+            } else {
+                read_dir_with(tmp_output, |entry| {
+                    // Deserialize Vector Drawable with bad data.
+                    let result = BadDrawable::read_file(entry.path())
+                        .and_then(|drawable| drawable.write_to_file(output.join(entry.file_name())));
+
+                    delete_tmp_file(&entry.path())?;
+                    result
+                })?;
+            }
         }
     }
 
     Ok(())
 }
-
 /// An error packing one or multiple other [`IoError`]s.
 struct Error(Box<[IoError]>);
 impl IntoIterator for Error {
@@ -65,14 +120,15 @@ impl IntoIterator for Error {
         self.0.into_iter()
     }
 }
-impl From<ErrBuf> for Error {
-    fn from(value: ErrBuf) -> Self {
-        Self(value.0.take().into_boxed_slice())
-    }
-}
 impl From<IoError> for Error {
     fn from(value: IoError) -> Self {
         Self(Vec::from([value]).into_boxed_slice())
+    }
+}
+impl From<Vec<IoError>> for Error {
+    #[inline(always)]
+    fn from(value: Vec<IoError>) -> Self {
+        Self(value.into_boxed_slice())
     }
 }
 impl Debug for Error {
@@ -124,30 +180,7 @@ impl std::error::Error for IoError {
 impl Display for IoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)?;
+        f.write_str(": ")?;
         <std::io::Error as Display>::fmt(&self.error, f)
-    }
-}
-
-struct ErrBuf(RefCell<Vec<IoError>>);
-#[allow(unused)]
-impl ErrBuf {
-    pub fn new() -> Self {
-        Self(RefCell::new(Vec::new()))
-    }
-
-    pub fn push(&self, err: IoError) {
-        self.0.borrow_mut().push(err)
-    }
-    /// Push to the buffer an [`io::Error`] with a propper message prefix.
-    pub fn push_with_prefix(&self, err: io::Error, msg: impl Display) {
-        self.push(IoError::from(err, msg));
-    }
-
-    pub fn extend(&self, iter: impl IntoIterator<Item = IoError>) {
-        self.0.borrow_mut().extend(iter);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.borrow().is_empty()
     }
 }
