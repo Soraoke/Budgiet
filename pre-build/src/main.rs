@@ -8,6 +8,12 @@ use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, utils::{I
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Output to stderr information about the operations performed by the program.
+    #[arg(long, short)]
+    verbose: bool,
+    /// Dry run: processes input, but does not write to any files.
+    #[arg(short, long)]
+    dry: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -16,11 +22,7 @@ struct Cli {
 #[clap(rename_all = "lower")]
 enum Commands {
     /// Run pre-build for the android application source.
-    Android {
-        /// Dry run: processes input, but does not write to any files.
-        #[arg(short, long)]
-        dry: bool,
-    },
+    Android { },
     /// Convert an SVG file to Android's Vector Drawable proprietary format.
     Svg2Drawable {
         /// The SVG file to convert.
@@ -43,13 +45,19 @@ fn main() {
     }
 }
 fn _main() -> Result<(), Box<dyn StdError>> {
-    match Cli::parse().command {
-        Commands::Android { dry } => {
+    let Cli { verbose, dry, command } = Cli::parse();
+    match command {
+        Commands::Android { } => {
             // TODO: write gitignore to res/drawable
-            android::svg2drawable::copy_icons(dry)?;
-            println!("\nConverted SVG files to usable Vector Drawables; now adding array with icon names...\n");
-            android::create_icons_array(dry)?;
-            println!("\nDone!");
+            android::svg2drawable::copy_icons(verbose, dry)?;
+            if verbose {
+                eprintln!("\nConverted SVG files to usable Vector Drawables; now adding array with icon names...\n");
+            }
+            android::create_icons_array(verbose, dry)?;
+            android::create_gitignore(verbose, dry)?;
+            if verbose {
+                eprintln!("\nDone!");
+            }
         },
         Commands::Svg2Drawable { input, output } => {
             // Don't have to worry about symlinks here, metadata follows them.
@@ -80,7 +88,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
                 return Err(format!("Expected output \"{}\", to be a directory, but it is a file", output.display()).into());
             }
 
-            let tmp_output = &svg_to_bad_drawable(input)?;
+            let tmp_output = &svg_to_bad_drawable(input, verbose, dry)?;
             fn delete_tmp_file(path: &Path) -> Result<(), Error> {
                 // Delete the temporary, bad drawable file.
                 fs::remove_file(path)

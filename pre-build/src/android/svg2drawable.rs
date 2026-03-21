@@ -10,11 +10,16 @@ static TARGET_DIR: &str = "../target";
 
 /// Copy and **reformat** `SVG` files in [`ICONS_DIR`] to the `res/drawable` directory in the Android application.
 /// 
+/// If **`verbose`** is `true`, prints information about an opperation to *stderr*.
 /// If **`dry`** is `true`, doesn't write to any files.
 /// 
 /// The files are converted to Android's proprietary *Drawable Resource (XML)* format and have `"userIcon_"` prefixed to their file name. 
-pub fn copy_icons(dry: bool) -> Result<(), Errors<Error>> {
-    let tmp_dir = &svg_to_bad_drawable(ICONS_DIR)?;
+pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
+    let tmp_dir = &svg_to_bad_drawable(ICONS_DIR, verbose, dry)?;
+
+    if verbose {
+        eprintln!("\nConverted SVGs to Vector Drawable; now fixing output files...\n");
+    }
 
     // The converted Vector Drawables are missing some attributes, add those here.
     read_dir(tmp_dir).map(|result| result.and_then(|entry| {
@@ -28,7 +33,9 @@ pub fn copy_icons(dry: bool) -> Result<(), Errors<Error>> {
         if android_file.try_exists()
             .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", android_file.display())))?
         {
-            println!("Vector Drawable \"{}\" already exists; skipping", android_file.display());
+            if verbose {
+                eprintln!("Vector Drawable \"{}\" already exists; skipping", android_file.display());
+            }
             return Ok(());
         }
 
@@ -42,12 +49,14 @@ pub fn copy_icons(dry: bool) -> Result<(), Errors<Error>> {
         fs::remove_file(entry.path())
             .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", entry.path().display())))?;
 
-        if dry { print!("Dry run: ") }
-        print!("Converted SVG file \"{}\"", Path::new(ICONS_DIR).join(entry.file_name()).with_extension("svg").display());
-        if !dry {
-            print!("; wrote to \"{}\"", android_file.display())
+        if verbose {
+            if dry { eprint!("Dry run: "); }
+            eprint!("Converted SVG file \"{}\"", Path::new(ICONS_DIR).join(entry.file_name()).with_extension("svg").display());
+            if !dry {
+                eprint!("; wrote to \"{}\"", android_file.display());
+            }
+            eprintln!("");
         }
-        println!("");
 
         Ok(())
     }))
@@ -62,15 +71,23 @@ pub fn copy_icons(dry: bool) -> Result<(), Errors<Error>> {
 /// **`path`** is the SVG file, *or* a directory containing SVG files.
 /// 
 /// Returns the **path** to the converted **Vector Drawable** file (or directory, if **`path`** was a directory).
-pub fn svg_to_bad_drawable(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> Result<PathBuf, Error> {
     let path = path.as_ref();
-    let tmp_dir = Path::new(TARGET_DIR).join("tmp").join("user-icons");
+    let tmp_dir = Path::new(TARGET_DIR)
+        .join("tmp")
+        .join(path.file_name()
+            .ok_or_else(|| Error::new(format!("Path to SVG[s] must be a file or directory").into()))?
+        );
 
-    fs::create_dir_all(&tmp_dir)
-        .map_err(|err| Error::io(err, format!("Error creating directory \"{}\"", tmp_dir.display())))?;
-
-    unpack_vd_tool()?;
-    command!("../target/bin/vd-tool/bin/vd-tool", "-c", "-in", path, "-out", tmp_dir)?;
+    if !dry {
+        fs::create_dir_all(&tmp_dir)
+            .map_err(|err| Error::io(err, format!("Error creating directory \"{}\"", tmp_dir.display())))?;
+    
+        unpack_vd_tool(verbose)?;
+        command!("../target/bin/vd-tool/bin/vd-tool", "-c", "-in", path, "-out", tmp_dir)?;
+    } else if verbose {
+        eprintln!("Dry run: Skipping converting SVGs to Vector drawable")
+    }
 
     Ok(if path.metadata()
         .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", path.display())))?
@@ -90,30 +107,40 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
 // The tool is NOT packaged in this repo, it must be downloaded from the repackager repo and then that downloads the actual code that we compile here.
 // Both the source code and the java binary must be in the `/target` directory of the project.
 // Scratch that... I was going to do this but its just gonna make CI run slower, so just download the built package in the github.
-fn unpack_vd_tool() -> Result<(), Error> {
+fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
+    static PKG_NAME: &str = "vd-tool";
     static PKG_URL: &str = "https://github.com/rharter/vd-tool/releases/download/v1/vd-tool.zip";
     static PKG_SHA256: &str = "9bc7b2046b51e22c62663a93c9e91c3b29b053a36a5484a0d73d8c54def3e595";
 
-    let zip_file = Path::new(TARGET_DIR).join("vd-tool.zip");
-    let bin_dir = Path::new(TARGET_DIR).join("bin/");
+    let zip_file = Path::new(TARGET_DIR).join(PKG_NAME).with_extension("zip");
+    let unpkg_dir = Path::new(TARGET_DIR).join("bin").join(PKG_NAME);
 
-    if bin_dir.join("vd-tool")
-        .try_exists()
-        .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", bin_dir.join("vd-tool").display())))?
+    if unpkg_dir.try_exists()
+        .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", unpkg_dir.display())))?
     {
+        if verbose {
+            eprintln!("vd-tool already downloaded; Skipping")
+        }
         return Ok(());
     }
 
-    eprintln!("Downloading vd-tool...");
+    if verbose {
+        eprintln!("Downloading {PKG_NAME}...");
+    }
     command!("curl", "--location", PKG_URL, "--output", zip_file)?;
     let sha256 = Sha256::digest(fs::read(&zip_file)
         .map_err(|err| Error::io(err, format!("Error reading file \"{}\"", zip_file.display())))?
     );
     checksum::<Sha256>(PKG_SHA256, sha256)
-        .map_err(|err| Error::io(err, "SHA256 checksum of \"vd-tool\" failed"))?;
+        .map_err(|err| Error::io(err, format!("SHA256 checksum of \"{PKG_NAME}\" failed")))?;
+    if verbose {
+        eprintln!("Download completed");
+    }
 
-    eprintln!("Unpacking vd-tool...");
-    command!("unzip", zip_file, "-d", bin_dir)?;
+    command!("unzip", zip_file, "-d", unpkg_dir.parent().unwrap())?;
+    if verbose {
+        eprintln!("Unpacked {PKG_NAME} to \"{}\"", unpkg_dir.display());
+    }
 
     Ok(())
 }
