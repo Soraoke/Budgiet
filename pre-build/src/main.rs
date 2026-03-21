@@ -1,9 +1,9 @@
 mod android;
 mod utils;
 
-use std::{fmt::{Debug, Display, Write}, fs, io, path::{Path, PathBuf}, process::exit};
+use std::{error::Error as StdError, fmt::{Debug, Display, Write}, fs, io, path::{Path, PathBuf}, process::exit};
 use clap::{Parser, Subcommand};
-use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, utils::read_dir_with};
+use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, utils::{IterResultExt as _, read_dir}};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -42,7 +42,7 @@ fn main() {
         exit(1);
     }
 }
-fn _main() -> Result<(), Box<dyn std::error::Error>> {
+fn _main() -> Result<(), Box<dyn StdError>> {
     match Cli::parse().command {
         Commands::Android { dry } => {
             // TODO: write gitignore to res/drawable
@@ -54,13 +54,13 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Svg2Drawable { input, output } => {
             // Don't have to worry about symlinks here, metadata follows them.
             let input_is_file = input.metadata()
-                .map_err(|err| IoError::from(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", input.display())))?
                 .is_file()
                 // consider stdin to be a file.
                 || input.as_os_str() == "-";
             let output_is_file = match &output {
                 Some(output) => output.metadata()
-                    .map_err(|err| IoError::from(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                    .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", input.display())))?
                     .is_file(),
                 // Consider stdout to be a file.
                 None => true,
@@ -81,10 +81,10 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let tmp_output = &svg_to_bad_drawable(input)?;
-            fn delete_tmp_file(path: &Path) -> Result<(), IoError> {
+            fn delete_tmp_file(path: &Path) -> Result<(), Error> {
                 // Delete the temporary, bad drawable file.
                 fs::remove_file(path)
-                    .map_err(|err| IoError::from(err, format!("Error deleting file \"{}\"", path.display())))
+                    .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", path.display())))
             }
 
             if output_is_file {
@@ -95,14 +95,16 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
                 delete_tmp_file(&tmp_output)?;
                 result?
             } else {
-                read_dir_with(tmp_output, |entry| {
-                    // Deserialize Vector Drawable with bad data.
-                    let result = BadDrawable::read_file(entry.path())
-                        .and_then(|drawable| drawable.write_to_file(output.join(entry.file_name())));
+                read_dir(tmp_output)
+                    .map(|result| result.and_then(|entry| {
+                        // Deserialize Vector Drawable with bad data.
+                        let result = BadDrawable::read_file(entry.path())
+                            .and_then(|drawable| drawable.write_to_file(output.join(entry.file_name())));
 
-                    delete_tmp_file(&entry.path())?;
-                    result
-                })?;
+                        delete_tmp_file(&entry.path())?;
+                        result
+                    }))
+                    .collect_results::<()>()?;
             }
         }
     }
@@ -110,9 +112,9 @@ fn _main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 /// An error packing one or multiple other [`IoError`]s.
-struct Error(Box<[IoError]>);
-impl IntoIterator for Error {
-    type Item = IoError;
+struct Errors<E>(Box<[E]>);
+impl<E> IntoIterator for Errors<E> {
+    type Item = E;
     type IntoIter = <Box<[Self::Item]> as IntoIterator>::IntoIter;
 
     #[inline(always)]
@@ -120,27 +122,35 @@ impl IntoIterator for Error {
         self.0.into_iter()
     }
 }
-impl From<IoError> for Error {
-    fn from(value: IoError) -> Self {
+impl<E> From<E> for Errors<E> {
+    fn from(value: E) -> Self {
         Self(Vec::from([value]).into_boxed_slice())
     }
 }
-impl From<Vec<IoError>> for Error {
+impl<E> From<Box<[E]>> for Errors<E> {
     #[inline(always)]
-    fn from(value: Vec<IoError>) -> Self {
+    fn from(value: Box<[E]>) -> Self {
+        Self(value)
+    }
+}
+impl<E> From<Vec<E>> for Errors<E> {
+    #[inline(always)]
+    fn from(value: Vec<E>) -> Self {
         Self(value.into_boxed_slice())
     }
 }
-impl Debug for Error {
+impl<E> Debug for Errors<E>
+where E: Debug {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <Box<[_]> as Debug>::fmt(&self.0, f)
     }
 }
-impl Display for Error {
+impl<E> Display for Errors<E>
+where E: Display {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, error) in self.0.iter().enumerate() {
-            <IoError as Display>::fmt(error, f)?;
+            <E as Display>::fmt(error, f)?;
 
             if i != self.0.len() - 1 {
                 f.write_char('\n')?;
@@ -149,38 +159,58 @@ impl Display for Error {
         Ok(())
     }
 }
-impl std::error::Error for Error { }
+impl<E> StdError for Errors<E>
+where E: StdError { }
 
-/// An [`io::Error`] with a proper prefix message.
 #[derive(Debug)]
-struct IoError {
-    message: String,
-    error: io::Error,
+enum Error {
+    Lone(Box<dyn StdError>),
+    /// An [`io::Error`] with a proper prefix message.
+    WithPrefix {
+        message: String,
+        error: io::Error,
+    }
 }
-impl IoError {
-    pub fn from(err: io::Error, msg: impl Display) -> Self {
-        Self {
+impl Error {
+    pub fn new(err: Box<dyn StdError>) -> Self {
+        Self::Lone(err.to_string().into())
+    }
+    pub fn io(err: io::Error, msg: impl Display) -> Self {
+        Self::WithPrefix {
             message: msg.to_string(),
             error: err,
         }
     }
-    pub fn other(err: impl Into<Box<dyn std::error::Error + Send + Sync>>, msg: impl Display) -> Self {
-        Self {
+    pub fn io_other(err: impl Into<Box<dyn StdError + Send + Sync>>, msg: impl Display) -> Self {
+        Self::WithPrefix {
             message: msg.to_string(),
             error: io::Error::other(err),
         }
     }
 }
-impl std::error::Error for IoError {
-    #[inline(always)]
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.error.source()
+impl<E: serde::ser::Error + 'static> From<E> for Error {
+    fn from(value: E) -> Self {
+        Self::Lone(Box::new(value))
     }
 }
-impl Display for IoError {
+impl StdError for Error {
+    #[inline(always)]
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Lone(err) => err.source(),
+            Self::WithPrefix { error, .. } => error.source(),
+        }
+    }
+}
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)?;
-        f.write_str(": ")?;
-        <std::io::Error as Display>::fmt(&self.error, f)
+        match self {
+            Self::Lone(err) => <_ as Display>::fmt(err, f),
+            Self::WithPrefix { message, error } => {
+                f.write_str(message)?;
+                f.write_str(": ")?;
+                <std::io::Error as Display>::fmt(error, f)
+            },
+        }   
     }
 }
