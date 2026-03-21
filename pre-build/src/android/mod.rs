@@ -1,6 +1,6 @@
 pub mod svg2drawable;
 
-use std::{fs, path::{Path, PathBuf}, sync::LazyLock};
+use std::{fs, io::Write, path::{Path, PathBuf}, sync::LazyLock};
 use serde::Serialize;
 use serde_xml_rs::SerdeXml;
 use xml::EmitterConfig;
@@ -12,24 +12,28 @@ static DRAWABLE_DIR: LazyLock<PathBuf> = LazyLock::new(||
 );
 static USER_ICON_DRAWABLE_PREFIX: &str = "usericon_";
 static ICONS_DIR: &str = "../res/user-icons";
+static USER_ICONS_ARRAY_PATH: &str = "values/usericons.xml";
 
 /// Crates an `array` in the `res/values` directory with values corresponing to the *userIcon* drawables.
 /// This array can later be used to dynamically get the icons in Kotlin code.
 /// 
+/// If **`verbose`** is `true`, prints information about an opperation to *stderr*.
 /// If **dry** is `true`, doesn't write to any files.
 /// 
 /// Must run [`svg2drawable::copy_icons()`] before this.
 /// 
 /// See [this stackoverflow post](https://stackoverflow.com/a/51824649) for more details.
-pub fn create_icons_array(dry: bool) -> Result<(), Errors<Error>> {
+pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
     let res_file_path = &if dry {
-        Path::new("/dev/stdout").to_path_buf()
+        Path::new("/dev/null").to_path_buf()
     } else {
-        let path = Path::new(ANDROID_RESOURCE_DIR).join("values/usericons.xml");
+        let path = Path::new(ANDROID_RESOURCE_DIR).join(USER_ICONS_ARRAY_PATH);
         if path.try_exists()
             .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", path.display())))?
         {
-            println!("Vector Drawable \"{}\" already exists; skipping", path.display());
+            if verbose {
+                eprintln!("Vector Drawable \"{}\" already exists; skipping", path.display());
+            }
             return Ok(());
         }
         path
@@ -61,7 +65,9 @@ pub fn create_icons_array(dry: bool) -> Result<(), Errors<Error>> {
                     .ok_or_else(|| Error::new(format!("Drawable file name \"{}\" contains non-UTF8 characters", entry.file_name().to_string_lossy()).into()))?
                     .to_string();
 
-                if !dry { println!("Adding \"{drawable_name}\" to usericons.xml"); }
+                if verbose {
+                    eprintln!("Adding \"{drawable_name}\" to {USER_ICONS_ARRAY_PATH}");
+                }
 
                 Ok(format!("@drawable/{drawable_name}"))
             }))
@@ -83,13 +89,15 @@ pub fn create_icons_array(dry: bool) -> Result<(), Errors<Error>> {
         .to_writer(res_file, &array_resource)
         .map_err(|err| Error::io_other(err, format!("Error serializing array resource")))?;
 
-    println!("");
-    if dry { print!("\nDry run: ") }
-    print!("Serialized Array Resource referencing '{}' user-icons", array_resource.array.items.len());
-    if !dry {
-        print!("; wrote to \"{}\"", res_file_path.display())
+    if verbose {
+        eprintln!("");
+        if dry { eprint!("Dry run: ") }
+        eprint!("Serialized Array Resource referencing '{}' user-icons", array_resource.array.items.len());
+        if !dry {
+            eprint!("; wrote to \"{}\"", res_file_path.display())
+        }
+        eprintln!("");
     }
-    println!("");
 
     Ok(())
 }
@@ -107,4 +115,35 @@ struct ArrayResource {
     name: String,
     #[serde(rename = "item")]
     items: Vec<String>,
+}
+
+pub fn create_gitignore(verbose: bool, dry: bool) -> Result<(), Error> {
+    let path = &Path::new(ANDROID_RESOURCE_DIR).join(".gitignore");
+    // Overwrite file even if it exists, to keep changes in file names
+    // if path.try_exists()
+    //     .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", path.display())))?
+    // {
+    //     if verbose {
+    //         eprintln!(".gitignore file already exists; Skipping");
+    //     }
+    //     return Ok(());
+    // }
+
+    let gitignore = format!("drawable/{USER_ICON_DRAWABLE_PREFIX}*\n{USER_ICONS_ARRAY_PATH}\n");
+
+    if !dry {
+        fs::File::options()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .map_err(|err| Error::io(err, format!("Error opening file \"{}\" for writing", path.display())))?
+            .write_all(gitignore.as_bytes())
+            .map_err(|err| Error::io(err, format!("Error writing to file \"{}\"", path.display())))?;
+        if verbose {
+            eprintln!("Created .gitignore");
+        }
+    }
+
+    Ok(())
 }
