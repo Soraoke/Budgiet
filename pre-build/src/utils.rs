@@ -1,7 +1,6 @@
-use std::{ffi::OsStr, fs::{self, DirEntry}, io, path::Path, process::Command};
+use std::{ffi::OsStr, fs::{self, DirEntry}, io, mem::ManuallyDrop, path::Path, process::Command};
 use sha2::digest::{Digest, Output};
-
-use crate::{Error, IoError};
+use crate::{Error, Errors};
 
 /// Run a system command.
 #[macro_export]
@@ -13,14 +12,14 @@ macro_rules! command {
     };
 }
 #[doc(hidden)]
-pub fn _command<'a>(command: &str, args: &[&'a OsStr]) -> Result<String, IoError> {
+pub fn _command<'a>(command: &str, args: &[&'a OsStr]) -> Result<String, Error> {
     let output = Command::new(command)
         .args(args)
         .output()
-        .map_err(|err| IoError::from(err, format!("Error spawning {command:?} command")))?;
+        .map_err(|err| Error::io(err, format!("Error spawning {command:?} command")))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(IoError::other(err.as_ref(), format!("Command {command:?} exited with error code '{:?}'", output.status.code())));
+        return Err(Error::io_other(err.as_ref(), format!("Command {command:?} exited with error code '{:?}'", output.status.code())));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -39,26 +38,89 @@ pub fn checksum<D: Digest>(expected: impl AsRef<str>, actual: Output<D>) -> Resu
     Ok(())
 }
 
-/// Opens a directory and reads all entries, calling **`f`** for every entry.
-/// 
-/// Collects all **errors** produced by **`f`** and 
-pub fn read_dir_with(path: impl AsRef<Path>, mut f: impl FnMut(DirEntry) -> Result<(), IoError>) -> Result<(), Error> {
-    let path = path.as_ref();
-    let results = fs::read_dir(path)
-        .map_err(|err| IoError::from(err, format!("Error opening directory \"{}\"", path.display())))?
-        .map(|entry| entry
-            .map_err(|err| IoError::from(err, format!("Error reading entry of directory \"{}\"", path.display())))
-            .and_then(|entry| f(entry))
-        );
+/// Same as [`std::fs::read_dir()`], but transforms the errors to this crate's [`Error`].
+pub fn read_dir(path: &Path) -> impl Iterator<Item = Result<DirEntry, Error>> {
+    enum ResultIterator<T, E, I: Iterator<Item = Result<T, E>>> {
+        Ok(I),
+        Err(ManuallyDrop<E>),
+        None,
+    }
+    impl<T, E, I> Iterator for ResultIterator<T, E, I>
+    where I: Iterator<Item = Result<T, E>> {
+        type Item = I::Item;
 
-    let mut errors = Vec::new();
-    results.for_each(|result| { result
-        .map_err(|err| errors.push(err))
-        .unwrap_or(())
-    });
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors.into())
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                Self::Ok(iter) => iter.next(),
+                Self::Err(err) => {
+                    // SAFETY: will switch self to None right after.
+                    let err = unsafe { ManuallyDrop::take(err) };
+                    *self = Self::None;
+                    Some(Err(err))
+                },
+                Self::None => None,
+            }
+        }
+    }
+
+    let result = fs::read_dir(&path)
+        .map_err(|err| Error::io(err, format!("Error opening directory \"{}\"", path.display())))
+        .map(|entries| entries.map(|entry| entry
+            .map_err(|err| Error::io(err, format!("Error reading entry of directory \"{}\"", path.display())))
+        ));
+    match result {
+        Ok(iter) => ResultIterator::Ok(iter),
+        Err(err) => ResultIterator::Err(ManuallyDrop::new(err)),
+    }
+}
+
+/// Same as [`read_dir()`], but *filters out* any filesystem node that is not a **file**.
+pub fn read_dir_files(path: &Path) -> impl Iterator<Item = Result<DirEntry, Error>> {
+    // Only take actual files.
+    read_dir(path).filter_map(|result| match result {
+        Ok(entry) => {
+            let meta = entry.metadata()
+                .map_err(|err| Error::io(err, format!("Error getting metadata for \"{}\"", entry.path().display())));
+            match meta {
+                Ok(meta) => meta.is_file().then_some(Ok(entry)),
+                Err(err) => Some(Err(err)),
+            }
+        },
+        result => Some(result),
+    })
+}
+
+pub trait IterResultExt<T, E>
+where Self: Iterator {
+    /// Collects results of all the calls to [`next`] and returns it.
+    /// 
+    /// If [`next`] only returned `T`s, then it returns a **Collection** containing those values.
+    /// Buf if [`next`] returns *at least 1* **Error**,
+    /// this functions continues calling [`next`] until the end to collect all the **Errors**.
+    /// 
+    /// [`next`]: Iterator::next()
+    fn collect_results<C>(self) -> Result<C, Errors<E>>
+    where Self: Iterator<Item = Result<T, E>>,
+          C: FromIterator<T>;
+}
+impl<I, T, E> IterResultExt<T, E> for I
+where I: Iterator {
+    fn collect_results<C>(self) -> Result<C, Errors<E>>
+    where Self: Iterator<Item = Result<T, E>>,
+          C: FromIterator<T>,
+    {
+        let mut errors = Vec::new();
+
+        let values = self.filter_map(|result| result
+            .map_err(|err| errors.push(err))
+            .ok()
+        )
+        .collect::<C>();
+
+        if errors.is_empty() {
+            Ok(values)
+        } else {
+            Err(Errors::from(errors))
+        }
     }
 }
