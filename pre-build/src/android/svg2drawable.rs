@@ -142,6 +142,9 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
         eprintln!("Unpacked {PKG_NAME} to \"{}\"", unpkg_dir.display());
     }
 
+    fs::remove_file(&zip_file)
+        .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", zip_file.display())))?;
+
     Ok(())
 }
 
