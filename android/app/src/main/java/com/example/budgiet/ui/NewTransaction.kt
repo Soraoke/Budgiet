@@ -88,7 +88,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.Location
 import com.example.budgiet.R
-import com.example.budgiet.RecentCurrencies
+import com.example.budgiet.RecentItems
 import com.example.budgiet.Result
 import com.example.budgiet.addNewLocation
 import com.example.budgiet.formatPrice
@@ -104,6 +104,7 @@ import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
+import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
@@ -111,7 +112,6 @@ import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
-import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.TextIconButton
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
@@ -835,7 +835,7 @@ fun CurrencySelectorButton(
         }
     }
 
-    val recentCurrencies by RecentCurrencies.get()
+    val recentCurrencies by RecentItems.Currency.items()
     // This list gets re-sorted (not recalculated) every time the state of recentCurrencies changes.
     val orderedCurrencies = remember {
         val currencies = Currency.getAvailableCurrencies()
@@ -905,7 +905,7 @@ fun CurrencySelectorButton(
                 // Put recently used currencies before other currencies (except locale).
                 var insertIdx = 0
                 for (recent in recentCurrencies) {
-                    val idx = orderedCurrencies.indexOfFirst { it.currencyCode == recent }
+                    val idx = orderedCurrencies.indexOfFirst { it == recent }
                     // Skip if currency is not in orderedCurrencies (i.e. locale).
                     if (idx == -1) {
                         continue
@@ -947,7 +947,7 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        RecentCurrencies.moveToFront(currency.currencyCode, context)
+                        RecentItems.Currency.moveToFront(currency, context)
                         onCurrencyChange(currency)
                     },
                 )
@@ -969,7 +969,7 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        RecentCurrencies.clear(context)
+                        RecentItems.Currency.clear(context)
                         // Sort ordered currencies alphabetically to reset the list
                         orderedCurrencies
                             .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
