@@ -9,12 +9,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.platform.LocalContext
+import com.example.budgiet.ui.utils.MAX_USER_COLOR_ITEMS
 import java.io.File
 import java.util.Currency as JCurrency
 import androidx.compose.ui.graphics.Color as CColor
 
 sealed class RecentItems<T> {
     object Currency: RecentItems<JCurrency>() {
+        override val maxItems = null
         override fun fromString(s: String): JCurrency
                 = JCurrency.getInstance(s)
 
@@ -22,6 +24,7 @@ sealed class RecentItems<T> {
                 = item.currencyCode
     }
     object Color: RecentItems<CColor>() {
+        override val maxItems = MAX_USER_COLOR_ITEMS
         override fun fromString(s: String): CColor
                 = CColor(s.toULong())
 
@@ -107,7 +110,12 @@ sealed class RecentItems<T> {
             // The currency was already first in the list; do nothing.
             0 -> { }
             // Currency was not found in the List, so it must be prepended.
-            -1 -> orderedItems.add(0, item)
+            -1 -> {
+                orderedItems.add(0, item)
+                if (this.maxItems != null && orderedItems.size > this.maxItems!!) {
+                    orderedItems.dropLast(1)
+                }
+            }
             // Remove target currency (arg) from the List, and put it in the front.
             else -> {
                 orderedItems.add(0, orderedItems.removeAt(idx))
@@ -142,6 +150,7 @@ sealed class RecentItems<T> {
             .also { if (this.fileFirstAccess) it.createNewFile() }
             .also { this.fileFirstAccess = false }
 
+    protected abstract val maxItems: Int?
     // protected abstract val itemClass: Class<T>
     protected abstract fun fromString(s: String): T
     protected abstract fun toString(item: T): String

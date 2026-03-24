@@ -2,6 +2,8 @@ package com.example.budgiet
 
 import android.annotation.SuppressLint
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.colorspace.ColorModel
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import java.time.Instant
@@ -109,6 +111,23 @@ fun LocalDate.formatRelativeToPresent(): String {
                 this.format(formatter)
             }
     }
+}
+
+fun Color.rgbToHex(): String {
+    if (this.colorSpace.model != ColorModel.Rgb) {
+        throw IllegalArgumentException("Color($this) must be in RGB color space to convert to hex code")
+    }
+    fun component(i: Float): String
+        = (255 * i).toUInt()
+            .toHexString(HexFormat {
+                this.upperCase = true
+                this.number {
+                    this.removeLeadingZeros = true
+                    this.minLength = 2
+                }
+            })
+
+    return "${component(this.red)}${component(this.green)}${component(this.blue)}"
 }
 
 /** Maps a **[Currency]** to one of our imported *drawable resources*.

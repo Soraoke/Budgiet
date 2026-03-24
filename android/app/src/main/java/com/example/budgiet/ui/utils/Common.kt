@@ -41,21 +41,29 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.getSelectedDate
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.example.budgiet.R
 import com.example.budgiet.localDateFromUtcMillis
@@ -74,6 +82,13 @@ val POPUP_PROPERTIES = PopupProperties(
     focusable = true,
     clippingEnabled = true,
 )
+
+/** The *hardcoded* value for top and bottom padding of the [DropdownMenu][androidx.compose.material3.DropdownMenu].
+ * This cannot be changed. */
+val DROPDOWN_MENU_VERTICAL_PADDING = 8.dp
+
+/** The default amount of space between a tooltip's content and its anchor. */
+val TOOLTIP_ANCHOR_SPACING = 4.dp
 
 /** The space between the [Icon] and the [Text] in [TextIconButton] and [FilledTextIconButton]. */
 val TEXT_ICON_BUTTON_SPACING = 4.dp
@@ -152,23 +167,121 @@ fun TextIconButton(
 /** A shortcut for adding a [PlainTooltip] to some **content**.
  *
  * When the user activates the [PlainTooltip] (i.e. by long-pressing the **content**),
- * the **text** passed in will pup up with a box around it. */
+ * the **text** passed in will pup up with a box around it.
+ *
+ * @param text The text that will be displayed as the content of the anchor.
+ * @param positioning Where the **tooltip** should be placed relative to the [content] anchor.
+ * @param spacing The amount of space between the **tooltip** and the [content].
+ * @param dialogPosition The position of the first *window* that was created within the app's screen.
+ *   This argument is only necessary if this composable is called from a
+ *   [Popup][androidx.compose.ui.window.Popup] or [DropdownMenu][androidx.compose.material3.DropdownMenu] that is within a [Dialog][Dialog],
+ *   the **tooltip** will be positioned relative to the dialog instead of the screen, because it is only aware of the window within which it is being rendered in.
+ *   This causes the **tooltip's** position on the screen to be off because it thinks it is being positioned relative to the screen.
+ *
+ *   ### Example:
+ *   ```kt
+ *   val dialogPosition by remember { mutableStateOf(IntOffset(0, 0)) }
+ *
+ *   Dialog(modifier
+ *       .onGloballyPositioned { coords -> dialogPosition = coords.positionOnScreen().round() }
+ *   ) {
+ *      DropdownMenu {
+ *          PlainToolTipBox("my tooltip :)", dialogPosition = dialogPosition) {
+ *              Text("Hii!")
+ *          }
+ *      }
+ *   }
+ *   ```
+ * @param content The content that the **tooltip** will *anchor* to.
+ * */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlainToolTipBox(
     text: String,
     modifier: Modifier = Modifier,
+    positioning: TooltipAnchorPosition = TooltipAnchorPosition.Above,
+    spacing: Dp = TOOLTIP_ANCHOR_SPACING,
+    dialogPosition: IntOffset? = null,
     content: @Composable (() -> Unit)
 ) {
     TooltipBox(
         modifier = modifier,
-        positionProvider = @Suppress("DEPRECATION") TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        positionProvider = if (dialogPosition == null) {
+            TooltipDefaults.rememberTooltipPositionProvider(
+                positioning = positioning,
+                spacingBetweenTooltipAndAnchor = spacing,
+            )
+        } else {
+            rememberTooltipWithinPopupPositionProvider(
+                dialogPosition = dialogPosition,
+                positioning = positioning,
+                spacing = spacing
+            )
+        },
         state = rememberTooltipState(),
         tooltip = {
             PlainTooltip { Text(text) }
         },
         content = content,
     )
+}
+
+/** Obtained from [this stackoverflow response](https://stackoverflow.com/a/78968130).  */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun rememberTooltipWithinPopupPositionProvider(
+    dialogPosition: IntOffset,
+    positioning: TooltipAnchorPosition = TooltipAnchorPosition.Above,
+    spacing: Dp = TOOLTIP_ANCHOR_SPACING,
+): PopupPositionProvider {
+    val spacing = with(LocalDensity.current) { spacing.roundToPx() }
+
+    return remember(positioning, spacing, dialogPosition) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize
+            ): IntOffset {
+                val anchorBounds = anchorBounds.translate(-dialogPosition.x, -dialogPosition.y)
+
+                val centerX = anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2
+                val left = IntOffset(
+                    x = anchorBounds.left - popupContentSize.width - spacing,
+                    y = anchorBounds.top,
+                )
+                val right = IntOffset(
+                    x = anchorBounds.right + spacing,
+                    y = anchorBounds.top,
+                )
+
+                val position = when (positioning) {
+                    TooltipAnchorPosition.Above -> IntOffset(
+                        x = centerX,
+                        y = anchorBounds.top - popupContentSize.height - spacing,
+                    )
+                    TooltipAnchorPosition.Below -> IntOffset(
+                        x = centerX,
+                        y = anchorBounds.bottom + spacing,
+                    )
+                    TooltipAnchorPosition.Left -> left
+                    TooltipAnchorPosition.Right -> right
+                    TooltipAnchorPosition.Start -> when (layoutDirection) {
+                        LayoutDirection.Ltr -> left
+                        LayoutDirection.Rtl -> right
+                    }
+                    TooltipAnchorPosition.End -> when (layoutDirection) {
+                        LayoutDirection.Ltr -> right
+                        LayoutDirection.Rtl -> left
+                    }
+                    else -> throw Exception("unreachable branch")
+                }
+
+                return position
+            }
+        }
+    }
 }
 
 /** A [SearchBar][DockedSearchBar] that *does not* expand to show its result items.
@@ -360,7 +473,7 @@ fun DatePickerDialog(
 
 /** DropdownMenu has a *hardcoded* vertical padding of `8.dp`, which should be so that the caller can apply their own padding. */
 fun Modifier.hideDropdownMenuPadding(): Modifier = this.layout { measurable, constraints ->
-    val verticalCrop = 8.dp
+    val verticalCrop = DROPDOWN_MENU_VERTICAL_PADDING
     val placeable = measurable.measure(constraints)
     fun Dp.toPxInt(): Int = this.toPx().toInt()
 
@@ -375,8 +488,9 @@ fun Modifier.hideDropdownMenuPadding(): Modifier = this.layout { measurable, con
 /** Indicates any of the 4 *sides* of a rectangular shape.
  *
  * This enum supports bitwise operations (e.g. **or**) to allow combinations of multiple variants. */
+@JvmInline
 @Suppress("unused")
-class Corner private constructor(private val bitFlag: Byte) {
+value class Corner private constructor(private val bitFlag: Byte) {
     companion object {
         val TopLeft = Corner(0b0001)
         val TopRight = Corner(0b0010)

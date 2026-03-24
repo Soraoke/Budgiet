@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
@@ -74,6 +75,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -84,6 +87,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.round
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.Location
@@ -102,8 +106,10 @@ import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.ui.theme.BudgietTheme
+import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
+import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
@@ -115,6 +121,7 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
+import com.example.budgiet.ui.utils.parentDialogOffset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DecimalFormatSymbols
@@ -134,10 +141,10 @@ val FIELD_MAX_WIDTH = 275.dp
 private const val FIELD_TIMEOUT = 500L
 
 val TAG_GRID_MAX_HEIGHT = 400.dp
-val TAG_SELECTED_BORDER_COLOR = Color.Yellow // TODO: WIP
 val TAG_SHAPE
     @Composable get() = MaterialTheme.shapes.medium
-
+val SELECTED_TAG_BORDER_COLOR
+    @Composable get() = MaterialTheme.colorScheme.tertiaryFixed
 
 class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
@@ -162,7 +169,8 @@ class NewTransactionViewModel: ViewModel() {
 
     companion object {
         fun getAllTags(): List<Tag> {
-            TODO()
+            // TODO:
+            return listOf()
         }
         fun createNewTag(tag: Tag) {
             TODO("create tag $tag")
@@ -179,7 +187,6 @@ data class Tag(
 private enum class DialogState {
     None, DatePicker, LocationPicker, TagsPicker;
 }
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewTransactionForm(
     modifier: Modifier = Modifier,
@@ -374,7 +381,6 @@ private fun FormField(
     }
 }
 
-@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun LocationPickerDialog(
     modifier: Modifier = Modifier,
@@ -385,6 +391,7 @@ fun LocationPickerDialog(
 
     var newLocationAdded by remember { mutableStateOf(false) }
 
+    @Suppress("AssignedValueIsNeverRead")
     if (showNewLocationDialog) {
         NewLocationDialog(
             modifier = modifier,
@@ -542,7 +549,6 @@ private fun LocationSearchDialog(
 }
 
 /** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to create. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewLocationDialog(
     modifier: Modifier = Modifier,
@@ -1070,7 +1076,7 @@ fun TagsPickerDialog(
             }
 
             FilledTextIconButton(
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.CenterHorizontally)
                     .padding(top = ActionDialogPadding.Default.titleSpacerHeight),
                 colors = ButtonDefaults.filledTonalButtonColors(),
                 icon = { Icon(painterResource(R.drawable.add_24px), "New tag") },
@@ -1092,10 +1098,14 @@ fun TagCreatorDialog(
 ) {
     var icon by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
-    var color by remember { mutableStateOf(Color.Cyan) } // TODO: select random color
+    var color by remember { mutableStateOf(ColorPalette.random()) }
+
+    var showIconPickerDialog by remember { mutableStateOf(false) }
+
+    val innerPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
 
     ActionDialog(
-        modifier = modifier,
+        modifier = modifier.onGloballyPositioned { coords -> parentDialogOffset = coords.positionOnScreen().round() },
         onDismiss = onDismiss,
         title = { Text("Create new tag") },
         actions = {
@@ -1115,25 +1125,75 @@ fun TagCreatorDialog(
             }
         },
     ) {
+        @Suppress("AssignedValueIsNeverRead")
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = MaterialTheme.shapes.extraLarge,
+                )
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(color)
+                .padding(innerPadding),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val spaceBetween = 12.dp
+            val circleContainerSize = TextFieldDefaults.MinHeight / 1.333f
+            val roundBorderSize = 2.dp
+            val itemBackgroundOpacity = 0.87f
+
+            @Composable
+            fun Modifier.circleContainer(): Modifier
+                = Modifier
+                    .clip(IconButtonDefaults.standardShape)
+                    .then(this)
+                    .border(
+                        width = roundBorderSize,
+                        shape = IconButtonDefaults.standardShape,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    .size(circleContainerSize)
+
             PlainToolTipBox("Select tag icon") {
                 IconButton(
-                    modifier = Modifier.border(width = 2.dp, shape = IconButtonDefaults.standardShape, color = MaterialTheme.colorScheme.outline),
-                    onClick = { TODO() }
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh
+                            .copy(alpha = itemBackgroundOpacity)
+                        )
+                        .circleContainer(),
+                    onClick = { showIconPickerDialog = true }
                 ) {
-
+                    // TODO:
                 }
             }
+            Spacer(Modifier.width(spaceBetween))
+
             TextField(
+                modifier = Modifier.weight(1f, fill = false),
+                colors = run {
+                    val color = TextFieldDefaults.colors()
+                        .focusedContainerColor
+                        .copy(alpha = itemBackgroundOpacity)
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = color,
+                        unfocusedContainerColor = color,
+                        errorContainerColor = color,
+                        disabledContainerColor = color,
+                    )
+                },
                 label = { Text("Tag name") },
                 value = name,
                 onValueChange = { name = it },
             )
-            // TODO: color picker
+            Spacer(Modifier.width(spaceBetween))
+
+            ColorPickerButton(
+                modifier = Modifier.circleContainer(),
+                color = color,
+                onColorChange = { color = it },
+            )
         }
     }
 }
@@ -1150,13 +1210,13 @@ fun TagFrame(
         modifier = modifier.apply {
             background(color = tag.color, shape = TAG_SHAPE)
             if (isSelected) {
-                border(width = 2.dp, shape = TAG_SHAPE, color = TAG_SELECTED_BORDER_COLOR)
+                border(width = 2.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.tertiary)
             }
         },
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(TODO()), null)
+//        Icon(painterResource(TODO()), null)
         Text(tag.name)
         if (onRemove != null) {
             IconButton(onClick = onRemove) {
