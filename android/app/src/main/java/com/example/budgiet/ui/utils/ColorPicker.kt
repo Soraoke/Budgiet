@@ -55,9 +55,11 @@ import com.example.budgiet.ui.SELECTED_TAG_BORDER_COLOR
 import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.theme.DarkColorScheme
 import com.example.budgiet.ui.theme.LightColorScheme
+import com.example.budgiet.unwrap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.nio.IntBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -219,7 +221,9 @@ fun ColorPickerButton(
             initialColor = color,
             onSubmit = { color ->
                 onColorChange(color)
-                RecentItems.Color.moveToFront(color, context)
+                if (color !in ColorPalette) {
+                    RecentItems.Color.moveToFront(color, context)
+                }
             },
             onDismiss = {
                 showPaletteMenu = false
@@ -298,13 +302,13 @@ private fun ColorRing(
 
 private const val VERTEX_SHADER =
 """
-layout (location = 0) in vec3 vertex;
-out vec2 coordNormalized;
+#version 330
+layout (location = 0) in vec2 coords;
 
-uniform vec2 iResolution;
+//uniform vec2 iResolution;
 
 void main() {
-    coordNormalized = vertex.xy;
+    gl_Position = vec4(coords.x, coords.y, 0.0, 0.0);
 }
 """
 
@@ -321,14 +325,15 @@ void main() {
  * > Note that sum of the 3 channels must be in the range of 1.0 - 2.0 to keep the color fully saturated. */
 private const val COLOR_RING_FRAGMENT_SHADER =
 """
-in vec2 coordNormalized;
+#version 330
 out vec4 fragColor;
 
-uniform vec2 iResolution;
+//uniform vec2 iResolution;
 
 void main() {
-    float stripVal = sin(coordNormalized.y) / cos(coordNormalized.x);
-    fragColor = vec4(abs(stripVal), 0.0, 1.0, 1.0);
+//    float r = if (coordNormalized.x > 0) 1.0 else 0.5;
+//    float b = if (coordNormalized.y > 0) 1.0 else 0.5;
+    fragColor = vec4(1.0, 0.0, 0.5, 1.0);
 }
 """
 
@@ -348,72 +353,167 @@ private class ColorRingGLSurfaceView @JvmOverloads constructor(
 /** Code obtained from [dev.to](https://dev.to/den4ic/morphing-geometric-shapes-with-sdf-in-glsl-fragment-shaders-and-visualization-in-jetpack-compose-5db8). */
 private class ColorRingRenderer: GLSurfaceView.Renderer {
     private var shaderProgram = 0
+    private var vertexBufferObject = 0
+    private var vertexArrayObject = 0
     private var screenWidth = 0
     private var screenHeight = 0
     private val vertices = Vertices(listOf(
-        Vertex(-1f, -1f),
-        Vertex( 1f, -1f),
-        Vertex(-1f,  1f),
-        Vertex( 1f,  1f),
+        Vertex(Coords(-0.5f, -0.5f)),
+        Vertex(Coords( 0.5f, -0.5f)),
+        Vertex(Coords( 0.0f,  0.5f)),
     ))
-
-    override fun onDrawFrame(gl: GL10?) {
-        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        GLES30.glUseProgram(this.shaderProgram)
-
-        GLES30.glUniform2f(
-            GLES30.glGetUniformLocation(this.shaderProgram, "iResolution"),
-            this.screenWidth.toFloat(), this.screenHeight.toFloat()
-        )
-
-        // Send the Vertex data to the GPU.
-        GLES30.glVertexAttribPointer(0, Vertex.size, GLES30.GL_FLOAT, false, Vertex.stride, vertices.buffer)
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
-    }
-
-    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        GLES30.glViewport(0, 0, width, height)
-        this.screenWidth = width
-        this.screenHeight = height
-    }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         fun loadShader(type: Int, shaderCode: String): Int
             = GLES30.glCreateShader(type).also { shader ->
                 GLES30.glShaderSource(shader, shaderCode)
                 GLES30.glCompileShader(shader)
+                // Check for errors
+                val success = withIntBuffer {
+                    GLES30.glGetShaderiv(shader, GLES30.GL_COMPILE_STATUS, it)
+                }[0]
+                if (success == GLES30.GL_FALSE) {
+                    throw RuntimeException("Error compiling shader: ${GLES30.glGetShaderInfoLog(shader)}")
+                }
             }
 
         val vertexShader = loadShader(GLES30.GL_VERTEX_SHADER, VERTEX_SHADER)
         val fragmentShader = loadShader(GLES30.GL_FRAGMENT_SHADER, COLOR_RING_FRAGMENT_SHADER)
+        this.shaderProgram = GLES30.glCreateProgram()
+            .also { shaderProgram ->
+                GLES30.glAttachShader(shaderProgram, vertexShader)
+                GLES30.glAttachShader(shaderProgram, fragmentShader)
+                GLES30.glLinkProgram(shaderProgram)
+                // Check for errors
+                val success = withIntBuffer {
+                    GLES30.glGetProgramiv(shaderProgram, GLES30.GL_LINK_STATUS, it)
+                }[0]
+                if (success == GLES30.GL_FALSE) {
+                    throw RuntimeException("Error linking shader program: ${GLES30.glGetProgramInfoLog(shaderProgram)}")
+                }
+                // Deallocate compiled shader sources
+                GLES30.glDeleteShader(vertexShader)
+                GLES30.glDeleteShader(fragmentShader)
+            }
 
-        this.shaderProgram = GLES30.glCreateProgram().also {
-            GLES30.glAttachShader(it, vertexShader)
-            GLES30.glAttachShader(it, fragmentShader)
-            GLES30.glLinkProgram(it)
+        // Send vertices to the GPU only once.
+        this.vertexArrayObject = withIntBuffer { GLES30.glGenVertexArrays(1, it) }[0]
+        this.vertexBufferObject = withIntBuffer { GLES30.glGenBuffers(1, it) }[0]
+        GLES30.glBindVertexArray(this.vertexArrayObject)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, this.vertexBufferObject)
+        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, this.vertices.size, this.vertices.buffer, GLES30.GL_STATIC_DRAW)
+        GLES30.glVertexAttribPointer(0, Coords.len, GLES30.GL_FLOAT, false, Vertex.stride, Coords.offset)
+        GLES30.glEnableVertexAttribArray(0)
+
+        // Only draw to the surface once
+        GLES30.glClearColor(0f, 0f, 0f, 0f)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+        GLES30.glUseProgram(this.shaderProgram)
+        GLES30.glBindVertexArray(this.vertexArrayObject)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, this.vertices.len)
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES30.glViewport(0, 0, width, height)
+        this.setResolution(width, height)
+    }
+
+    /** Render loop: */
+    override fun onDrawFrame(gl: GL10?) {
+//        GLES30.glClearColor(0f, 0f, 0f, 0f)
+//        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+//        GLES30.glUseProgram(this.shaderProgram)
+//        GLES30.glBindVertexArray(this.vertexArrayObject)
+//        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, this.vertices.len)
+    }
+
+    private fun setResolution(width: Int, height: Int) {
+        this.screenWidth = width
+        this.screenHeight = height
+//        GLES30.glUniform2f(
+//            GLES30.glGetUniformLocation(this.shaderProgram, "iResolution"),
+//            this.screenWidth.toFloat(), this.screenHeight.toFloat()
+//        )
+    }
+}
+
+private fun withIntBuffer(bufSize: Int = 1, f: (IntBuffer) -> Unit): List<Int> {
+    return IntBuffer.allocate(bufSize)
+        .also(f)
+        .array()
+        .toList()
+}
+
+data class Vertex(val coords: Coords /*, val color: Color*/) {
+    abstract class Attribute(
+        private val instanceClass: Class<*>,
+    ) {
+        /** The number of components in the [Attribute]. */
+        val len: Int = instanceClass.fields.sumOf { 1 }
+            .also { if (it > 4)
+                throw IllegalStateException("${instanceClass.name}.len is $it, but an Attribute's length must not be greater than 4")
+            }
+
+        /** The size (in bytes) of all the components combined. */
+        val size: Int = this.len * Float.SIZE_BYTES
+
+        private var _offset: Int? = null
+        /** How many components this [Attribute] is offset by from the start of the [Vertex]. */
+        val offset: Int get() {
+            if (this._offset == null) {
+                this._offset = Vertex.attributes
+                    .indexOf(this)
+                    .let { if (it < 0) null else it }
+                    .unwrap { NoSuchFieldException("class ${instanceClass.name} extends Vertex.Attribute, but is not declared in Vertex's fields") }
+                    .let { idx -> Vertex.attributes.subList(0, idx) /* Remember it is exclusive */ }
+                    .sumOf { it.len }
+            }
+            return this._offset!!
         }
     }
-}
-
-data class Vertex(val x: Float, val y: Float) {
 
     companion object {
-        val size = Vertex::class.java.fields.sumOf { 1 }
-        val stride = Float.SIZE_BYTES * 2
+        val attributes = Vertex::class.java
+            .declaredFields
+            .filter { field -> !java.lang.reflect.Modifier.isStatic(field.modifiers) }
+            .map { field -> field.type
+                .declaredFields
+                .find { inner -> inner.name == "Companion" && inner.type.simpleName == "Companion" && Attribute::class.java.isAssignableFrom(inner.type) }
+                .unwrap { NoSuchFieldException("Class ${field.name} does not have a 'companion object' that implements Attribute, which is required for all fields of class Vertex") }
+                .get(null)
+                as Attribute
+            }
+
+        /** The *total size* (in bytes) of all of the combined [Attributes][Attribute] and their components. */
+        val size = this.attributes.sumOf { it.size }
+
+        /** How many bytes to move forward to get to the next instance of the same [Attribute] type in the [Vertex] Buffer.
+         *
+         * In this case, it is just the *total size* (in bytes) of the Vertex. */
+        val stride get() = this.size
     }
 }
+data class Coords(val x: Float, val y: Float) {
+    companion object: Vertex.Attribute(Coords::class.java)
+}
+data class Color(val r: Float, val g: Float, val b: Float, val a: Float) {
+    companion object: Vertex.Attribute(Color::class.java)
+}
 
-class Vertices(private val vertices: List<Vertex>) {
-    val stride = Vertex.stride
+class Vertices(vertices: List<Vertex>) {
+    /** The number of individual [Vertices][Vertex] in this buffer. */
+    val len = vertices.size
+    /** The size (in bytes) of this buffer. */
+    val size = this.len * Vertex.size
+
     val buffer: FloatBuffer = ByteBuffer
-        .allocateDirect(vertices.size * 2 * Float.SIZE_BYTES)
+        .allocateDirect(this.size)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
         .also { buffer ->
-            this.vertices.forEach { vertex ->
-                buffer.put(vertex.x)
-                buffer.put(vertex.y)
+            vertices.forEach { vertex ->
+                buffer.put(vertex.coords.x)
+                buffer.put(vertex.coords.y)
             }
         }
         .apply { position(0) }
