@@ -88,6 +88,12 @@ sealed class Result<out T> {
     }
 }
 
+/** Unwrap a **nullable** value, or *throw* and [Exception][Throwable] if it was `null`.
+ *
+ * Can pass a function that generates a custom [exception] to *throw* when the value is `null`.*/
+fun <T> T?.unwrap(exception: (() -> Throwable)? = null): T
+    = if (exception == null) this!! else this ?: throw exception()
+
 fun localDateFromUtcMillis(utcMillis: Long): LocalDate {
     return Instant.ofEpochMilli(utcMillis)
         // NOTE: This does not set the timezone of the Date to UTC,
