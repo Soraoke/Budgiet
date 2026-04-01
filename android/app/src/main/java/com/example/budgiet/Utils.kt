@@ -135,6 +135,44 @@ fun Color.rgbToHex(): String {
 
     return "${component(this.red)}${component(this.green)}${component(this.blue)}"
 }
+fun Color.Companion.fromHex(hex: String): Color {
+    // Validate characters
+    val hexValues = hex.map { char ->
+        when (char) {
+            in '0'..'9' -> char - '0'
+            in 'a'..'f' -> char - 'a' + 10
+            in 'A'..'f' -> char - 'A' + 10
+            else -> throw IllegalArgumentException("Hex code contained invalid character '$char'. Hex characters must be digits or A-F (case insensitive).")
+        }
+    }
+
+    return when (hex.length) {
+        in 0..2 -> throw IllegalArgumentException("Hex code must be at least 3 characters in length")
+        in 3..4 -> {
+            /** Copy the digit in the first *hexadecimal digit place* to the next *hexadecimal digit place*.
+             *
+             * This is done by moving the bits by a nibble. */
+            fun cloneDigit(i: Int) = i or i shr 4
+            Color(
+                red   = cloneDigit(hexValues[0]),
+                green = cloneDigit(hexValues[1]),
+                blue  = cloneDigit(hexValues[2]),
+                alpha = cloneDigit(hexValues.getOrNull(3) ?: 0xF),
+            )
+        }
+        6, 8 -> {
+            Color(
+                red   = hexValues[0] shr 4 or hexValues[1],
+                green = hexValues[2] shr 4 or hexValues[3],
+                blue  = hexValues[4] shr 4 or hexValues[5],
+                alpha = hexValues.getOrNull(6)?.let {
+                    hexValues[6] shr 4 or hexValues[7]
+                } ?: 0xFF,
+            )
+        }
+        else -> throw IllegalArgumentException("Hex code has invalid length (${hex.length} to convert it to a color")
+    }
+}
 
 /** Maps a **[Currency]** to one of our imported *drawable resources*.
  *
