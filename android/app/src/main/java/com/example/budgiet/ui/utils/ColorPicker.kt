@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.budgiet.ui.utils
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -57,11 +59,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
-import androidx.compose.ui.window.Popup
 import com.example.budgiet.R
 import com.example.budgiet.RecentItems
 import com.example.budgiet.fromHex
 import com.example.budgiet.rgbToHex
+import com.example.budgiet.rgbaToHex
 import com.example.budgiet.ui.SELECTED_TAG_BORDER_COLOR
 import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.theme.DarkColorScheme
@@ -99,34 +101,11 @@ fun ColorPickerButton(
                 onClick = { showPaletteMenu = true },
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = color,
+                    contentColor = correctContentContrast(color),
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceDim,
                 )
             ) {
-                // Fix contrast with icon color and background color if needed.
-                val tint = if (color.luminance() < 0.35) {
-                    DarkColorScheme.onPrimaryContainer
-                } else if (color.luminance() < 0.70) {
-                    DarkColorScheme.primary
-                } else {
-                    LightColorScheme.onPrimaryContainer
-                }
-                Icon(
-                    painter = painterResource(R.drawable.colors_24px),
-                    tint = tint,
-                    contentDescription = "Change tag color",
-                )
-            }
-        }
-
-
-        if (showPaletteMenu) {
-            Popup(
-                properties = POPUP_PROPERTIES,
-                alignment = Alignment.BottomEnd,
-                offset = IntOffset(x = 4, y = 4),
-                onDismissRequest = { showPaletteMenu = false }
-            ) {
-
+                Icon(painterResource(R.drawable.colors_24px), "Change tag color")
             }
         }
 
@@ -227,6 +206,7 @@ fun ColorPickerButton(
     if (showColorPickerDialog) {
         @Suppress("AssignedValueIsNeverRead")
         ColorPickerDialog(
+            allowAlpha = false,
             initialColor = color,
             onSubmit = { color ->
                 onColorChange(color)
@@ -242,16 +222,18 @@ fun ColorPickerButton(
     }
 }
 
+// TODO: doc
 @Composable
 fun ColorPickerDialog(
     modifier: Modifier = Modifier,
     title: String = "Choose a color",
+    allowAlpha: Boolean = true,
     initialColor: Color = Color.Red,
     onSubmit: (Color) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var color by remember { mutableStateOf(initialColor) }
-    var textField by remember { mutableStateOf(color.rgbToHex()) }
+    var textField by remember { mutableStateOf(if (allowAlpha) color.rgbaToHex() else color.rgbToHex()) }
     var textFieldError by remember { mutableStateOf<String?>(null) }
 
     ActionDialog(
@@ -262,7 +244,13 @@ fun ColorPickerDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
+
             FilledTextIconButton(
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = color,
+                    contentColor = correctContentContrast(color),
+                ),
+                border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outline),
                 onClick = {
                     onSubmit(color)
                     onDismiss()
@@ -275,25 +263,25 @@ fun ColorPickerDialog(
         ColorRing(
             modifier = Modifier.align(Alignment.CenterHorizontally),
             color = color,
-            onColorChange = { color = it },
+            onColorChange = {
+                color = it
+                textField = if (allowAlpha) it.rgbaToHex() else it.rgbToHex()
+                if (textFieldError != null) {
+                    textFieldError = null
+                }
+            },
         )
         Spacer(Modifier.height(10.dp))
 
         // HexCode
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier
-                .size(24.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(color)
-            )
             TextField(
                 prefix = { Text("#") },
                 value = textField,
                 onValueChange = {
                     textField = it
                     try {
-                        color = Color.fromHex(it)
-                        println("Color = $color")
+                        color = Color.fromHex(it, allowAlpha)
                         textFieldError = null
                     } catch (e: IllegalArgumentException) {
                         textFieldError = e.localizedMessage
@@ -322,7 +310,7 @@ private fun ColorRing(
     // Circle box
     Box(modifier
         .size(RING_DIAMETER)
-//        .rotate(-40f)
+        .rotate(-40f)
     ) {
         // Color Ring (HUE)
         Canvas(Modifier
@@ -362,7 +350,6 @@ private fun ColorRing(
         @Suppress("LocalVariableName")
         val _degrees = colorToDegrees(color) ?: 0.0
         val positionDegrees = remember(_degrees) { _degrees } /* Ball starts at red (at the top). */
-        println("positionDegrees = $positionDegrees")
 
         val offset = with(LocalDensity.current) {
             degreesToOffset(positionDegrees, HUE_CURSOR_BALL_SIZE, RING_DIAMETER)
@@ -390,6 +377,19 @@ private fun ColorRing(
         )
     }
 }
+
+@Composable
+private fun correctContentContrast(background: Color): Color
+    // Fix contrast with icon color and background color if needed.
+    = if (background.alpha < 0.35) {
+        MaterialTheme.colorScheme.onSurface
+    } else if (background.luminance() < 0.35) {
+        DarkColorScheme.onPrimaryContainer
+    } else if (background.luminance() < 0.70) {
+        DarkColorScheme.primary
+    } else {
+        LightColorScheme.onPrimaryContainer
+    }
 
 /** Converts the **[Offset]** value of an **`object`** in a **`plane`** / surface to an angle (in *degrees*).
  *
