@@ -12,6 +12,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Currency
+import java.util.IllegalFormatException
 
 @SuppressLint("ExperimentalAnnotationRetention")
 @RequiresOptIn(message = "This part of the API is visible only for testing.")
@@ -119,31 +120,42 @@ fun LocalDate.formatRelativeToPresent(): String {
     }
 }
 
+private fun colorComponentToHex(i: Float): String
+    = (255 * i).toUInt()
+        .toHexString(HexFormat {
+            this.upperCase = true
+            this.number {
+                this.removeLeadingZeros = true
+                this.minLength = 2
+            }
+        })
+
 fun Color.rgbToHex(): String {
     if (this.colorSpace.model != ColorModel.Rgb) {
         throw IllegalArgumentException("Color($this) must be in RGB color space to convert to hex code")
     }
-    fun component(i: Float): String
-        = (255 * i).toUInt()
-            .toHexString(HexFormat {
-                this.upperCase = true
-                this.number {
-                    this.removeLeadingZeros = true
-                    this.minLength = 2
-                }
-            })
-
-    return "${component(this.red)}${component(this.green)}${component(this.blue)}"
+    return "${colorComponentToHex(this.red)}${colorComponentToHex(this.green)}${colorComponentToHex(this.blue)}"
 }
-fun Color.Companion.fromHex(hex: String): Color {
+
+fun Color.rgbaToHex(): String
+    = "${this.rgbToHex()}${colorComponentToHex(this.alpha)}"
+
+/** Parse a *Hexadecimal string* to obtain an `RGB[A]` [Color].
+ *
+ * @throws IllegalArgumentException if the parsing fails. */
+fun Color.Companion.fromHex(hex: String, allowAlpha: Boolean = true): Color {
     // Validate characters
     val hexValues = hex.map { char ->
         when (char) {
             in '0'..'9' -> char - '0'
             in 'a'..'f' -> char - 'a' + 10
-            in 'A'..'f' -> char - 'A' + 10
-            else -> throw IllegalArgumentException("Hex code contained invalid character '$char'. Hex characters must be digits or A-F (case insensitive).")
+            in 'A'..'F' -> char - 'A' + 10
+            else -> throw IllegalArgumentException("Hex code contained invalid character '$char'. Hex characters must be decimal digits (0-9) or A-F (case insensitive).")
         }
+    }
+
+    if ((hex.length == 4 || hex.length == 8) && !allowAlpha) {
+        throw IllegalArgumentException("Alpha (opacity) channel is not allowed here")
     }
 
     return when (hex.length) {
@@ -152,7 +164,7 @@ fun Color.Companion.fromHex(hex: String): Color {
             /** Copy the digit in the first *hexadecimal digit place* to the next *hexadecimal digit place*.
              *
              * This is done by moving the bits by a nibble. */
-            fun cloneDigit(i: Int) = i or i shr 4
+            fun cloneDigit(i: Int) = i shl 4 or i
             Color(
                 red   = cloneDigit(hexValues[0]),
                 green = cloneDigit(hexValues[1]),
@@ -162,15 +174,15 @@ fun Color.Companion.fromHex(hex: String): Color {
         }
         6, 8 -> {
             Color(
-                red   = hexValues[0] shr 4 or hexValues[1],
-                green = hexValues[2] shr 4 or hexValues[3],
-                blue  = hexValues[4] shr 4 or hexValues[5],
+                red   = hexValues[0] shl 4 or hexValues[1],
+                green = hexValues[2] shl 4 or hexValues[3],
+                blue  = hexValues[4] shl 4 or hexValues[5],
                 alpha = hexValues.getOrNull(6)?.let {
-                    hexValues[6] shr 4 or hexValues[7]
+                    hexValues[6] shl 4 or hexValues[7]
                 } ?: 0xFF,
             )
         }
-        else -> throw IllegalArgumentException("Hex code has invalid length (${hex.length} to convert it to a color")
+        else -> throw IllegalArgumentException("Hex code has invalid length (${hex.length}) to convert it to a color")
     }
 }
 
