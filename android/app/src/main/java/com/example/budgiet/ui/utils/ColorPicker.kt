@@ -81,6 +81,9 @@ val HUE_CURSOR_BALL_SIZE = RING_THICKNESS
 val COLOR_PALETTE_ITEM_SIZE = 32.dp
 const val MAX_USER_COLOR_ITEMS = 5
 
+/** Rotate the color ring 90 degrees so that red starts at the top. */
+const val COLOR_RING_ROTATION = 90.0
+
 /** just why bro... */
 var parentDialogOffset by mutableStateOf(IntOffset(0, 0))
 
@@ -316,7 +319,7 @@ private fun ColorRing(
         Canvas(Modifier
             .shadow(shadowElevation, CircleShape)
             .fillMaxSize()
-            .rotate(-90f)
+            .rotate(-COLOR_RING_ROTATION.toFloat())
             .scale(1f, -1f)
         ) {
             val ringStrokeWidth = RING_THICKNESS.toPx()
@@ -348,7 +351,7 @@ private fun ColorRing(
         // HUE cursor (ball)
         /** The position of the HUE cursor in terms of the angle (in degrees) along the Color Ring. */
         @Suppress("LocalVariableName")
-        val _degrees = colorToDegrees(color) ?: 0.0
+        val _degrees = colorToDegrees(color)
         val positionDegrees = remember(_degrees) { _degrees } /* Ball starts at red (at the top). */
 
         val offset = with(LocalDensity.current) {
@@ -363,7 +366,7 @@ private fun ColorRing(
             .offset { offset.round() }
             .shadow(shadowElevation, CircleShape)
             .clip(cursorShape)
-            .background(Color.hsl(normalizeDegrees(positionDegrees - 90).toFloat(), 1f, 0.5f))
+            .background(Color.hsl(positionDegrees.toFloat(), 1f, 0.5f))
             .border(RING_BORDER_THICKNESS, RING_BORDER_COLOR, cursorShape)
             .size(HUE_CURSOR_BALL_SIZE + 1.dp)
             .pointerInput(Unit) {
@@ -416,46 +419,20 @@ private fun Density.offsetToDegrees(offset: Offset, objectSize: Dp, planeSize: D
 
 private fun Density.degreesToOffset(degrees: Double, objectSize: Dp, planeSize: Dp): Offset {
     val center = (planeSize.toPx() - objectSize.toPx()) / 2
-    val degrees = degrees
+    val degrees = degrees + COLOR_RING_ROTATION
     return Offset(
         x = center + cos(Math.toRadians(degrees).toFloat()) * center,
         y = center - sin(Math.toRadians(degrees).toFloat()) * center,
     )
 }
 
-/** Get the HUE of a color.
- * Returns `null` if the Floating point math failed.
- *
- * Formula obtained from [this article](https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/). */
-private fun colorToDegrees(color: Color): Double? {
-    val (red, green, blue) = color
-    val min = min(red, min(green, blue))
-
-    val degrees = try {
-        when {
-            // Red is max
-            red > green && red > blue -> {
-                (green - blue) / (red - min)
-            }
-            // Green is max
-            green > red && green > blue -> {
-                2f + (blue - red) / (green - min)
-            }
-            // Blue is max
-            else -> {
-                4f + (red - green) / (blue - min)
-            }
-        } * 60f + 90f
-    } catch(_: Throwable) { Float.NaN }
-
-    return if (degrees.isNaN() || degrees.isInfinite()) {
-        null
-    } else {
-        normalizeDegrees(degrees.toDouble())
-    }
+/** Get the HUE of a color. */
+private fun colorToDegrees(color: Color): Double {
+    val values = FloatArray(3)
+    ColorUtils.colorToHSL(color.toArgb(), values)
+    return values[0].toDouble()
 }
 private fun degreesToColor(degrees: Double): Color {
-    val degrees = degrees - 90.0 // Apply self-imposed angle offset.
     val normalized = if (degrees < 0) {
         360.0 + degrees % 360.0
     } else {
