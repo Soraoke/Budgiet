@@ -49,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -322,8 +321,6 @@ private fun ColorWheel(
         ColorUtils.colorToHSL(color.toArgb(), values)
         values
     }
-    /** The position of the HUE cursor in terms of the angle (in degrees) along the Color Ring. */
-    val positionDegrees = hue.toDouble()
     /** The color but with the saturation and lightness reset. */
     val hueColor = Color.hsl(hue, 1f, 0.5f)
 
@@ -402,9 +399,9 @@ private fun ColorWheel(
         }
 
         val density = with(LocalDensity.current) { this }
-        val hueCursorOffset = density.degreesToOffset(positionDegrees, HUE_CURSOR_BALL_SIZE, COLOR_WHEEL_DIAMETER)
-        /* Note that this Offset value is not always clamped to the SL's bounds.
+        /* Note that these Offset values are not always clamped to the SL's bounds.
          * This is to allow the user to drag outside of the SL circle and keeping the cursor *visibly* within its bounds. */
+        var hueCursorOffset by remember { mutableStateOf(density.degreesToHueCursorOffset(hue.toDouble())) }
         var slCursorOffset by remember { mutableStateOf(density.colorToSlCursorOffset(saturation, lightness)) }
 
         @Composable
@@ -414,7 +411,7 @@ private fun ColorWheel(
             diameter: Dp,
             borderWidth: Dp,
             offset: Density.() -> IntOffset,
-            onDrag: PointerInputScope.(PointerInputChange, Offset) -> Unit,
+            onDrag: PointerInputScope.(Offset) -> Unit,
             onDragEnd: (PointerInputScope.() -> Unit)? = null,
         ) {
             Box(modifier
@@ -428,39 +425,27 @@ private fun ColorWheel(
                     this.detectDragGestures(
                         onDragEnd = { onDragEnd?.invoke(this) }
                     ) { change, dragAmount ->
-                        onDrag(change, dragAmount)
+                        change.consume()
+                        onDrag(dragAmount)
                     }
                 }
             )
         }
 
-
-        Column {
-            Text("(x = ${hueCursorOffset.x}, y = ${hueCursorOffset.y})")
-            Text("degrees = $positionDegrees")
-        }
         // HUE cursor
         CursorBall(
             color = hueColor,
             diameter = HUE_CURSOR_BALL_SIZE + 1.dp,
             borderWidth = RING_BORDER_THICKNESS,
-            offset = { hueCursorOffset.round() },
-            onDrag = { change, dragAmount ->
-                change.consume()
-                val center = (COLOR_WHEEL_DIAMETER.toPx() - HUE_CURSOR_BALL_SIZE.toPx()) / 2
-
-                // Make the offset relative to the Color Ring
-                val cartesianOffset = Offset(
-                    x =   dragAmount.x - center,
-                    y = - dragAmount.y + center,
-                )
-                val theta = atan2(cartesianOffset.y, cartesianOffset.x)
-                val degreesDelta = Math.toDegrees(theta.toDouble())
-                println("dragAmount = $dragAmount")
-                println("degreesDelta = $degreesDelta")
-
-//                    val change = offsetToDegrees(change.position, HUE_CURSOR_BALL_SIZE, RING_DIAMETER)
-                onColorChange(createColor(positionDegrees + degreesDelta, slCursorOffset))
+            offset = { hueCursorBounds(hueCursorOffset).round() },
+            onDrag = { dragAmount ->
+                // Note: Don't apply bounds to the actual offset value here.
+                hueCursorOffset += dragAmount
+                onColorChange(createColor(hueCursorOffset, slCursorOffset))
+            },
+            onDragEnd = {
+                // When user releases, apply bounds to the actual offset value.
+                hueCursorOffset = hueCursorBounds(hueCursorOffset)
             },
         )
         // Saturation & Lightness cursor
@@ -469,16 +454,15 @@ private fun ColorWheel(
             diameter = SL_CURSOR_BALL_SIZE,
             borderWidth = RING_BORDER_THICKNESS * (SL_CURSOR_BALL_SIZE / HUE_CURSOR_BALL_SIZE),
             offset = { slCursorBounds(slCursorOffset).round() },
-            onDrag = { change, dragAmount ->
-                change.consume()
+            onDrag = { dragAmount ->
                 // Note: Don't apply bounds to the actual offset value here.
                 slCursorOffset += dragAmount
-                onColorChange(createColor(positionDegrees, slCursorOffset))
+                onColorChange(createColor(hueCursorOffset, slCursorOffset))
             },
-            // When user releases, apply bounds to the actual offset value.
             onDragEnd = {
+                // When user releases, apply bounds to the actual offset value.
                 slCursorOffset = slCursorBounds(slCursorOffset)
-            }
+            },
         )
     }
 }
@@ -496,37 +480,39 @@ private fun correctContentContrast(background: Color): Color
         LightColorScheme.onPrimaryContainer
     }
 
-/** Converts the **[Offset]** value of an **`object`** in a **`plane`** / surface to an angle (in *degrees*).
- *
- * The **[Offset]** is a *float pair* (x, y) relative to the Top-Left corner of the **`plane`**.
- *
- * The **`object`** and **`plane`** must have equal *width and height* dimensions. */
-private fun Density.offsetToDegrees(offset: Offset, objectSize: Dp, planeSize: Dp): Double {
-//    println("objectSize = ${objectSize.toPx()}")
-//    println("planeSize = ${planeSize.toPx()}")
-    println("offset (x = ${offset.x}, y = ${offset.y})")
-    // Translate the object's offset to a plane with the origin at the center.
-    val translation = - (planeSize.toPx() - objectSize.toPx()) / 2
-    val centered = Offset(
-        x = offset.x + translation,
-        y = (offset.y - translation),
-    )
-//    println("centered (x = ${centered.x}, y = ${centered.y})")
-    val theta = atan2(centered.y, centered.x)
-    val degrees = Math.toDegrees(theta.toDouble())
-//    TODO()
-
-    return degrees
-}
-
-private fun Density.degreesToOffset(degrees: Double, objectSize: Dp, planeSize: Dp): Offset {
-    val objectSize = objectSize.toPx()
-    val ringThickness = RING_THICKNESS.toPx()
-    val center = (planeSize.toPx() - objectSize) / 2
+private fun Density.degreesToHueCursorOffset(degrees: Double): Offset {
     val degrees = degrees + COLOR_RING_ROTATION
+    val cursorRadius = HUE_CURSOR_BALL_SIZE.toPx() / 2f
+    val boundsRadius = COLOR_WHEEL_DIAMETER.toPx() / 2f - cursorRadius
+
     return Offset(
-        x = center + cos(Math.toRadians(degrees).toFloat()) * (center - (ringThickness - objectSize) / 2),
-        y = center - sin(Math.toRadians(degrees).toFloat()) * (center - (ringThickness - objectSize) / 2),
+        x = boundsRadius + cos(Math.toRadians(degrees).toFloat()) * boundsRadius,
+        y = boundsRadius - sin(Math.toRadians(degrees).toFloat()) * boundsRadius,
+    )
+}
+private fun Density.hueCursorOffsetToDegrees(hueCursorOffset: Offset): Double {
+    val boundOffset = hueCursorBounds(hueCursorOffset)
+    val cursorRadius = HUE_CURSOR_BALL_SIZE.toPx() / 2f
+    val boundsRadius = COLOR_WHEEL_DIAMETER.toPx() / 2f - cursorRadius
+    /** Translate the Offset so that the origin is at the center of the circle. */
+    val offsetNormalized = Offset(
+        x = boundOffset.x - boundsRadius,
+        y = (boundOffset.y - boundsRadius) * -1,
+    )
+
+    val angle = Math.toDegrees(atan2(offsetNormalized.y, offsetNormalized.x).toDouble())
+    val degrees = normalizeDegrees(angle)
+    return normalizeDegrees(degrees - COLOR_RING_ROTATION)
+}
+private fun Density.hueCursorBounds(hueCursorOffset: Offset): Offset {
+    val cursorRadius = HUE_CURSOR_BALL_SIZE.toPx() / 2f
+    val boundsRadius = COLOR_WHEEL_DIAMETER.toPx() / 2f - cursorRadius
+    val boundsCenter = Offset(boundsRadius, boundsRadius)
+
+    val distance = sqrt((hueCursorOffset.x - boundsCenter.x).pow(2f) + (hueCursorOffset.y - boundsCenter.y).pow(2f))
+    return Offset(
+        x = (hueCursorOffset.x - boundsCenter.x) * boundsRadius / distance + boundsCenter.x,
+        y = (hueCursorOffset.y - boundsCenter.y) * boundsRadius / distance + boundsCenter.y,
     )
 }
 
@@ -540,6 +526,18 @@ private fun normalizeDegrees(degrees: Double): Double
         degrees
     }
 
+/** Get the position of the **slCursor** from the [Color]'s data.
+ *
+ * All this do is reverse the operation in [createColor]. */
+private fun Density.colorToSlCursorOffset(saturation: Float, lightness: Float): Offset {
+    val offsetAmount = RING_THICKNESS.toPx() + RING_AND_INNER_GAP.toPx()
+    val diameter =  COLOR_WHEEL_DIAMETER.toPx() - offsetAmount * 2f - SL_CURSOR_BALL_SIZE.toPx()
+
+    return slCursorBounds(Offset(
+        x = saturation * diameter + offsetAmount,
+        y = (-1 * lightness + 1) * diameter + offsetAmount,
+    ))
+}
 /** Clamps the **`slCursorOffset`** so that it stays within the bounds of the *Saturation & Lightness** color circle. */
 private fun Density.slCursorBounds(slCursorOffset: Offset): Offset {
     val offsetAmount = RING_THICKNESS.toPx() + RING_AND_INNER_GAP.toPx()
@@ -558,21 +556,8 @@ private fun Density.slCursorBounds(slCursorOffset: Offset): Offset {
     }
 }
 
-/** Get the position of the **slCursor** from the [Color]'s data.
- *
- * All this do is reverse the operation in [createColor]. */
-private fun Density.colorToSlCursorOffset(saturation: Float, lightness: Float): Offset {
-    val offsetAmount = RING_THICKNESS.toPx() + RING_AND_INNER_GAP.toPx()
-    val diameter =  COLOR_WHEEL_DIAMETER.toPx() - offsetAmount * 2f - SL_CURSOR_BALL_SIZE.toPx()
-
-    return slCursorBounds(Offset(
-        x = saturation * diameter + offsetAmount,
-        y = (-1 * lightness + 1) * diameter + offsetAmount,
-    ))
-}
-
 /** Create a new [Color] based on the positions of the *HUE* and *Saturation & Lightness* **cursors**. */
-private fun Density.createColor(degrees: Double, slCursorOffset: Offset): Color {
+private fun Density.createColor(hueCursorOffset: Offset, slCursorOffset: Offset): Color {
     /** Offset of the *Saturation & Lightness* Cursor normalized to the center of the Color Wheel, in the range of `0.0 - 1.0`. */
     val slNormalized = run {
         val offsetAmount = RING_THICKNESS.toPx() + RING_AND_INNER_GAP.toPx()
@@ -587,5 +572,5 @@ private fun Density.createColor(degrees: Double, slCursorOffset: Offset): Color 
         )
     }
 
-    return Color.hsl(normalizeDegrees(degrees).toFloat(), slNormalized.x, slNormalized.y)
+    return Color.hsl(hueCursorOffsetToDegrees(hueCursorOffset).toFloat(), slNormalized.x, slNormalized.y)
 }
