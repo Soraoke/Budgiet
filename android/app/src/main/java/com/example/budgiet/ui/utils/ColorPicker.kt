@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +34,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SliderDefaults.TrackStopIndicatorSize
 import androidx.compose.material3.SliderDefaults.drawStopIndicator
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -62,6 +64,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -267,87 +270,87 @@ fun ColorPickerDialog(
     var textFieldError by remember(initialColor) { mutableStateOf<String?>(null) }
 
     val color = colorCursorsState.currentColor.copy(alpha = alpha)
+    val orientationPortrait = LocalWindowInfo.current.let { remember(it) {
+        val size = it.containerSize
+        size.width < size.height
+    } }
 
     val itemPadding = 8.dp
 
-    ActionDialog(
-        modifier = modifier,
-        onDismiss = onDismiss,
-        title = { Text(title) },
-        actions = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-
-            FilledTextIconButton(
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = color,
-                    contentColor = correctContentContrast(color),
-                ),
-                border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outline),
-                onClick = {
-                    onSubmit(color)
-                    onDismiss()
-                },
-                icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
-                text = { Text("Submit") },
-            )
-        },
-    ) {
+    val dialogContent = @Composable {
         HsvColorWheel(
-            modifier = Modifier.align(Alignment.CenterHorizontally),
             state = colorCursorsState,
             onColorChange = {
                 textField = colorHex(it.copy(alpha = alpha))
                 textFieldError = null
             }
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(if (orientationPortrait) Modifier.height(10.dp) else Modifier.width(10.dp))
 
         if (allowAlpha) {
-            // TODO: layout vertically if the Dialog has more horizontal space than vertical (i.e. landscape mode).
-            Row(
-                modifier = Modifier.padding(horizontal = itemPadding),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val sliderThumbSize = DpSize(6.dp, 32.dp)
-                val interactionSource = remember { MutableInteractionSource() }
-
-                Text("A")
-                Slider(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(start = itemPadding),
-                    value = alpha,
-                    valueRange = 0f..1f,
-                    track = { state ->
-                        SliderDefaults.Track(state,
-                            colors = SliderDefaults.colors(
-                                activeTrackColor = color,
-                                inactiveTrackColor = MaterialTheme.colorScheme.primaryFixed,
-                            ),
-                            drawStopIndicator = {
-                                this.drawStopIndicator(
-                                    offset = it,
-                                    color = color.copy(alpha = 1f),
-                                    size = TrackStopIndicatorSize * 2,
-                                )
-                            }
+            val sliderThumbSize = DpSize(6.dp, 32.dp)
+            val interactionSource = remember { MutableInteractionSource() }
+            val sliderTrack: @Composable (SliderState) -> Unit = { state ->
+                SliderDefaults.Track(state,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = color,
+                        inactiveTrackColor = MaterialTheme.colorScheme.primaryFixed,
+                    ),
+                    drawStopIndicator = {
+                        this.drawStopIndicator(
+                            offset = it,
+                            color = color.copy(alpha = 1f),
+                            size = TrackStopIndicatorSize * 2,
                         )
-                    },
-                    thumb = {
-                        SliderDefaults.Thumb(
-                            interactionSource = interactionSource,
-                            thumbSize = sliderThumbSize,
-                        )
-                    },
-                    onValueChange = {
-                        alpha = it
-                        // Don't disturb text field if it has an error.
-                        if (textFieldError == null) {
-                            textField = colorHex(color.copy(alpha = it))
-                        }
-                    },
+                    }
                 )
+            }
+            val sliderThumb:  @Composable (SliderState) -> Unit = {
+                SliderDefaults.Thumb(
+                    interactionSource = interactionSource,
+                    thumbSize = sliderThumbSize,
+                )
+            }
+            val onSliderValueChange: (Float) -> Unit = {
+                alpha = it
+                // Don't disturb text field if it has an error.
+                if (textFieldError == null) {
+                    textField = colorHex(color.copy(alpha = it))
+                }
+            }
+
+            if (orientationPortrait) {
+                Row(
+                    modifier = Modifier.padding(horizontal = itemPadding),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("A")
+                    Slider(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = itemPadding),
+                        value = alpha,
+                        valueRange = 0f..1f,
+                        track = sliderTrack,
+                        thumb = sliderThumb,
+                        onValueChange = onSliderValueChange,
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier.padding(vertical = itemPadding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    VerticalSlider(
+                        modifier = Modifier.fillMaxHeight()
+                            .padding(bottom = itemPadding),
+                        value = alpha,
+                        valueRange = 0f..1f,
+                        track = sliderTrack,
+                        thumb = sliderThumb,
+                        onValueChange = onSliderValueChange,
+                    )
+                    Text("A")
+                }
             }
         }
 
@@ -375,6 +378,39 @@ fun ColorPickerDialog(
             )
         }
     }
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        title = { Text(title) },
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            FilledTextIconButton(
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = color,
+                    contentColor = correctContentContrast(color),
+                ),
+                border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outline),
+                onClick = {
+                    onSubmit(color)
+                    onDismiss()
+                },
+                icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                text = { Text("Submit") },
+            )
+        },
+    ) {
+        if (orientationPortrait) {
+            dialogContent()
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                dialogContent()
+            }
+        }
+    }
 }
 
 @Composable
@@ -386,9 +422,10 @@ private fun HsvColorWheel(
     val shadowElevation = 5.dp
 
     // Circle box
-    Box(modifier.size(COLOR_WHEEL_DIAMETER)) {
+    Box(modifier) {
         // Hue Color Ring
         Canvas(Modifier
+            .size(COLOR_WHEEL_DIAMETER)
             .shadow(shadowElevation, CircleShape)
             .fillMaxSize()
             .rotate(-COLOR_RING_ROTATION.toFloat())
@@ -422,7 +459,7 @@ private fun HsvColorWheel(
         }
 
         // Saturation & Value (Brightness) Color Wheel
-        Canvas(Modifier.fillMaxSize()) {
+        Canvas(Modifier.size(COLOR_WHEEL_DIAMETER)) {
             /** Radius of the Saturation & Brightness color circle. */
             val radius = this.size.minDimension / 2 - RING_THICKNESS.toPx() - RING_AND_INNER_GAP.toPx()
             val borderStrokeWidth = 2f

@@ -1,6 +1,7 @@
 // This file (and the utils package) contains miscellaneous UI Composables that act as helpers of other Composables.
 package com.example.budgiet.ui.utils
 
+import androidx.annotation.IntRange
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +39,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderColors
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
@@ -52,9 +57,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -346,6 +354,58 @@ fun PlainSearchBar(
     )
 }
 
+/** The same as a [Slider], but with *vertical orientation*.
+ * Lowest value at the *bottom*, highest at the *top*.
+ *
+ * Taken from [**Debdutta-Panda** on GitHub](https://gist.github.com/Debdutta-Panda/d47a84b3e2f82b4dd4b1f0cf131e73d8). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VerticalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    onValueChangeFinished: (() -> Unit)? = null,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    @IntRange(from = 0) steps: Int = 0,
+    enabled: Boolean = true,
+    colors: SliderColors = SliderDefaults.colors(),
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    track: @Composable (SliderState) -> Unit = { SliderDefaults.Track(it) },
+    thumb: @Composable (SliderState) -> Unit = { SliderDefaults.Thumb(interactionSource) },
+){
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        onValueChangeFinished = onValueChangeFinished,
+        valueRange = valueRange,
+        steps = steps,
+        enabled = enabled,
+        colors = colors,
+        interactionSource = interactionSource,
+        track = track,
+        thumb = thumb,
+        modifier = Modifier
+            .graphicsLayer {
+                rotationZ = 270f
+                transformOrigin = TransformOrigin(0f, 0f)
+            }
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(
+                    Constraints(
+                        minWidth = constraints.minHeight,
+                        maxWidth = constraints.maxHeight,
+                        minHeight = constraints.minWidth,
+                        maxHeight = constraints.maxHeight,
+                    )
+                )
+                layout(placeable.height, placeable.width) {
+                    placeable.place(-placeable.width, 0)
+                }
+            }
+            .then(modifier)
+    )
+}
+
 /** Structured padding values for [ActionDialog].
  *
  * Default values respect the [Material 3 Spec](https://m3.material.io/components/dialogs/specs).
@@ -405,7 +465,9 @@ fun ActionDialog(
             Column(Modifier.padding(padding.dialogEdges)) {
                 this.title()
                 Spacer(Modifier.height(padding.titleSpacerHeight))
-                this.content()
+                Column(Modifier.fillMaxWidth().weight(1f)) {
+                    this.content()
+                }
 
                 Row(
                     modifier = Modifier
