@@ -63,7 +63,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
-import androidx.core.graphics.ColorUtils
 import com.example.budgiet.R
 import com.example.budgiet.RecentItems
 import com.example.budgiet.fromHex
@@ -83,10 +82,10 @@ val COLOR_WHEEL_DIAMETER = 250.dp
 val RING_THICKNESS = 28.dp
 val RING_BORDER_THICKNESS = 3.dp
 val RING_BORDER_COLOR = Color.White
-/** Size of the gap between the HUE color ring and the SL color circle. */
+/** Size of the gap between the Hue color ring and the SV color circle. */
 val RING_AND_INNER_GAP = 6.dp
 val HUE_CURSOR_BALL_SIZE = RING_THICKNESS
-val SL_CURSOR_BALL_SIZE = HUE_CURSOR_BALL_SIZE * 0.75f
+val SV_CURSOR_BALL_SIZE = HUE_CURSOR_BALL_SIZE * 0.75f
 val COLOR_PALETTE_ITEM_SIZE = 32.dp
 const val MAX_USER_COLOR_ITEMS = 5
 
@@ -98,8 +97,8 @@ var parentDialogOffset by mutableStateOf(IntOffset(0, 0))
 
 /** A [Button][IconButton] that opens a [DropdownMenu] with a *color palette* the user can choose from.
  *
- * Additionally, the [DropdownMenu] has a button that opens a full **color picker** with an *HSL* color wheel.
- * The menu also displays *recent* colors that were chosen from the full *HSL* color picker. */
+ * Additionally, the [DropdownMenu] has a button that opens a full **color picker** with an *HSV* color wheel.
+ * The menu also displays *recent* colors that were chosen from the full *HSV* color picker. */
 @Composable
 fun ColorPickerButton(
     modifier: Modifier = Modifier,
@@ -238,7 +237,7 @@ fun ColorPickerButton(
     }
 }
 
-/** Displays a [Dialog][ActionDialog] a **Color Picker** with an *HSL* color wheel and a [TextField] with the *Hexadecimal RGB* color value.
+/** Displays a [Dialog][ActionDialog] a **Color Picker** with an *HSV* color wheel and a [TextField] with the *Hexadecimal RGB* color value.
  *
  * @param title The title text that is displayed at the top of the [Dialog][ActionDialog].
  * @param allowAlpha Whether the color can have **transparency** or is fully opaque. */
@@ -254,7 +253,7 @@ fun ColorPickerDialog(
     fun colorHex(color: Color)
         = if (allowAlpha) color.rgbaToHex() else color.rgbToHex()
 
-    val colorCursorsState = HslCursorsState.remember(initialColor)
+    val colorCursorsState = HsvCursorsState.remember(initialColor)
     var textField by remember(initialColor) { mutableStateOf(colorHex(initialColor)) }
     var textFieldError by remember(initialColor) { mutableStateOf<String?>(null) }
 
@@ -284,7 +283,7 @@ fun ColorPickerDialog(
             )
         },
     ) {
-        HslColorWheel(
+        HsvColorWheel(
             modifier = Modifier.align(Alignment.CenterHorizontally),
             state = colorCursorsState,
             onColorChange = {
@@ -320,16 +319,16 @@ fun ColorPickerDialog(
 }
 
 @Composable
-private fun HslColorWheel(
+private fun HsvColorWheel(
     modifier: Modifier = Modifier,
-    state: HslCursorsState,
+    state: HsvCursorsState,
     onColorChange: (Color) -> Unit,
 ) {
     val shadowElevation = 5.dp
 
     // Circle box
     Box(modifier.size(COLOR_WHEEL_DIAMETER)) {
-        // HUE Color Ring
+        // Hue Color Ring
         Canvas(Modifier
             .shadow(shadowElevation, CircleShape)
             .fillMaxSize()
@@ -338,13 +337,13 @@ private fun HslColorWheel(
         ) {
             val ringStrokeWidth = RING_THICKNESS.toPx()
             val ringBorderStrokeWidth = RING_BORDER_THICKNESS.toPx()
-            /** The number of colors that appear in the Angular Gradient of the HUE color ring. */
+            /** The number of colors that appear in the Angular Gradient of the Hue color ring. */
             val colorVariety = 8
 
             // Ring
             this.drawCircle(
                 brush = Brush.sweepGradient(List(colorVariety) { i ->
-                    Color.hsl(360f * i.toFloat() / (colorVariety - 1), 1f, 0.5f)
+                    Color.hsv(360f * i.toFloat() / (colorVariety - 1), 1f, 1f)
                 }),
                 radius = (this.size.minDimension - ringStrokeWidth) / 2,
                 style = Stroke(ringStrokeWidth),
@@ -363,30 +362,33 @@ private fun HslColorWheel(
             )
         }
 
-        // Saturation & Lightness Color Wheel
+        // Saturation & Value (Brightness) Color Wheel
         Canvas(Modifier.fillMaxSize()) {
-            /** Radius of the Saturation & Lightness color circle. */
+            /** Radius of the Saturation & Brightness color circle. */
             val radius = this.size.minDimension / 2 - RING_THICKNESS.toPx() - RING_AND_INNER_GAP.toPx()
             val borderStrokeWidth = 2f
 
-            // Inner circle (displays saturation and lightness)
+            val gradientRadius = radius - SV_CURSOR_BALL_SIZE.toPx()
+
+            // Inner circle (displays saturation and brightness)
             this.drawCircle(
                 color = Color.White,
                 radius = radius,
             )
-            // SL gradients obtained from [this video](https://www.youtube.com/watch?v=9zXZtHMqHnI).
+            // SV gradients obtained from [this video](https://www.youtube.com/watch?v=9zXZtHMqHnI).
             this.drawCircle(
-                brush = Brush.linearGradient(
+                brush = Brush.horizontalGradient(
                     colors = listOf(state.currentHueColor, Color.Transparent),
-                    start = this.center + Offset(radius * 0.75f, 0f),
-                    end = this.center + Offset(-radius * 0.75f, 0f),
+                    startX = this.center.x + gradientRadius,
+                    endX = this.center.x - gradientRadius,
                 ).let { brush ->
                     Brush.composite(
                         srcBrush = brush,
-                        dstBrush = Brush.linearGradient(
+                        dstBrush = Brush.verticalGradient(
                             colors = listOf(Color.Black, Color.White),
-                            start = this.center + Offset(0f, radius),
-                            end = this.center + Offset(0f, -radius * 0.75f),
+                            // Don't apply visual gradient offset for Black because it is strong (radius > gradientRadius).
+                            startY = this.center.y + radius,
+                            endY = this.center.y - gradientRadius,
                         ),
                         blendMode = BlendMode.Multiply,
                     )
@@ -429,7 +431,7 @@ private fun HslColorWheel(
             )
         }
 
-        // HUE cursor
+        // Hue cursor
         CursorBall(
             color = state.currentHueColor,
             diameter = HUE_CURSOR_BALL_SIZE + 1.dp,
@@ -441,18 +443,18 @@ private fun HslColorWheel(
             },
             onDragEnd = { state.hueCursor.endDrag() },
         )
-        // Saturation & Lightness cursor
+        // Saturation & Brightness cursor
         CursorBall(
             color = state.currentColor,
-            diameter = SL_CURSOR_BALL_SIZE,
-            borderWidth = RING_BORDER_THICKNESS * (SL_CURSOR_BALL_SIZE / HUE_CURSOR_BALL_SIZE),
-            offset = { state.slCursor.offset.round() },
+            diameter = SV_CURSOR_BALL_SIZE,
+            borderWidth = RING_BORDER_THICKNESS * (SV_CURSOR_BALL_SIZE / HUE_CURSOR_BALL_SIZE),
+            offset = { state.svCursor.offset.round() },
             onDrag = { dragAmount ->
                 // Note: Don't apply bounds to the actual offset value here.
-                state.slCursor.drag(dragAmount)
+                state.svCursor.drag(dragAmount)
                 onColorChange(state.currentColor)
             },
-            onDragEnd = { state.slCursor.endDrag() },
+            onDragEnd = { state.svCursor.endDrag() },
         )
     }
 }
@@ -470,38 +472,38 @@ private fun correctContentContrast(background: Color): Color
         LightColorScheme.onPrimaryContainer
     }
 
-class HslCursorsState private constructor(initialColor: Color, private val cursorsData: CursorsData) {
+class HsvCursorsState private constructor(initialColor: Color, private val cursorsData: CursorsData) {
     val hueCursor = Cursor { this.cursorsData.boundedHueCursorOffset(it) }
-    val slCursor = Cursor { this.cursorsData.boundedSlCursorOffset(it) }
+    val svCursor = Cursor { this.cursorsData.boundedSvCursorOffset(it) }
 
     init {
         this.updateWith(initialColor)
     }
 
-    val currentColor get() = this.cursorsData.createColor(this.hueCursor.offset, this.slCursor.offset)
-    val currentHueColor get() = Color.hsl(this.cursorsData.hueCursorOffsetToDegrees(this.hueCursor.offset).toFloat(), 1f, 0.5f)
+    val currentColor get() = this.cursorsData.createColor(this.hueCursor.offset, this.svCursor.offset)
+    val currentHueColor get() = Color.hsv(this.cursorsData.hueCursorOffsetToDegrees(this.hueCursor.offset).toFloat(), 1f, 1f)
 
-    /** Modifies the values of **`hueCursorOffset`** and **`slCursorOffset`** with the *HSL* values from the new **`color`**. */
+    /** Modifies the values of **`hueCursorOffset`** and **`svCursorOffset`** with the *HSV* values from the new **`color`**. */
     fun updateWith(color: Color) {
-        val (hue, saturation, lightness) = run {
+        val (hue, saturation, value) = run {
             val values = FloatArray(3)
-            ColorUtils.colorToHSL(color.toArgb(), values)
+            android.graphics.Color.colorToHSV(color.toArgb(), values)
             values
         }
 
-        // Don't change the HUE cursor position if it doesn't need to be changed.
+        // Don't change the Hue cursor position if it doesn't need to be changed.
         if (!(color.red == color.green && color.green == color.blue)) {
             this.hueCursor.offset = cursorsData.degreesToHueCursorOffset(Degrees(hue))
         }
-        this.slCursor.offset = cursorsData.colorToSlCursorOffset(saturation, lightness)
+        this.svCursor.offset = cursorsData.colorToSvCursorOffset(saturation, value)
     }
 
     companion object {
-        /** Create an instance of [HslCursorsState] that is remembered by a composable. */
+        /** Create an instance of [HsvCursorsState] that is remembered by a composable. */
         @Composable
-        fun remember(initialColor: Color = Color.Red): HslCursorsState = LocalDensity.current.let { density ->
+        fun remember(initialColor: Color = Color.Red): HsvCursorsState = LocalDensity.current.let { density ->
             val cursorData = remember(density) { CursorsData(density) }
-            remember(initialColor, cursorData) { HslCursorsState(initialColor, cursorData) }
+            remember(initialColor, cursorData) { HsvCursorsState(initialColor, cursorData) }
         }
     }
 }
@@ -509,8 +511,8 @@ class HslCursorsState private constructor(initialColor: Color, private val curso
 class Cursor internal constructor(
     private val bounds: (Offset) -> Offset,
 ) {
-    /* Note that these Offset values are not always clamped to the SL's bounds.
-     * This is to allow the user to drag outside of the SL circle and keeping the cursor *visibly* within its bounds. */
+    /* Note that these Offset values are not always clamped to the SV's bounds.
+     * This is to allow the user to drag outside of the SV circle and keeping the cursor *visibly* within its bounds. */
     private val _offset = mutableStateOf(Offset(0f, 0f))
 
     var offset: Offset
@@ -541,16 +543,28 @@ internal class CursorsData(
             radius = radius,
         )
     }
-    val slCursorBounds = with(density) {
-        val cursorRadius = SL_CURSOR_BALL_SIZE.toPx() / 2f
+
+    val svCursorRadius = with(density) { SV_CURSOR_BALL_SIZE.toPx() / 2f }
+    val svCursorBounds = with(density) {
         val offsetAmount = RING_THICKNESS.toPx() + RING_AND_INNER_GAP.toPx()
-        val radius =  COLOR_WHEEL_DIAMETER.toPx() / 2f - offsetAmount - cursorRadius
+        val radius =  COLOR_WHEEL_DIAMETER.toPx() / 2f - offsetAmount - svCursorRadius
         Rect(
             center = Offset(offsetAmount + radius, offsetAmount + radius),
             radius = radius,
         )
     }
+    /** Since the HSV selector area is a circle, the actual area of the S&L selector is a square within the circle and is smaller. */
+    val svSelectionBounds = Rect(
+        top = svCursorBounds.top + svCursorRadius * 2.3f,
+        left = svCursorBounds.left + svCursorRadius * 2.3f,
+        bottom = svCursorBounds.bottom,
+        right = svCursorBounds.right - svCursorRadius * 2.25f,
+    )
 
+    /** Get the position of the **hueCursor** from the [Color]'s **Hue** value.
+     *
+     * > Note that `hue == hueCursorOffsetToDegrees(degreesToHueCursorOffset(color))`.
+     * > Or at least it's supposed to. */
     fun degreesToHueCursorOffset(hue: Degrees): Offset {
         val degrees = hue + COLOR_RING_ROTATION
         return Offset(
@@ -558,7 +572,7 @@ internal class CursorsData(
             y = hueCursorBounds.height / 2f - sin(degrees).toFloat() * hueCursorBounds.height / 2f,
         )
     }
-    /** Returns the **HUE** value that corresponds to the **`hueCursor`**'s position. */
+    /** Returns the **Hue** value that corresponds to the **`hueCursor`**'s position. */
     fun hueCursorOffsetToDegrees(hueCursorOffset: Offset): Degrees {
         /** Translate the Offset so that the origin is at the center of the circle. */
         val offsetNormalized = Offset(
@@ -568,7 +582,7 @@ internal class CursorsData(
 
         return Degrees.fromRadians(atan2(offsetNormalized.y, offsetNormalized.x)) - COLOR_RING_ROTATION
     }
-    /** Clamps the **`hueCursorOffset`** so that it stays within the bounds of the **HUE** Color Ring. */
+    /** Clamps the **`hueCursorOffset`** so that it stays within the bounds of the **Hue** Color Ring. */
     fun boundedHueCursorOffset(hueCursorOffset: Offset): Offset {
         val distance = sqrt((hueCursorOffset.x - hueCursorBounds.center.x).pow(2f) + (hueCursorOffset.y - hueCursorBounds.center.y).pow(2f))
 
@@ -578,44 +592,63 @@ internal class CursorsData(
         )
     }
 
-    /** Get the position of the **slCursor** from the [Color]'s **`saturation`** and **`lightness`** values. */
-    fun colorToSlCursorOffset(saturation: Float, lightness: Float) = Offset(
-        x = saturation * slCursorBounds.width + slCursorBounds.left,
-        y = (-1 * lightness + 1) * slCursorBounds.height + slCursorBounds.top,
+    /** Get the position of the **svCursor** from the [Color]'s **`saturation`** and **`brightness`** values.
+     *
+     * > Note that `color == svCursorOffsetToColor(colorToSvCursorOffset(color))`.
+     * > Or at least it's supposed to. */
+    fun colorToSvCursorOffset(saturation: Float, brightness: Float) = Offset(
+        // Values are snapped to the edges of the selection circle area.
+        x = when {
+            saturation <= 0f -> svCursorBounds.left
+            saturation >= 1f -> svCursorBounds.right
+            else -> saturation * svSelectionBounds.width + svSelectionBounds.left
+        },
+        y = when {
+            brightness <= 0f -> svCursorBounds.bottom
+            brightness >= 1f -> svCursorBounds.top
+            else -> flipValue(brightness) * svSelectionBounds.height + svSelectionBounds.top
+        },
     )
-    /** Returns the respective **`saturation`** and **`lightness`** values that correspond to the **`slCursor`**'s position. */
-    fun slCursorOffsetToColor(slCursorOffset: Offset): Pair<Float, Float> {
-        val x = slCursorOffset.x - slCursorBounds.left
-        // Reflect y value on x-axis.
-        val y = slCursorBounds.height - (slCursorOffset.y - slCursorBounds.top)
+    /** Returns the respective **`saturation`** and **`brightness`** values that correspond to the **`svCursor`**'s position.
+     *
+     * > Note that `offset == colorToSvCursorOffset(svCursorOffsetToColor(offset))`.
+     * > Or at least it's supposed to.*/
+    fun svCursorOffsetToColor(svCursorOffset: Offset) = Pair(
+        first = when {
+            svCursorOffset.x < svSelectionBounds.left -> 0f
+            svCursorOffset.x > svSelectionBounds.right -> 1f
+            else -> (svCursorOffset.x - svSelectionBounds.left) / svSelectionBounds.width
+        },
+        second = when {
+            svCursorOffset.y < svSelectionBounds.top -> 1f
+            svCursorOffset.y > svSelectionBounds.bottom -> 0f
+            else -> flipValue((svCursorOffset.y - svSelectionBounds.top) / svSelectionBounds.height)
+        },
+    )
+    /** Clamps the **`svCursorOffset`** so that it stays within the bounds of the *Saturation & Brightness* color circle. */
+    fun boundedSvCursorOffset(svCursorOffset: Offset): Offset {
+        val distance = sqrt((svCursorOffset.x - svCursorBounds.center.x).pow(2f) + (svCursorOffset.y - svCursorBounds.center.y).pow(2f))
 
-        val xFactor = (x / slCursorBounds.width).coerceIn(0f, 1f)
-        // FIXME: color is completely white at the top, when it should be white + red
-        val yFactor = (y / slCursorBounds.height).coerceIn(0f, 1f)
-
-        return Pair(xFactor, yFactor)
-    }
-    /** Clamps the **`slCursorOffset`** so that it stays within the bounds of the *Saturation & Lightness** color circle. */
-    fun boundedSlCursorOffset(slCursorOffset: Offset): Offset {
-        val distance = sqrt((slCursorOffset.x - slCursorBounds.center.x).pow(2f) + (slCursorOffset.y - slCursorBounds.center.y).pow(2f))
-
-        return if (distance > slCursorBounds.minDimension / 2f) {
+        return if (distance > svCursorBounds.minDimension / 2f) {
             Offset(
-                x = (slCursorOffset.x - slCursorBounds.center.x) * slCursorBounds.width / 2f / distance + slCursorBounds.center.x,
-                y = (slCursorOffset.y - slCursorBounds.center.y) * slCursorBounds.height / 2f / distance + slCursorBounds.center.y,
+                x = (svCursorOffset.x - svCursorBounds.center.x) * svCursorBounds.width / 2f / distance + svCursorBounds.center.x,
+                y = (svCursorOffset.y - svCursorBounds.center.y) * svCursorBounds.height / 2f / distance + svCursorBounds.center.y,
             )
         } else {
-            slCursorOffset
+            svCursorOffset
         }
     }
 
-    /** Create a new [Color] based on the positions of the *HUE* and *Saturation & Lightness* **cursors**. */
-    fun createColor(hueCursorOffset: Offset, slCursorOffset: Offset): Color {
+    /** Create a new [Color] based on the positions of the *Hue* and *Saturation & Brightness* **cursors**. */
+    fun createColor(hueCursorOffset: Offset, svCursorOffset: Offset): Color {
         val hue = hueCursorOffsetToDegrees(hueCursorOffset).toFloat()
-        val (saturation, lightness) = slCursorOffsetToColor(slCursorOffset)
+        val (saturation, brightness) = svCursorOffsetToColor(svCursorOffset)
 
-        return Color.hsl(hue, saturation, lightness)
+        return Color.hsv(hue, saturation, brightness)
     }
+
+    // Makes a value that is in range of 0 - 1 become in range of 1 - 0 instead.
+    private fun flipValue(value: Float): Float = value * -1 + 1
 }
 
 @Suppress("unused")
