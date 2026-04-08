@@ -7,12 +7,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -27,11 +29,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderDefaults.TrackStopIndicatorSize
+import androidx.compose.material3.SliderDefaults.drawStopIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +66,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -254,10 +262,13 @@ fun ColorPickerDialog(
         = if (allowAlpha) color.rgbaToHex() else color.rgbToHex()
 
     val colorCursorsState = HsvCursorsState.remember(initialColor)
+    var alpha by remember(initialColor, allowAlpha) { mutableFloatStateOf(if (allowAlpha) initialColor.alpha else 1f) }
     var textField by remember(initialColor) { mutableStateOf(colorHex(initialColor)) }
     var textFieldError by remember(initialColor) { mutableStateOf<String?>(null) }
 
-    val color = colorCursorsState.currentColor
+    val color = colorCursorsState.currentColor.copy(alpha = alpha)
+
+    val itemPadding = 8.dp
 
     ActionDialog(
         modifier = modifier,
@@ -287,15 +298,63 @@ fun ColorPickerDialog(
             modifier = Modifier.align(Alignment.CenterHorizontally),
             state = colorCursorsState,
             onColorChange = {
-                textField = colorHex(it)
+                textField = colorHex(it.copy(alpha = alpha))
                 textFieldError = null
             }
         )
         Spacer(Modifier.height(10.dp))
 
+        if (allowAlpha) {
+            // TODO: layout vertically if the Dialog has more horizontal space than vertical (i.e. landscape mode).
+            Row(
+                modifier = Modifier.padding(horizontal = itemPadding),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val sliderThumbSize = DpSize(6.dp, 32.dp)
+                val interactionSource = remember { MutableInteractionSource() }
+
+                Text("A")
+                Slider(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(start = itemPadding),
+                    value = alpha,
+                    valueRange = 0f..1f,
+                    track = { state ->
+                        SliderDefaults.Track(state,
+                            colors = SliderDefaults.colors(
+                                activeTrackColor = color,
+                                inactiveTrackColor = MaterialTheme.colorScheme.primaryFixed,
+                            ),
+                            drawStopIndicator = {
+                                this.drawStopIndicator(
+                                    offset = it,
+                                    color = color.copy(alpha = 1f),
+                                    size = TrackStopIndicatorSize * 2,
+                                )
+                            }
+                        )
+                    },
+                    thumb = {
+                        SliderDefaults.Thumb(
+                            interactionSource = interactionSource,
+                            thumbSize = sliderThumbSize,
+                        )
+                    },
+                    onValueChange = {
+                        alpha = it
+                        // Don't disturb text field if it has an error.
+                        if (textFieldError == null) {
+                            textField = colorHex(color.copy(alpha = it))
+                        }
+                    },
+                )
+            }
+        }
+
         // HexCode
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextField(
+                modifier = Modifier.fillMaxWidth(),
                 prefix = { Text("#") },
                 value = textField,
                 onValueChange = {
