@@ -156,11 +156,11 @@ fun ColorPickerButton(
             fun Modifier.itemModifier(color: Color, isSelectable: Boolean): Modifier = Modifier
                 .size(COLOR_PALETTE_ITEM_SIZE)
                 .clip(itemShape)
-                .apply {
+                .run {
                     if (isSelectable && color == selectedColor) {
                         // FIXME: doesn't show
-                        shadow(50.dp, shape = itemShape)
-                    }
+                        shadow(5.dp, shape = itemShape)
+                    } else this
                 }
                 .background(color)
                 .border(

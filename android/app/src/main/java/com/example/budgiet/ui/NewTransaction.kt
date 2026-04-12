@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.budgiet.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.RepeatMode
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
@@ -72,12 +75,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -85,6 +90,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.round
@@ -109,6 +115,7 @@ import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
+import com.example.budgiet.ui.utils.BorderStyle
 import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.DatePickerDialog
@@ -119,6 +126,7 @@ import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
+import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import com.example.budgiet.ui.utils.parentDialogOffset
@@ -129,6 +137,7 @@ import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
 import kotlin.math.ceil
+
 
 /** The maximum number of characters (graphemes) allowed in the Description field.
  * This value should not be changed as the database enforces the value. */
@@ -168,12 +177,18 @@ class NewTransactionViewModel: ViewModel() {
     }
 
     companion object {
+        /** A fake "database" containing tag data in memory. will be removed once the real database is implemented. */
+        private val fakeTagsDb = mutableStateListOf<Tag>()
+
+        val tagNameCharLimit = 9
+
         fun getAllTags(): List<Tag> {
             // TODO:
-            return listOf()
+            return this.fakeTagsDb
         }
         fun createNewTag(tag: Tag) {
-            TODO("create tag $tag")
+            // TODO:
+            this.fakeTagsDb.add(tag)
         }
     }
 }
@@ -1039,7 +1054,8 @@ fun TagsPickerDialog(
                 }
             },
         ) {
-            val modifier = Modifier.fillMaxWidth()
+            val modifier = Modifier
+                .fillMaxWidth()
                 .heightIn(min = TextFieldDefaults.MinHeight, max = TAG_GRID_MAX_HEIGHT)
                 .border(width = 1.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.outline)
 
@@ -1076,7 +1092,8 @@ fun TagsPickerDialog(
             }
 
             FilledTextIconButton(
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
                     .padding(top = ActionDialogPadding.Default.titleSpacerHeight),
                 colors = ButtonDefaults.filledTonalButtonColors(),
                 icon = { Icon(painterResource(R.drawable.add_24px), "New tag") },
@@ -1090,6 +1107,29 @@ fun TagsPickerDialog(
     }
 }
 
+private val userIcons
+    // TODO: use rememberWork instead
+    @Composable get() = with(LocalContext.current) { remember(this) {
+        val icons = run {
+            // Must be done this way, otherwise all the array elements will be 0.
+            val badArray = this.resources.obtainTypedArray(R.array.usericons)
+            val icons = arrayOfNulls<Int>(badArray.length())
+            for (i in 0..<badArray.length()) {
+                icons[i] = badArray.getResourceId(i, 0)
+            }
+            badArray.recycle()
+            @Suppress("UNCHECKED_CAST")
+            icons as Array<Int>
+        }
+        icons.associateBy { res ->
+            this.resources
+                .getResourceName(res)
+                // name starts with "${package_name}:drawable/usericon_".
+                .split("/usericon_", limit = 2)
+                .last()
+        }
+    } }
+
 @Composable
 fun TagCreatorDialog(
     modifier: Modifier = Modifier,
@@ -1102,98 +1142,150 @@ fun TagCreatorDialog(
 
     var showIconPickerDialog by remember { mutableStateOf(false) }
 
+    val iconResource = if (icon == null) {
+        R.drawable.add_box_24px
+    } else {
+        userIcons[icon]
+    }?.let { painterResource(it) }
+    var nameError by remember { mutableStateOf<String?>(null) }
+
+    fun checkNameError() {
+        nameError = if (name.isEmpty()) {
+            "Tag name must not be empty."
+        } else if (name.length > NewTransactionViewModel.tagNameCharLimit) {
+            "Tag name must be 9 characters or less."
+        } else {
+            null
+        }
+    }
+
     val innerPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+    val itemSpacing = 12.dp
+    val circleContainerSize = TextFieldDefaults.MinHeight / 1.333f
+    val itemBackgroundOpacity = 0.87f
 
-    ActionDialog(
-        modifier = modifier.onGloballyPositioned { coords -> parentDialogOffset = coords.positionOnScreen().round() },
-        onDismiss = onDismiss,
-        title = { Text("Create new tag") },
-        actions = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-
-            PlainToolTipBox("Submit new tag") {
-                FilledTextIconButton(
-                    onClick = {
-                        onSubmit(Tag(name, icon, color))
-                        onDismiss()
-                    },
-                    icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
-                    text = { Text("Submit") },
-                )
-            }
-        },
-    ) {
+    if (showIconPickerDialog) {
         @Suppress("AssignedValueIsNeverRead")
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = MaterialTheme.shapes.extraLarge,
-                )
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(color)
-                .padding(innerPadding),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val spaceBetween = 12.dp
-            val circleContainerSize = TextFieldDefaults.MinHeight / 1.333f
-            val roundBorderSize = 2.dp
-            val itemBackgroundOpacity = 0.87f
+        IconPickerDialog(
+            modifier = modifier,
+            initiallySelectedIcon = icon,
+            onSubmit = { icon = it },
+            onDismiss = { showIconPickerDialog = false },
+        )
+    } else {
+        ActionDialog(
+            modifier = modifier.onGloballyPositioned { coords -> parentDialogOffset = coords.positionOnScreen().round() },
+            onDismiss = onDismiss,
+            title = { Text("Create new tag") },
+            actions = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
 
-            @Composable
-            fun Modifier.circleContainer(): Modifier
-                = Modifier
+                PlainToolTipBox("Submit new tag") {
+                    FilledTextIconButton(
+                        onClick = {
+                            checkNameError()
+
+                            if (nameError == null) {
+                                onSubmit(Tag(name, icon, color))
+                                onDismiss()
+                            }
+                        },
+                        enabled = nameError == null && iconResource != null,
+                        icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                        text = { Text("Submit") },
+                    )
+                }
+            },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = MaterialTheme.shapes.extraLarge,
+                    )
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(color)
+                    .padding(innerPadding),
+                horizontalArrangement = Arrangement.spacedBy(itemSpacing, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                @Composable
+                fun Modifier.circleContainer(borderStyle: BorderStyle = BorderStyle.Solid): Modifier
+                    = Modifier
                     .clip(IconButtonDefaults.standardShape)
                     .then(this)
                     .border(
-                        width = roundBorderSize,
+                        width = 1.dp,
                         shape = IconButtonDefaults.standardShape,
                         color = MaterialTheme.colorScheme.outline,
+                        style = borderStyle,
                     )
                     .size(circleContainerSize)
 
-            PlainToolTipBox("Select tag icon") {
-                IconButton(
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh
-                            .copy(alpha = itemBackgroundOpacity)
-                        )
-                        .circleContainer(),
-                    onClick = { showIconPickerDialog = true }
-                ) {
-                    // TODO:
+                @Suppress("AssignedValueIsNeverRead")
+                PlainToolTipBox("Select tag icon") {
+                    IconButton(
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                                    .copy(alpha = itemBackgroundOpacity)
+                            )
+                            .circleContainer(
+                                borderStyle = if (icon == null) BorderStyle.Dashed() else BorderStyle.Solid,
+                            ),
+                        onClick = { showIconPickerDialog = true }
+                    ) {
+                        // FIXME: icon does not show when using .circleContainer()
+                        iconResource?.let { Icon(it, "Select tag icon") }
+                    }
                 }
+
+                TextField(
+                    modifier = Modifier.weight(1f, fill = false),
+                    colors = run {
+                        val color = TextFieldDefaults.colors()
+                            .focusedContainerColor
+                            .copy(alpha = itemBackgroundOpacity)
+                        TextFieldDefaults.colors(
+                            focusedContainerColor = color,
+                            unfocusedContainerColor = color,
+                            errorContainerColor = color,
+                            disabledContainerColor = color,
+                        )
+                    },
+                    label = { Text("Tag name") },
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        checkNameError()
+                    },
+                )
+
+                ColorPickerButton(
+                    modifier = Modifier.circleContainer(),
+                    color = color,
+                    onColorChange = { color = it },
+                )
             }
-            Spacer(Modifier.width(spaceBetween))
 
-            TextField(
-                modifier = Modifier.weight(1f, fill = false),
-                colors = run {
-                    val color = TextFieldDefaults.colors()
-                        .focusedContainerColor
-                        .copy(alpha = itemBackgroundOpacity)
-                    TextFieldDefaults.colors(
-                        focusedContainerColor = color,
-                        unfocusedContainerColor = color,
-                        errorContainerColor = color,
-                        disabledContainerColor = color,
-                    )
-                },
-                label = { Text("Tag name") },
-                value = name,
-                onValueChange = { name = it },
-            )
-            Spacer(Modifier.width(spaceBetween))
+            Spacer(Modifier.height(innerPadding.calculateBottomPadding()))
 
-            ColorPickerButton(
-                modifier = Modifier.circleContainer(),
-                color = color,
-                onColorChange = { color = it },
-            )
+            if (iconResource == null) {
+                Text("FATAL Error: Icon \"$icon\" does not exist.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (nameError != null) {
+                Text("Error: $nameError",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -1221,6 +1313,106 @@ fun TagFrame(
         if (onRemove != null) {
             IconButton(onClick = onRemove) {
                 Icon(painterResource(R.drawable.close_24px), "Remove tag")
+            }
+        }
+    }
+}
+
+@Composable
+fun IconPickerDialog(
+    modifier: Modifier = Modifier,
+    initiallySelectedIcon: String? = null,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedIcon by remember { mutableStateOf(initiallySelectedIcon) }
+    val searchState = rememberTextFieldState()
+
+    var itemSize by remember(LocalDensity.current) { mutableStateOf<Dp?>(null) }
+    val itemPadding = PaddingValues(horizontal = 2.dp, vertical = 1.dp)
+    /** Padding applied to the entire surface of the grid, aka only visible in the first and last rows. */
+    val gridSurfacePadding = 8.dp
+    val visibleRows = 5.5f
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        title = { Text("Select an icon") },
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Select icon") {
+                FilledTextIconButton(
+                    enabled = selectedIcon != null,
+                    onClick = { if (selectedIcon != null) {
+                        onSubmit(selectedIcon!!)
+                        onDismiss()
+                    } },
+                    icon = { Icon(painterResource(R.drawable.check_24px), "Select") },
+                    text = { Text("Select") },
+                )
+            }
+        }
+    ) {
+        val icons = userIcons.toList()
+
+        PlainSearchBar(
+            modifier = Modifier.padding(bottom = gridSurfacePadding),
+            state = searchState,
+            onQueryChange = { },
+            placeholderText = "Search icons",
+        )
+
+        LazyVerticalGrid(
+            modifier = Modifier
+                .heightIn(max = ((itemSize ?: 0.dp) + itemPadding.calculateTopPadding() + itemPadding.calculateBottomPadding()) * visibleRows + gridSurfacePadding * 2)
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            columns = GridCells.FixedSize((itemSize ?: 0.dp)
+                + itemPadding.calculateLeftPadding(LocalLayoutDirection.current)
+                + itemPadding.calculateRightPadding(LocalLayoutDirection.current)),
+            verticalArrangement = Arrangement.SpaceAround,
+            horizontalArrangement = Arrangement.Center,
+            contentPadding = PaddingValues(vertical = gridSurfacePadding),
+        ) {
+            this.items(
+                items = icons.filter { it.first.contains(searchState.text) },
+                key = { it.second },
+            ) { icon ->
+                val density = LocalDensity.current
+
+                PlainToolTipBox(icon.first,
+                    modifier = Modifier.padding(itemPadding),
+                ) {
+                    IconButton(
+                        modifier = Modifier.aspectRatio(1f)
+                            .run { if (selectedIcon == icon.first) {
+                                shadow(5.dp, shape = CircleShape)
+                            } else this }
+                            .onGloballyPositioned { with(density) {
+                                if (itemSize == null) {
+                                    itemSize = it.size.width.toDp()
+                                }
+                            } },
+                        colors = IconButtonDefaults.iconButtonColors().let { colors ->
+                            if (selectedIcon == icon.first) colors.copy(
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                            ) else colors
+                        },
+                        onClick = { selectedIcon = icon.first },
+                    ) {
+                        Icon(painterResource(icon.second),
+                            tint = if (selectedIcon == icon.first) {
+                                MaterialTheme.colorScheme.onTertiary
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            },
+                            contentDescription = null,
+                        )
+                    }
+                }
             }
         }
     }
@@ -1264,7 +1456,8 @@ fun DescriptionField(
         ) },
         isError = pasteOverflow,
         supportingText = {
-            Row(Modifier.fillMaxWidth(),
+            Row(
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
                 if (pasteOverflow) {
