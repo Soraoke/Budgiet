@@ -48,7 +48,6 @@ fn _main() -> Result<(), Box<dyn StdError>> {
     let Cli { verbose, dry, command } = Cli::parse();
     match command {
         Commands::Android { } => {
-            // TODO: write gitignore to res/drawable
             android::svg2drawable::copy_icons(verbose, dry)?;
             if verbose {
                 eprintln!("\nConverted SVG files to usable Vector Drawables; now adding array with icon names...\n");
