@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.tasks.factory.dependsOn
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val myMinSdk = 26
@@ -7,6 +8,13 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+val androidPreBuildTask = tasks.register<Exec>("androidPreBuild") {
+    this.description = "Run Rust script to generate Vector Drawables and other resources."
+    this.workingDir = File("../../pre-build")
+    commandLine("cargo", "run", "--", "--verbose", "android")
+}
+tasks.preBuild.dependsOn(androidPreBuildTask)
 
 android {
     namespace = "com.example.budgiet"

@@ -2,6 +2,7 @@
 package com.example.budgiet.ui.utils
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,10 +52,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -294,7 +310,8 @@ private fun rememberTooltipWithinPopupPositionProvider(
  *
  * @param placeholderText Placeholder text that is displayed when the query is empty.
  * @param hideIconOnQuery Hide the **search Icon** when the user has text on the [SearchBar][PlainSearchBar]
- *   (i.e. the query text is not empty). */
+ *   (i.e. the query text is not empty).
+ *   This is useful when the Search bar has very limited width. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlainSearchBar(
@@ -529,4 +546,90 @@ fun halfRoundedCornerShape(sharpSide: Corner): RoundedCornerShape {
         topEnd = corner(Corner.TopRight),
         bottomEnd = corner(Corner.BottomRight),
     )
+}
+
+sealed class BorderStyle {
+    object Solid: BorderStyle()
+    data class Dashed(
+        val dashOnLength: Dp = 7.dp,
+        val dashOffLength: Dp = 3.dp,
+    ): BorderStyle()
+}
+
+fun Modifier.border(width: Dp, color: Color, shape: Shape, style: BorderStyle = BorderStyle.Solid): Modifier
+    = when (style) {
+        is BorderStyle.Solid -> this.border(width, color, shape)
+        is BorderStyle.Dashed -> this.then(DashedBorderModifier(width, color, shape, style.dashOnLength, style.dashOffLength))
+    }
+
+/** Inspired by [this article](https://www.codestudy.net/blog/how-to-have-dashed-border-in-jetpack-compose/#solution-2-building-a-reusable-drawmodifier). */
+private data class DashedBorderModifier(
+    val strokeWidth: Dp,
+    val color: Color,
+    val shape: Shape,
+    val dashOnLength: Dp,
+    val dashOffLength: Dp,
+): ModifierNodeElement<DashedBorderModifier.DashedBorderNode>() {
+    override fun create() = DashedBorderNode(
+        this.strokeWidth,
+        this.color,
+        this.shape,
+        this.dashOnLength,
+        this.dashOffLength,
+    )
+
+    override fun update(node: DashedBorderNode) {
+        node.strokeWidth = this.strokeWidth
+        node.color = this.color
+        node.shape = this.shape
+        node.dashOnLength = this.dashOnLength
+        node.dashOffLength = this.dashOffLength
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "dashedBorder"
+        properties["color"] = color
+        properties["strokeWidth"] = strokeWidth
+        properties["dashOnLength"] = dashOnLength
+        properties["dashOffLength"] = dashOffLength
+        properties["shape"] = shape
+    }
+
+    data class DashedBorderNode(
+        var strokeWidth: Dp,
+        var color: Color,
+        var shape: Shape,
+        var dashOnLength: Dp,
+        var dashOffLength: Dp,
+    ): Modifier.Node(), DrawModifierNode, LayoutModifierNode {
+        override fun MeasureScope.measure(
+            measurable: Measurable,
+            constraints: Constraints
+        ): MeasureResult {
+            val placeable = measurable.measure(constraints)
+            return layout(placeable.width, placeable.height) {
+                placeable.place(0, 0)
+            }
+        }
+
+        override fun ContentDrawScope.draw() = this.let { drawScope -> with(this@DashedBorderNode) {
+            // Convert dp to pixels using DrawScope's density.
+            // Not sure why but the stroke is drawn with -1 width, so must compensate for that.
+            val strokeWidth = (this.strokeWidth + 1.dp).toPx()
+            val dashOnLength = this.dashOnLength.toPx()
+            val dashOffLength = this.dashOffLength.toPx()
+
+            drawScope.drawOutline(
+                outline = shape.createOutline(drawScope.size, drawScope.layoutDirection, drawScope),
+                color = color,
+                style = Stroke(
+                    width = strokeWidth,
+                    pathEffect = PathEffect.dashPathEffect(
+                        intervals = floatArrayOf(dashOnLength, dashOffLength),
+                        phase = 0f
+                    )
+                ),
+            )
+        } }
+    }
 }
