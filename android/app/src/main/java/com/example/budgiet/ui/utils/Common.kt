@@ -619,6 +619,8 @@ private data class DashedBorderModifier(
             val dashOnLength = this.dashOnLength.toPx()
             val dashOffLength = this.dashOffLength.toPx()
 
+            drawScope.drawContent()
+            
             drawScope.drawOutline(
                 outline = shape.createOutline(drawScope.size, drawScope.layoutDirection, drawScope),
                 color = color,

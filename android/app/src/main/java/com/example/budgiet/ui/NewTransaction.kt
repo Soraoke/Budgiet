@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
@@ -61,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -135,7 +139,7 @@ class NewTransactionViewModel: ViewModel() {
     var location by mutableStateOf<Location?>(null)
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
     var totalPrice by mutableDoubleStateOf(0.0)
-    var tags = mutableStateListOf<Tag>()
+    var tags = mutableStateSetOf<Tag>()
     var description by mutableStateOf("")
 
     fun submit() {
@@ -165,6 +169,20 @@ class NewTransactionViewModel: ViewModel() {
             // TODO:
             this.fakeTagsDb.add(tag)
         }
+
+        /** Check if the provided **`name`** can be used for a new Tag.
+         * Otherwise, returns an **Error** message. */
+        fun validateTagName(name: String): String? {
+            return if (name.isEmpty()) {
+                "Tag name must not be empty."
+            } else if (name.length > this.tagNameCharLimit) {
+                "Tag name must be 9 characters or less."
+            } else if (this.getAllTags().find { it.name == name } != null) {
+                "A tag with this name already exists."
+            } else {
+                null
+            }
+        }
     }
 }
 
@@ -186,9 +204,7 @@ fun NewTransactionForm(
     var dialogState by remember { mutableStateOf(DialogState.None) }
     val dialogDismiss = { dialogState = DialogState.None }
 
-    Column(
-        modifier = modifier,
-    ) {
+    Column(modifier = modifier) {
         FormField("Date") {
             OutlinedTextField(
                 readOnly = true,
@@ -237,16 +253,31 @@ fun NewTransactionForm(
         }
         FormField("Tags") {
             if (viewModel.tags.isNotEmpty()) {
+                val shape = RoundedCornerShape(
+                    topStart = MaterialTheme.shapes.medium.topStart,
+                    bottomStart = MaterialTheme.shapes.medium.bottomStart,
+                    topEnd = MaterialTheme.shapes.extraSmall.topEnd,
+                    bottomEnd = MaterialTheme.shapes.extraSmall.bottomEnd,
+                )
+
                 Row(Modifier
                     .widthIn(max = FIELD_MAX_WIDTH)
+                    .clip(shape)
                     .border(
                         width = OutlinedTextFieldDefaults.UnfocusedBorderThickness,
-                        shape = MaterialTheme.shapes.medium,
+                        shape = shape,
                         color = MaterialTheme.colorScheme.outline,
-                    ),
-                    horizontalArrangement = Arrangement.End,
+                    )
+                    .padding(TAG_GRID_PADDING)
+                    .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-
+                    viewModel.tags.forEach { tag ->
+                        TagFrame(tag, onRemove = {
+                            viewModel.tags.remove(tag)
+                        })
+                    }
                 }
             }
             PlainToolTipBox("Attach a Tag to this transaction") {
@@ -263,15 +294,18 @@ fun NewTransactionForm(
                         colors = ButtonDefaults.filledTonalButtonColors(),
                     )
                 } else {
-                    IconButton(
+                    FilledIconButton(
                         onClick = onClick,
                         shape = halfRoundedCornerShape(Corner.Left),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(),
                         content = tagIcon,
                     )
                 }
             }
         }
-        FormField("Description", labelPosition = LabelPosition.AboveContent) {
+        FormField("Description",
+            labelPosition = LabelPosition.AboveContent,
+        ) {
             DescriptionField(fieldValue = viewModel.description) { viewModel.description = it }
         }
 
@@ -308,6 +342,7 @@ fun NewTransactionForm(
         )
         DialogState.TagsPicker -> TagsPickerDialog(
             selectedTags = viewModel.tags,
+            _useFakeTags = true,
             onSubmit = { viewModel.tags.addAll(it) },
             onDismiss = dialogDismiss,
         )
@@ -1040,9 +1075,8 @@ private fun NewTransactionPreview() {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
-                    tags.add(Tag(name = "Tag1", icon = "dog", color = Color.Cyan))
-                    tags.add(Tag(name = "Tag2", icon = "cat", color = Color.Yellow))
-                    tags.add(Tag(name = "Tag3", icon = "shopping_cart", color = Color.Black))
+                    FAKE_TAGS.subList(0, 3)
+                        .forEach { tags.add(it) }
                 },
                 onDismiss = { }
             )

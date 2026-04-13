@@ -36,6 +36,7 @@ import androidx.compose.material3.SliderDefaults.drawStopIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -532,19 +534,22 @@ private fun HsvColorWheel(
 }
 
 @Composable
-private fun correctContentContrast(background: Color): Color
+fun correctContentContrast(background: Color): Color
     // Fix contrast with icon color and background color if needed.
     = if (background.alpha < 0.35) {
         MaterialTheme.colorScheme.onSurface
-    } else if (background.luminance() < 0.35) {
-        DarkColorScheme.onPrimaryContainer
-    } else if (background.luminance() < 0.70) {
-        DarkColorScheme.primary
     } else {
-        LightColorScheme.onPrimaryContainer
+        MaterialTheme.colorScheme.contentColorFor(background)
+            .takeOrElse {
+                if (background.luminance() < 0.5f) {
+                    DarkColorScheme.onPrimaryContainer
+                } else {
+                    LightColorScheme.onPrimaryContainer
+                }
+            }
     }
 
-class HsvCursorsState private constructor(initialColor: Color, private val cursorsData: CursorsData) {
+private class HsvCursorsState private constructor(initialColor: Color, private val cursorsData: CursorsData) {
     val hueCursor = Cursor { this.cursorsData.boundedHueCursorOffset(it) }
     val svCursor = Cursor { this.cursorsData.boundedSvCursorOffset(it) }
 
