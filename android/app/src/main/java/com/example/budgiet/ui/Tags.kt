@@ -45,7 +45,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -55,6 +54,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import com.example.budgiet.R
+import com.example.budgiet.UserIcons
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
@@ -67,30 +67,6 @@ import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.parentDialogOffset
-import kotlin.collections.get
-
-private val userIcons
-    // TODO: use rememberWork instead
-    @Composable get() = with(LocalContext.current) { remember(this) {
-        val icons = run {
-            // Must be done this way, otherwise all the array elements will be 0.
-            val badArray = this.resources.obtainTypedArray(R.array.usericons)
-            val icons = arrayOfNulls<Int>(badArray.length())
-            for (i in 0..<badArray.length()) {
-                icons[i] = badArray.getResourceId(i, 0)
-            }
-            badArray.recycle()
-            @Suppress("UNCHECKED_CAST")
-            icons as Array<Int>
-        }
-        icons.associateBy { res ->
-            this.resources
-                .getResourceName(res)
-                // name starts with "${package_name}:drawable/usericon_".
-                .split("/usericon_", limit = 2)
-                .last()
-        }
-    } }
 
 @Composable
 fun TagsPickerDialog(
@@ -212,7 +188,7 @@ fun TagCreatorDialog(
     val iconResource = if (icon == null) {
         R.drawable.add_box_24px
     } else {
-        userIcons[icon]
+        UserIcons[icon]
     }?.let { painterResource(it) }
     var nameError by remember { mutableStateOf<String?>(null) }
 
@@ -366,17 +342,23 @@ fun TagFrame(
     onRemove: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = modifier.apply {
-            background(color = tag.color, shape = TAG_SHAPE)
-            if (isSelected) {
+        modifier = modifier
+            .background(color = tag.color, shape = TAG_SHAPE)
+            .run { if (isSelected) {
                 border(width = 2.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.tertiary)
-            }
-        },
+            } else this },
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-//        Icon(painterResource(TODO()), null)
+        tag.icon
+            ?.let { UserIcons[it] }
+            ?.let { res ->
+                Icon(painterResource(res), null)
+            }
+
+        // TODO: contrast icon and text color
         Text(tag.name)
+
         if (onRemove != null) {
             IconButton(onClick = onRemove) {
                 Icon(painterResource(R.drawable.close_24px), "Remove tag")
@@ -423,7 +405,7 @@ fun IconPickerDialog(
             }
         }
     ) {
-        val icons = userIcons.toList()
+        val icons = UserIcons.toList()
 
         PlainSearchBar(
             modifier = Modifier.padding(bottom = gridSurfacePadding),
@@ -513,7 +495,7 @@ private fun TagCreatorPreview() {
 private fun TagIconPicker() {
     BudgietTheme {
         IconPickerDialog(
-            initiallySelectedIcon = userIcons.keys.toList()[1],
+            initiallySelectedIcon = UserIcons.keys.toList()[1],
             onSubmit = { },
             onDismiss = { },
         )

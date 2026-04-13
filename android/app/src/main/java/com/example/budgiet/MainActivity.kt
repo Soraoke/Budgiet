@@ -1,5 +1,6 @@
 package com.example.budgiet
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,7 +37,13 @@ import com.example.budgiet.ui.NewTransactionForm
 import com.example.budgiet.ui.NewTransactionViewModel
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class MainActivity : ComponentActivity() {
     private val newTransactionViewModel by this.viewModels<NewTransactionViewModel>()
@@ -44,6 +51,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (userIcons == null) {
+            if (userIconsJobMutex.tryLock()) {
+                if (userIconsJob == null) {
+                    @OptIn(DelicateCoroutinesApi::class)
+                    userIconsJob = GlobalScope.launch {
+                        runWork {
+                            initUserIcons(this@MainActivity)
+                        }
+                    }
+                }
+                userIconsJobMutex.unlock()
+            }
+        }
+
         setContent {
             BudgietTheme {
                 MainPage(modifier = Modifier.fillMaxSize(), newTransactionViewModel)
@@ -101,6 +123,50 @@ fun MainPage(modifier: Modifier = Modifier, newTransactionViewModel: NewTransact
             )
         }
     }
+}
+
+private var userIcons: Map<String, Int>? = null
+private var userIconsJob: Job? = null
+// Add extra layer to mutex (value -> job -> mutex) so that the operation to check if the value is initialized is not expensive.
+private val userIconsJobMutex: Mutex = Mutex()
+/** Note: should run in [WORKER_THREAD]. */
+private fun initUserIcons(context: Context) {
+    val icons = run {
+        // Must be done this way, otherwise all the array elements will be 0.
+        val badArray = context.resources.obtainTypedArray(R.array.usericons)
+        val icons = arrayOfNulls<Int>(badArray.length())
+        for (i in 0..<badArray.length()) {
+            icons[i] = badArray.getResourceId(i, 0)
+        }
+        badArray.recycle()
+        @Suppress("UNCHECKED_CAST")
+        icons as Array<Int>
+    }
+
+    userIcons = icons.associateBy { res ->
+        context.resources
+            .getResourceName(res)
+            // name starts with "${package_name}:drawable/usericon_".
+            .split("/usericon_", limit = 2)
+            .last()
+    }
+}
+
+/** Provides an interface to access *icons selectable by the user* from the Android App's **Drawable** repository.
+ * This maps the icon's **name** to the [Drawable ID][androidx.annotation.DrawableRes].
+ *
+ * The icons are loaded during the app's [MainActivity] initialization.
+ * If an icon is accessed but the icon IDs are not finished loading, the access will return a default value. */
+object UserIcons: Map<String, Int> {
+    override val size: Int get() = userIcons?.size ?: 0
+    override val keys: Set<String> get() = userIcons?.keys ?: setOf()
+    override val values: Collection<Int> get() = userIcons?.values ?: listOf()
+    override val entries: Set<Map.Entry<String, Int>> get() = userIcons?.entries ?: setOf()
+
+    override fun isEmpty(): Boolean = userIcons?.isEmpty() ?: true
+    override fun containsKey(key: String): Boolean = userIcons?.containsKey(key) ?: false
+    override fun containsValue(value: Int): Boolean = userIcons?.containsValue(value) ?: false
+    override fun get(key: String): Int? = userIcons?.get(key)
 }
 
 class Location(
