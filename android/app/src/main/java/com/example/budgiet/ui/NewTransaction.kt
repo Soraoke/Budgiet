@@ -1,7 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.budgiet.ui
 
-import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.RepeatMode
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,12 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
@@ -68,21 +61,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -90,10 +78,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.round
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.Location
@@ -112,11 +98,8 @@ import com.example.budgiet.parsePrice
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.ui.theme.BudgietTheme
-import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
-import com.example.budgiet.ui.utils.BorderStyle
-import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
@@ -126,10 +109,8 @@ import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.TextIconButton
-import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
-import com.example.budgiet.ui.utils.parentDialogOffset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DecimalFormatSymbols
@@ -148,12 +129,6 @@ val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 val FIELD_MAX_WIDTH = 275.dp
 // How much time (in ms) should pass after an input on a field for its input to be validated.
 private const val FIELD_TIMEOUT = 500L
-
-val TAG_GRID_MAX_HEIGHT = 400.dp
-val TAG_SHAPE
-    @Composable get() = MaterialTheme.shapes.medium
-val SELECTED_TAG_BORDER_COLOR
-    @Composable get() = MaterialTheme.colorScheme.tertiaryFixed
 
 class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())

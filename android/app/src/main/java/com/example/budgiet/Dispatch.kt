@@ -61,6 +61,7 @@ fun <T> rememberWork(
     executor: Executor = WORKER_THREAD,
     task: suspend () -> T
 ): MutableState<Result<T>?> {
+    val key = key ?: Unit
     val state = remember(key) { mutableStateOf<Result<T>?>(null) }
     suspend fun runTask()
         // Don't allow an exception to terminate the worker thread; gotta catch em all.

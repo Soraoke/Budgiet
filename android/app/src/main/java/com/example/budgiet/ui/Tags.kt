@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.round
 import com.example.budgiet.R
 import com.example.budgiet.UserIcons
 import com.example.budgiet.ui.theme.BudgietTheme
-import com.example.budgiet.ui.theme.ColorPalette
+import com.example.budgiet.ui.theme.UserColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.BorderStyle
@@ -68,16 +68,32 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.parentDialogOffset
 
+val TAG_GRID_MAX_HEIGHT = 400.dp
+val TAG_SHAPE
+    @Composable get() = MaterialTheme.shapes.medium
+val SELECTED_TAG_BORDER_COLOR
+    @Composable get() = MaterialTheme.colorScheme.tertiaryFixedDim
+
+private val FAKE_TAGS = listOf(
+    Tag("Groceries", "shopping_cart", UserColorPalette.Green),
+    Tag("Take-out", "fast_food_restaurant", UserColorPalette.Orange),
+    Tag("Transportation", "rail_subway_train_transport", UserColorPalette.Blue),
+    Tag("School", "education_school_cap", UserColorPalette.Brown),
+    Tag("Utility", "domain_infrastructure", UserColorPalette.Yellow),
+    Tag("Trips", "hiking_person", UserColorPalette.Turquoise),
+)
+
 @Composable
 fun TagsPickerDialog(
     modifier: Modifier = Modifier,
     selectedTags: List<Tag>,
+    @Suppress("LocalVariableName") _useFakeTags: Boolean = false,
     onSubmit: (List<Tag>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val gridPadding = 4.dp
     val searchState = rememberTextFieldState()
-    val allTags = NewTransactionViewModel.getAllTags()
+    val allTags = if (_useFakeTags) FAKE_TAGS else NewTransactionViewModel.getAllTags()
 
     var showTagCreator by remember { mutableStateOf(false) }
     val innerSelectedTags = remember { mutableStateSetOf<Tag>() }
@@ -181,7 +197,7 @@ fun TagCreatorDialog(
 ) {
     var icon by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
-    var color by remember { mutableStateOf(ColorPalette.random()) }
+    var color by remember { mutableStateOf(UserColorPalette.random()) }
 
     var showIconPickerDialog by remember { mutableStateOf(false) }
 
@@ -350,6 +366,7 @@ fun TagFrame(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // TODO: show dash-bordered circle if icon does not exist
         tag.icon
             ?.let { UserIcons[it] }
             ?.let { res ->
@@ -405,8 +422,6 @@ fun IconPickerDialog(
             }
         }
     ) {
-        val icons = UserIcons.toList()
-
         PlainSearchBar(
             modifier = Modifier.padding(bottom = gridSurfacePadding),
             state = searchState,
@@ -427,7 +442,7 @@ fun IconPickerDialog(
             contentPadding = PaddingValues(vertical = gridSurfacePadding),
         ) {
             this.items(
-                items = icons.filter { it.first.contains(searchState.text) },
+                items = UserIcons.toList().filter { it.first.contains(searchState.text) },
                 key = { it.second },
             ) { icon ->
                 val density = LocalDensity.current
@@ -473,6 +488,19 @@ private fun TagsPickerPreview() {
     BudgietTheme {
         TagsPickerDialog(
             selectedTags = listOf(),
+            onSubmit = { },
+            onDismiss = { },
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun TagsPickerWithContentPreview() {
+    BudgietTheme {
+        TagsPickerDialog(
+            selectedTags = listOf(FAKE_TAGS[0], FAKE_TAGS[2]),
+            _useFakeTags = true,
             onSubmit = { },
             onDismiss = { },
         )
