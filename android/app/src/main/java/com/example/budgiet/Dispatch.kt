@@ -12,9 +12,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 
 /** An [Executor] containing the *single thread* that will run *blocking tasks*. */
-private val WORKER_THREAD = Executors.newSingleThreadScheduledExecutor()
+val WORKER_THREAD: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 /** The **ID** of the [Thread] in the *single-threaded executor* [WORKER_THREAD].
  *
  * After it is first initialized, the **ID** will not change,
@@ -56,19 +57,20 @@ private fun setWorkerThreadId(executor: Executor) {
  * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**. */
 @Composable
 fun <T> rememberWork(
+    key: Any? = null,
     executor: Executor = WORKER_THREAD,
     task: suspend () -> T
 ): MutableState<Result<T>?> {
-    val state = remember { mutableStateOf<Result<T>?>(null) }
+    val state = remember(key) { mutableStateOf<Result<T>?>(null) }
     suspend fun runTask()
-    // Don't allow an exception to terminate the worker thread; gotta catch em all.
-            = try {
-        Result.Ok(task())
-    } catch (e: Throwable) {
-        Result.Err(e)
-    }
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        = try {
+            Result.Ok(task())
+        } catch (e: Throwable) {
+            Result.Err(e)
+        }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(key) {
         withContext(executor.asCoroutineDispatcher()) {
             setWorkerThreadId(executor)
 
@@ -94,12 +96,12 @@ fun <T> rememberWork(
  * > Although this should be extremely rare. */
 suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> T): Result<T> {
     suspend fun runTask()
-    // Don't allow an exception to terminate the worker thread; gotta catch em all.
-            = try {
-        Result.Ok(task())
-    } catch (e: Throwable) {
-        Result.Err(e)
-    }
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        = try {
+            Result.Ok(task())
+        } catch (e: Throwable) {
+            Result.Err(e)
+        }
 
     return if (isWorkerThread()) {
         runTask()
