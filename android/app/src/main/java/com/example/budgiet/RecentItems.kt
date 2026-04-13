@@ -9,7 +9,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.platform.LocalContext
-import com.example.budgiet.ui.utils.MAX_USER_COLOR_ITEMS
+import com.example.budgiet.ui.theme.UserColorPalette
 import java.io.File
 import java.util.Currency as JCurrency
 import androidx.compose.ui.graphics.Color as CColor
@@ -24,7 +24,7 @@ sealed class RecentItems<T> {
                 = item.currencyCode
     }
     object Color: RecentItems<CColor>() {
-        override val maxItems = MAX_USER_COLOR_ITEMS
+        override val maxItems = (UserColorPalette.size.toFloat() / 2f).toInt() - 1
         override fun fromString(s: String): CColor
                 = CColor(s.toULong())
 

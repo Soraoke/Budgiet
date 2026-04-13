@@ -19,12 +19,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -77,10 +77,11 @@ import com.example.budgiet.fromHex
 import com.example.budgiet.rgbToHex
 import com.example.budgiet.rgbaToHex
 import com.example.budgiet.ui.SELECTED_TAG_BORDER_COLOR
-import com.example.budgiet.ui.theme.ColorPalette
 import com.example.budgiet.ui.theme.DarkColorScheme
 import com.example.budgiet.ui.theme.LightColorScheme
+import com.example.budgiet.ui.theme.UserColorPalette
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
@@ -95,7 +96,6 @@ val RING_AND_INNER_GAP = 6.dp
 val HUE_CURSOR_BALL_SIZE = RING_THICKNESS
 val SV_CURSOR_BALL_SIZE = HUE_CURSOR_BALL_SIZE * 0.75f
 val COLOR_PALETTE_ITEM_SIZE = 32.dp
-const val MAX_USER_COLOR_ITEMS = 5
 
 /** Rotate the color ring 90 degrees so that red starts at the top. */
 const val COLOR_RING_ROTATION = 130.0
@@ -133,14 +133,13 @@ fun ColorPickerButton(
         }
 
         DropdownMenu(
-            modifier = Modifier
-                .padding(horizontal = DROPDOWN_MENU_VERTICAL_PADDING),
+            modifier = Modifier.hideDropdownMenuPadding(),
             properties = POPUP_PROPERTIES,
             shape = MaterialTheme.shapes.large,
             offset = DpOffset(
                 x = when (LocalLayoutDirection.current) {
                     // I don't know why but the menu seems to multiply the offset value, throwing it way off.
-                    LayoutDirection.Ltr -> -(22.5.dp) * ColorPalette.size
+                    LayoutDirection.Ltr -> -(22.5.dp) * UserColorPalette.size / 2
                     LayoutDirection.Rtl -> 0.dp
                 },
                 y = 2.dp
@@ -150,18 +149,17 @@ fun ColorPickerButton(
         ) {
             val selectedColor = color
             val spaceBetween = 6.dp
-
             val itemShape = RoundedCornerShape(percent = 50)
+
             @Composable
             fun Modifier.itemModifier(color: Color, isSelectable: Boolean): Modifier = Modifier
                 .size(COLOR_PALETTE_ITEM_SIZE)
-                .clip(itemShape)
                 .run {
                     if (isSelectable && color == selectedColor) {
-                        // FIXME: doesn't show
                         shadow(5.dp, shape = itemShape)
                     } else this
                 }
+                .clip(itemShape)
                 .background(color)
                 .border(
                     width = if (isSelectable && color == selectedColor) 3.dp else 1.dp,
@@ -171,45 +169,59 @@ fun ColorPickerButton(
                 .then(this)
 
             @Composable
-            fun ColorItem(color: Color, modifier: Modifier = Modifier) {
+            fun ColorItem(
+                color: Color,
+                modifier: Modifier = Modifier,
+                /** By default, the item will trigger an `onColorChange` and hide the menu when clicked.
+                 * This argument allows running an additional action when the item is clicked.
+                 */
+                extraOnClick: (() -> Unit)? = null,
+            ) {
                 PlainToolTipBox(
                     text = "#${color.rgbToHex()}",
                     dialogPosition = parentDialogOffset,
                 ) {
-                    Box(modifier.itemModifier(color, true))
+                    Box(modifier
+                        .itemModifier(color, true)
+                        .clickable {
+                            onColorChange(color)
+                            showPaletteMenu = false
+                            extraOnClick?.invoke()
+                        }
+                    )
                 }
             }
 
-            Column(verticalArrangement = Arrangement.SpaceBetween) {
-                Row(horizontalArrangement = Arrangement.SpaceBetween) {
-                    ColorPalette.forEachIndexed { i, color ->
-                        if (i != 0) {
-                            Spacer(Modifier.width(spaceBetween))
-                        }
-                        ColorItem(
-                            color = color,
-                            modifier = Modifier.clickable {
-                                onColorChange(color)
-                                showPaletteMenu = false
-                            }
-                        )
-                    }
+            /* Selectable colors is divided into 3 sections (lines):
+             *   1. The *first* half of the [UserColorPalette].
+             *   2. The *second* half of the [UserColorPalette].
+             *   2. Recent colors selected by the user on the [ColorPickerDialog].
+            */
+            Column(
+                modifier = Modifier.padding(DROPDOWN_MENU_VERTICAL_PADDING),
+                verticalArrangement = Arrangement.spacedBy(spaceBetween)
+            ) {
+                val idxSplit = ceil(UserColorPalette.size.toFloat() / 2f).toInt()
+
+                Row(horizontalArrangement = Arrangement.spacedBy(spaceBetween)) {
+                    UserColorPalette
+                        .subList(0, idxSplit)
+                        .forEach { ColorItem(it) }
                 }
-                Spacer(Modifier.height(spaceBetween))
-                Row(horizontalArrangement = Arrangement.SpaceBetween) {
+
+                Row(horizontalArrangement = Arrangement.spacedBy(spaceBetween)) {
+                    UserColorPalette
+                        .subList(idxSplit, UserColorPalette.size)
+                        .forEach { ColorItem(it) }
+                }
+                HorizontalDivider()
+
+                Row(horizontalArrangement = Arrangement.spacedBy(spaceBetween)) {
                     RecentItems.Color.items().value
                         ?.getOkOrNull()
-                        ?.forEach { color ->
-                            ColorItem(
-                                color = color,
-                                modifier = Modifier.clickable {
-                                    onColorChange(color)
-                                    showPaletteMenu = false
-                                    RecentItems.Color.moveToFront(color, context)
-                                },
-                            )
-                            Spacer(Modifier.width(spaceBetween))
-                        }
+                        ?.forEach { ColorItem(it, extraOnClick = {
+                            RecentItems.Color.moveToFront(it, context)
+                        }) }
 
                     PlainToolTipBox("Add new color", dialogPosition = parentDialogOffset) {
                         Box(
@@ -233,7 +245,8 @@ fun ColorPickerButton(
             initialColor = color,
             onSubmit = { color ->
                 onColorChange(color)
-                if (color !in ColorPalette) {
+                // Don't add color to recents if it exists in the UserColorPalette.
+                if (color !in UserColorPalette) {
                     RecentItems.Color.moveToFront(color, context)
                 }
             },
