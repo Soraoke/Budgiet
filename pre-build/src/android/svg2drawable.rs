@@ -79,25 +79,53 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
             .ok_or_else(|| Error::new(format!("Path to SVG[s] must be a file or directory").into()))?
         );
 
+    let input_is_file = path.metadata()
+        .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", path.display())))?
+        .is_file();
+    let return_path = if input_is_file {
+        // Won't panic because a path to a file that exists will not terminate in '..'.
+        tmp_dir.join(path.file_name().unwrap()).with_extension("xml")
+    } else {
+        tmp_dir.clone()
+    };
+
     if !dry {
         fs::create_dir_all(&tmp_dir)
             .map_err(|err| Error::io(err, format!("Error creating directory \"{}\"", tmp_dir.display())))?;
-    
+
+        // Check if this operation was already done by checking that ALL files in path exist in tmp_dir.
+        let files_exist = read_dir(path)
+            .map(|entry| entry.and_then(|entry| {
+                let path = entry.path();
+                let name = path.file_stem()
+                    .ok_or_else(|| Error::new(format!("Invalid SVG file found: \"{}\"", entry.path().display()).into()))?;
+
+                // Check if "{path}/{name}.svg" also exists as "{tmp_dir}/{name}.xml"
+                tmp_dir.join(name).with_extension("xml")
+                    .try_exists()
+                    .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", tmp_dir.join(name).with_extension("xml").display())))
+            }))
+            .collect::<Result<Box<[_]>, _>>()?;
+
+        if files_exist.iter().all(|exist| *exist) {
+            if verbose {
+                eprintln!("SVGs in \"{}\" were already converted to *bad* Drawables; skipping", path.display())
+            }
+            return Ok(return_path);
+        }
+
+        // Operation was not done, so do it here.
         unpack_vd_tool(verbose)?;
         command!("../target/bin/vd-tool/bin/vd-tool", "-c", "-in", path, "-out", tmp_dir)?;
+        if verbose {
+            eprint!("Converted all SVG files in \"{}\" to *bad* Drawable files in \"{}\"", path.display(), tmp_dir.display());
+            eprintln!("");
+        }
     } else if verbose {
         eprintln!("Dry run: Skipping converting SVGs to Vector drawable")
     }
 
-    Ok(if path.metadata()
-        .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", path.display())))?
-        .is_file()
-    {
-        // Won't panic because a path to a file that exists will not terminate in '..'.
-        tmp_dir.join(path.file_name().unwrap()).with_extension("xml")
-    } else {
-        tmp_dir
-    })
+    Ok(return_path)
 }
 
 /// `vd-tool` stands for ***Vector Drawable Tool***,
