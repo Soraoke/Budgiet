@@ -8,9 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
@@ -52,7 +48,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -132,7 +127,7 @@ val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
 val FIELD_MAX_WIDTH = 275.dp
 // How much time (in ms) should pass after an input on a field for its input to be validated.
-private const val FIELD_TIMEOUT = 500L
+const val FIELD_TIMEOUT = 500L
 
 class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
@@ -173,6 +168,7 @@ class NewTransactionViewModel: ViewModel() {
         /** Check if the provided **`name`** can be used for a new Tag.
          * Otherwise, returns an **Error** message. */
         fun validateTagName(name: String): String? {
+            // TODO: only allow ascii and dont allow whitespace
             return if (name.isEmpty()) {
                 "Tag name must not be empty."
             } else if (name.length > this.tagNameCharLimit) {
@@ -252,56 +248,10 @@ fun NewTransactionForm(
             )
         }
         FormField("Tags") {
-            if (viewModel.tags.isNotEmpty()) {
-                val shape = RoundedCornerShape(
-                    topStart = MaterialTheme.shapes.medium.topStart,
-                    bottomStart = MaterialTheme.shapes.medium.bottomStart,
-                    topEnd = MaterialTheme.shapes.extraSmall.topEnd,
-                    bottomEnd = MaterialTheme.shapes.extraSmall.bottomEnd,
-                )
-
-                Row(Modifier
-                    .widthIn(max = FIELD_MAX_WIDTH)
-                    .clip(shape)
-                    .border(
-                        width = OutlinedTextFieldDefaults.UnfocusedBorderThickness,
-                        shape = shape,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                    .padding(TAG_GRID_PADDING)
-                    .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    viewModel.tags.forEach { tag ->
-                        TagFrame(tag, onRemove = {
-                            viewModel.tags.remove(tag)
-                        })
-                    }
-                }
-            }
-            PlainToolTipBox("Attach a Tag to this transaction") {
-                val onClick = { dialogState = DialogState.TagsPicker }
-                val tagIcon = @Composable {
-                    Icon(painterResource(R.drawable.label_24px), "Attach tag")
-                }
-
-                if (viewModel.tags.isEmpty()) {
-                    FilledTextIconButton(
-                        onClick = onClick,
-                        icon = tagIcon,
-                        text = { Text("Attach tag") },
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                    )
-                } else {
-                    FilledIconButton(
-                        onClick = onClick,
-                        shape = halfRoundedCornerShape(Corner.Left),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(),
-                        content = tagIcon,
-                    )
-                }
-            }
+            TagsField(
+                selectedTags = viewModel.tags,
+                onButtonClick = { dialogState = DialogState.TagsPicker },
+            )
         }
         FormField("Description",
             labelPosition = LabelPosition.AboveContent,
@@ -341,8 +291,9 @@ fun NewTransactionForm(
             onSubmit = { viewModel.location = it },
         )
         DialogState.TagsPicker -> TagsPickerDialog(
+            allTags = NewTransactionViewModel.getAllTags(),
             selectedTags = viewModel.tags,
-            _useFakeTags = true,
+            onNewTag = { NewTransactionViewModel.createNewTag(it) },
             onSubmit = { viewModel.tags.addAll(it) },
             onDismiss = dialogDismiss,
         )

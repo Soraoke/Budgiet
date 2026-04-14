@@ -5,12 +5,14 @@ package com.example.budgiet.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,15 +29,18 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -68,11 +74,13 @@ import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.BorderStyle
 import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.ColorPickerDialog
+import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.correctContentContrast
+import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.parentDialogOffset
 
 val TAG_GRID_MAX_HEIGHT = 250.dp
@@ -92,16 +100,89 @@ val FAKE_TAGS = mutableListOf(
     Tag("Utility", "domain_infrastructure", UserColorPalette.Yellow),
 )
 
+/** Displays the tags selected by the user to be assigned to the new Transaction.
+ *
+ * @param selectedTags The tags that will be displayed.
+ * @param onButtonClick The action to run when the button that opens the [TagsPickerDialog] is clicked. */
+@Suppress("UnusedReceiverParameter")
+@Composable
+fun RowScope.TagsField(
+    modifier: Modifier = Modifier,
+    selectedTags: MutableSet<Tag>,
+    onButtonClick: () -> Unit,
+) {
+    if (selectedTags.isNotEmpty()) {
+        val shape = RoundedCornerShape(
+            topStart = MaterialTheme.shapes.medium.topStart,
+            bottomStart = MaterialTheme.shapes.medium.bottomStart,
+            topEnd = MaterialTheme.shapes.extraSmall.topEnd,
+            bottomEnd = MaterialTheme.shapes.extraSmall.bottomEnd,
+        )
+
+        Row(modifier
+            .widthIn(max = FIELD_MAX_WIDTH)
+            .clip(shape)
+            .border(
+                width = OutlinedTextFieldDefaults.UnfocusedBorderThickness,
+                shape = shape,
+                color = MaterialTheme.colorScheme.outline,
+            )
+            .padding(TAG_GRID_PADDING)
+            .horizontalScroll(rememberScrollState())
+            .wrapContentWidth(),
+            horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            selectedTags.forEach { tag ->
+                TagFrame(tag, onRemove = {
+                    selectedTags.remove(tag)
+                })
+            }
+        }
+    }
+
+    PlainToolTipBox("Attach a Tag to this transaction") {
+        val tagIcon = @Composable {
+            Icon(painterResource(R.drawable.label_24px), "Attach tag")
+        }
+
+        if (selectedTags.isEmpty()) {
+            FilledTextIconButton(
+                onClick = onButtonClick,
+                icon = tagIcon,
+                text = { Text("Attach tag") },
+                colors = ButtonDefaults.filledTonalButtonColors(),
+            )
+        } else {
+            FilledIconButton(
+                onClick = onButtonClick,
+                shape = halfRoundedCornerShape(Corner.Left),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                content = tagIcon,
+            )
+        }
+    }
+}
+
+/** Shows a dialog containing a list of *all available [Tag]s*, allowing the user to select from those tags.
+ *
+ * [Tag]s that were initially selected (defined by **`selectedTags`**) will be highlighted.
+ *
+ * @param selectedTags Tags that were selected before the dialog was opened.
+ * @param onSubmit The action to run when the user clicks the `'Done'` button.
+ *   This provides an argument with the [List] of [Tag]s that the user selected (including ones from [selectedTags]).
+ *   These tags can then be added to the [Set] that stores all the selected tags.
+ * @param onDismiss The action to run when the [Dialog][ActionDialog] needs to be closed. */
 @Composable
 fun TagsPickerDialog(
     modifier: Modifier = Modifier,
+    allTags: Collection<Tag>,
     selectedTags: Collection<Tag>,
-    @Suppress("LocalVariableName") _useFakeTags: Boolean = false,
-    onSubmit: (List<Tag>) -> Unit,
+    onNewTag: (Tag) -> Unit,
+    onSubmit: (Collection<Tag>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val searchState = rememberTextFieldState()
-    val allTags = if (_useFakeTags) FAKE_TAGS else NewTransactionViewModel.getAllTags()
 
     var showTagCreator by remember { mutableStateOf(false) }
     val innerSelectedTags = remember { mutableStateSetOf<Tag>() }
@@ -110,13 +191,7 @@ fun TagsPickerDialog(
     if (showTagCreator) {
         TagCreatorDialog(
             modifier = modifier,
-            onSubmit = {
-                if (_useFakeTags) {
-                    FAKE_TAGS.add(it)
-                } else {
-                    NewTransactionViewModel.createNewTag(it)
-                }
-            },
+            onSubmit = onNewTag,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 showTagCreator = false
@@ -141,7 +216,7 @@ fun TagsPickerDialog(
                 PlainToolTipBox("Submit selected tags") {
                     FilledTextIconButton(
                         onClick = {
-                            onSubmit(innerSelectedTags.toList())
+                            onSubmit(innerSelectedTags)
                             onDismiss()
                         },
                         icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
@@ -530,7 +605,9 @@ fun IconPickerDialog(
 private fun TagsPickerPreview() {
     BudgietTheme {
         TagsPickerDialog(
+            allTags = listOf(),
             selectedTags = listOf(),
+            onNewTag = { },
             onSubmit = { },
             onDismiss = { },
         )
@@ -542,8 +619,9 @@ private fun TagsPickerPreview() {
 private fun TagsPickerWithContentPreview() {
     BudgietTheme {
         TagsPickerDialog(
+            allTags = FAKE_TAGS,
             selectedTags = listOf(FAKE_TAGS[0], FAKE_TAGS[2]),
-            _useFakeTags = true,
+            onNewTag = { },
             onSubmit = { },
             onDismiss = { },
         )
