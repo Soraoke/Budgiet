@@ -192,6 +192,7 @@ fun TagsPickerDialog(
         TagCreatorDialog(
             modifier = modifier,
             onSubmit = onNewTag,
+            allTags = allTags,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 showTagCreator = false
@@ -284,6 +285,7 @@ fun TagsPickerDialog(
 @Composable
 fun TagCreatorDialog(
     modifier: Modifier = Modifier,
+    allTags: Collection<Tag>,
     onSubmit: (Tag) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -326,7 +328,7 @@ fun TagCreatorDialog(
                 PlainToolTipBox("Submit new tag") {
                     FilledTextIconButton(
                         onClick = {
-                            nameError = NewTransactionViewModel.validateTagName(name)
+                            nameError = NewTransactionViewModel.validateTagName(allTags, name)
 
                             if (nameError == null) {
                                 onSubmit(Tag(name, icon, color))
@@ -404,7 +406,7 @@ fun TagCreatorDialog(
                     value = name,
                     onValueChange = {
                         name = it
-                        nameError = NewTransactionViewModel.validateTagName(name)
+                        nameError = NewTransactionViewModel.validateTagName(allTags, name)
                     },
                 )
 
@@ -490,7 +492,10 @@ fun TagFrame(
 
         if (onRemove != null) {
             val size = with(LocalDensity.current) {
-                LocalTextStyle.current.lineHeight.toDp()
+                LocalTextStyle.current
+                    .lineHeight
+                    .takeOrElse { 16.sp }
+                    .toDp()
             }
             IconButton(modifier = Modifier.size(size), onClick = onRemove) {
                 Icon(painterResource(R.drawable.close_24px), "Remove tag",
@@ -633,6 +638,7 @@ private fun TagsPickerWithContentPreview() {
 private fun TagCreatorPreview() {
     BudgietTheme {
         TagCreatorDialog(
+            allTags = FAKE_TAGS,
             onSubmit = { },
             onDismiss = { },
         )

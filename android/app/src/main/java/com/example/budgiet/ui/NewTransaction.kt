@@ -166,14 +166,17 @@ class NewTransactionViewModel: ViewModel() {
         }
 
         /** Check if the provided **`name`** can be used for a new Tag.
-         * Otherwise, returns an **Error** message. */
-        fun validateTagName(name: String): String? {
+         * Otherwise, returns an **Error** message.
+         *
+         * @param allTags The collection of all the [Tag]s that have been created and that exist in the database.
+         * @param name The name of the new [Tag] that is attempted to be created. */
+        fun validateTagName(allTags: Collection<Tag>, name: String): String? {
             // TODO: only allow ascii and dont allow whitespace
             return if (name.isEmpty()) {
                 "Tag name must not be empty."
             } else if (name.length > this.tagNameCharLimit) {
                 "Tag name must be 9 characters or less."
-            } else if (this.getAllTags().find { it.name == name } != null) {
+            } else if (allTags.find { it.name == name } != null) {
                 "A tag with this name already exists."
             } else {
                 null

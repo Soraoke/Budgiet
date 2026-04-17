@@ -8,12 +8,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateSet
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertAll
 import androidx.compose.ui.test.assertAny
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.filterToOne
-import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasContentDescriptionExactly
 import androidx.compose.ui.test.hasImeAction
 import androidx.compose.ui.test.hasScrollAction
@@ -25,8 +25,8 @@ import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.text.input.ImeAction
+import com.example.budgiet.onDescendants
 import com.example.budgiet.ui.FAKE_TAGS
 import com.example.budgiet.ui.Tag
 import com.example.budgiet.ui.TagCreatorDialog
@@ -43,7 +43,7 @@ class TagsPickerTests {
         private val rule: ComposeContentTestRule,
         tags: List<Tag> = FAKE_TAGS,
     ) {
-        val tagsFieldContent
+        val tagsFieldContainer
             get() = this.rule.onNodeWithTag(TAGS_FIELD_TEST_TAG)
         val tagsPickerDialog get() = run {
             if (!this.showPicker) {
@@ -56,7 +56,7 @@ class TagsPickerTests {
         val tagCreatorDialog get() = run {
             val isTagCreatorDialog = this
                 .tagsPickerDialog
-                .runCatching { assertTextContains("Create new tag") }
+                .runCatching { assert(hasAnyChild(hasTextExactly("Create new tag"))) }
                 .getOrNull()
                 .let { it != null }
 
@@ -101,35 +101,37 @@ class TagsPickerTests {
     @get:Rule
     val rule = createComposeRule()
 
-    /** Tests that tags selected in the [TagsPickerDialog] will also appear in the [TestState.tagsFieldContent] (after pressing 'Done' of course). */
+    /** Tests that tags selected in the [TagsPickerDialog] will also appear in the [TestState.tagsFieldContainer] (after pressing 'Done' of course). */
     @Test
     fun selectTagsFromPicker() {
         val state = TestState(this.rule)
 
-        state.tagsFieldContent.assertDoesNotExist()
+        state.tagsFieldContainer.assertDoesNotExist()
 
         // Select a Tag from the TagsPickerDialog.
         state.tagsPickerDialog
-            .onChildren()
+            .onDescendants(this.rule)
             .filterToOne(hasTextExactly(FAKE_TAGS[0].name))
+            .assertExists()
             .performClick()
         state.tagsPickerDialog
-            .onChildren()
-            .filterToOne(hasTextExactly("Cancel") and hasClickAction())
+            .onDescendants(this.rule)
+            .filterToOne(hasContentDescriptionExactly("Submit"))
             .performClick()
 
         // Check that the tag is displayed in the field content.
-        val tag = state.tagsFieldContent
-            .onChildren()
-            .filterToOne(hasTextExactly(FAKE_TAGS[0].name))
+        state.tagsFieldContainer
+            .onDescendants(this.rule)
+            .filterToOne(hasAnyChild(hasTextExactly(FAKE_TAGS[0].name)))
             .assertExists()
 
         // Check that the tag can be de-selected.
-        tag.onChildren()
+            .onChildren()
             .filterToOne(hasContentDescriptionExactly("Remove tag"))
             .performClick()
 
-        state.tagsFieldContent.assertDoesNotExist()
+        // The tags field container is hidden if there are no Tags.
+        state.tagsFieldContainer.assertDoesNotExist()
     }
 
     /** Tests that the SearchBar in [TagsPickerDialog] filters tags by name correctly. */
@@ -157,18 +159,17 @@ class TagsPickerTests {
         val newTagName = "MyNewTag"
 
         state.tagCreatorDialog
-            .onChildren()
-            .apply { printToLog("HUF", Int.MAX_VALUE) }
+            .onDescendants(this.rule)
             .filterToOne(hasText("Tag name") and hasImeAction(ImeAction.Default))
             .performTextInput(newTagName)
 
         state.tagCreatorDialog
-            .onChildren()
+            .onDescendants(this.rule)
             .filterToOne(hasContentDescriptionExactly("Submit"))
             .performClick()
 
         state.tagsPickerDialog
-            .onChildren()
+            .onDescendants(this.rule)
             .filterToOne(hasScrollAction())
             .onChildren()
             .assertAny(hasTextExactly(newTagName))
@@ -182,18 +183,19 @@ class TagsPickerTests {
         val newTagName = FAKE_TAGS[0].name
 
         state.tagCreatorDialog
-            .onChildren()
+            .onDescendants(this.rule)
             .filterToOne(hasText("Tag name") and hasImeAction(ImeAction.Default))
             .performTextInput(newTagName)
 
         state.tagCreatorDialog
-            .onChildren()
+            .onDescendants(this.rule)
             .filterToOne(hasContentDescriptionExactly("Submit"))
             .performClick()
             // Submit button is disabled after attempting to submit bad tag data.
             .assertIsNotEnabled()
 
         state.tagCreatorDialog
-            .assertTextContains("already exists", substring = true, ignoreCase = true)
+            .onDescendants(this.rule)
+            .assertAny(hasText("already exists", substring = true, ignoreCase = true))
     }
 }

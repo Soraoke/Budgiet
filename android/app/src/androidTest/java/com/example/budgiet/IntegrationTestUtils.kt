@@ -3,9 +3,34 @@ package com.example.budgiet
 import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.SemanticsNodeInteractionCollection
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import kotlin.Result
+
+fun isDescendantOf(node: SemanticsNodeInteraction): SemanticsMatcher {
+    val id = node.fetchSemanticsNode().id
+    return hasAnyAncestor(SemanticsMatcher("Node is descendant of #$id") {
+        it.id == id
+    })
+}
+
+/** Finds [all nodes][ComposeContentTestRule.onAllNodes] whose *ancestors* contain the *receiver* node (i.e. **descendant** nodes).
+ * The matcher checks whether a node is a **descendant** by checking the [ID][androidx.compose.ui.semantics.SemanticsNode.id].
+ *
+ * This function must take the [rule][ComposeContentTestRule] to search for all nodes from the root. */
+fun SemanticsNodeInteraction.onDescendants(
+    rule: ComposeContentTestRule,
+    useUnmergedTree: Boolean = false
+) = rule.onAllNodes(
+    matcher = isDescendantOf(this),
+    useUnmergedTree = useUnmergedTree,
+)
 
 /** Get the **value** of a property from a [SemanticsNode][SemanticsNodeInteraction].
  * Throws exception if property was *not found* or value was `null`.
