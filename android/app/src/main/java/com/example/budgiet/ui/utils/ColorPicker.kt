@@ -65,6 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -122,7 +125,8 @@ fun ColorPickerButton(
     Box(contentAlignment = Alignment.CenterEnd) {
         PlainToolTipBox("Change tag color") {
             IconButton(
-                modifier = modifier,
+                modifier = modifier
+                    .semantics { this.stateDescription = color.rgbToHex() },
                 onClick = { showPaletteMenu = true },
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = color,
@@ -135,7 +139,8 @@ fun ColorPickerButton(
         }
 
         DropdownMenu(
-            modifier = Modifier.hideDropdownMenuPadding(),
+            modifier = Modifier.hideDropdownMenuPadding()
+                .semantics { contentDescription = "Color menu" },
             properties = POPUP_PROPERTIES,
             shape = MaterialTheme.shapes.large,
             offset = DpOffset(
@@ -184,6 +189,7 @@ fun ColorPickerButton(
                     dialogPosition = parentDialogOffset,
                 ) {
                     Box(modifier
+                        .semantics { this.stateDescription = color.rgbToHex() }
                         .itemModifier(color, true)
                         .clickable {
                             onColorChange(color)

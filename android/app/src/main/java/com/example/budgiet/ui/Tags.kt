@@ -4,7 +4,7 @@ package com.example.budgiet.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -33,6 +35,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -40,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,14 +63,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import com.example.budgiet.R
 import com.example.budgiet.UserIcons
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -75,7 +86,9 @@ import com.example.budgiet.ui.utils.BorderStyle
 import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.ColorPickerDialog
 import com.example.budgiet.ui.utils.Corner
+import com.example.budgiet.ui.utils.DROPDOWN_MENU_VERTICAL_PADDING
 import com.example.budgiet.ui.utils.FilledTextIconButton
+import com.example.budgiet.ui.utils.POPUP_PROPERTIES
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
@@ -108,9 +121,13 @@ val FAKE_TAGS = mutableListOf(
 @Composable
 fun RowScope.TagsField(
     modifier: Modifier = Modifier,
-    selectedTags: MutableSet<Tag>,
+    selectedTags: Set<String>,
+    onRemoveTag: (String) -> Unit,
     onButtonClick: () -> Unit,
 ) {
+    val selectedTags = NewTransactionViewModel.allTags
+        .filter { selectedTags.contains(it.name) }
+
     if (selectedTags.isNotEmpty()) {
         val shape = RoundedCornerShape(
             topStart = MaterialTheme.shapes.medium.topStart,
@@ -127,17 +144,20 @@ fun RowScope.TagsField(
                 shape = shape,
                 color = MaterialTheme.colorScheme.outline,
             )
-            .padding(TAG_GRID_PADDING)
+            .padding(vertical = TAG_GRID_PADDING.calculateTopPadding())
             .horizontalScroll(rememberScrollState())
             .wrapContentWidth(),
             horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Spacer(Modifier.width(TAG_GRID_PADDING.calculateStartPadding(LocalLayoutDirection.current) / 2))
             selectedTags.forEach { tag ->
-                TagFrame(tag, onRemove = {
-                    selectedTags.remove(tag)
-                })
+                TagFrame(tag,
+                    onRemove = { onRemoveTag(tag.name) },
+                    longPress = true,
+                )
             }
+            Spacer(Modifier.width(TAG_GRID_PADDING.calculateEndPadding(LocalLayoutDirection.current) / 2))
         }
     }
 
@@ -176,23 +196,23 @@ fun RowScope.TagsField(
 @Composable
 fun TagsPickerDialog(
     modifier: Modifier = Modifier,
-    allTags: Collection<Tag>,
-    selectedTags: Collection<Tag>,
-    onNewTag: (Tag) -> Unit,
-    onSubmit: (Collection<Tag>) -> Unit,
+    selectedTags: Collection<String>,
+    onSubmit: (Collection<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val searchState = rememberTextFieldState()
 
-    var showTagCreator by remember { mutableStateOf(false) }
-    val innerSelectedTags = remember { mutableStateSetOf<Tag>() }
-    innerSelectedTags.addAll(selectedTags)
+    var showTagCreator by rememberSaveable { mutableStateOf(false) }
+    val innerSelectedTags = remember(selectedTags) {
+        mutableStateSetOf<String>()
+            .apply { addAll(selectedTags) }
+    }
 
     if (showTagCreator) {
-        TagCreatorDialog(
+        TagEditorDialog(
             modifier = modifier,
-            onSubmit = onNewTag,
-            allTags = allTags,
+            tag = null,
+            onSubmit = { NewTransactionViewModel.createNewTag(it) },
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 showTagCreator = false
@@ -231,7 +251,7 @@ fun TagsPickerDialog(
                 .heightIn(min = TextFieldDefaults.MinHeight, max = TAG_GRID_MAX_HEIGHT)
                 .border(width = 1.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.outline)
 
-            if (allTags.isEmpty()) {
+            if (NewTransactionViewModel.allTags.isEmpty()) {
                 Box(modifier) {
                     Column(
                         modifier = Modifier.padding(ActionDialogPadding.Default.dialogEdges),
@@ -244,23 +264,26 @@ fun TagsPickerDialog(
                 }
             } else {
                 FlowRow(
-                    modifier = modifier.padding(TAG_GRID_PADDING)
+                    modifier = modifier
+                        .padding(TAG_GRID_PADDING)
                         .verticalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
                     verticalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
                 ) {
-                    allTags.filter { it.name.contains(searchState.text, ignoreCase = true) }
+                    NewTransactionViewModel.allTags
+                        .filter { it.name.contains(searchState.text, ignoreCase = true) }
                         .forEach { tag ->
                             TagFrame(
                                 tag = tag,
-                                modifier = Modifier.clickable {
-                                    if (innerSelectedTags.contains(tag)) {
-                                        innerSelectedTags.remove(tag)
+                                isSelected = innerSelectedTags.contains(tag.name),
+                                onClick = {
+                                    if (innerSelectedTags.contains(tag.name)) {
+                                        innerSelectedTags.remove(tag.name)
                                     } else {
-                                        innerSelectedTags.add(tag)
+                                        innerSelectedTags.add(tag.name)
                                     }
                                 },
-                                isSelected = innerSelectedTags.contains(tag),
+                                longPress = true,
                             )
                         }
                 }
@@ -282,16 +305,22 @@ fun TagsPickerDialog(
     }
 }
 
+/** Shows a [Dialog][ActionDialog] that allows the user to modify the details of a [Tag].
+ * This also serves as a **creator dialog** if the **`tag`** argument is `null`.
+ *
+ * @param tag The data of the [Tag] that is being modified.
+ *   Pass `null` if the dialog is intended to **create** a *new [Tag]*. */
 @Composable
-fun TagCreatorDialog(
+fun TagEditorDialog(
     modifier: Modifier = Modifier,
-    allTags: Collection<Tag>,
+    tag: Tag?,
     onSubmit: (Tag) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var icon by remember { mutableStateOf<String?>(null) }
-    var name by remember { mutableStateOf("") }
-    var color by remember { mutableStateOf(UserColorPalette.random()) }
+    UserIcons.load(LocalContext.current)
+    var icon by rememberSaveable(tag) { mutableStateOf(tag?.icon) }
+    var name by rememberSaveable(tag) { mutableStateOf(tag?.name ?: "") }
+    var color by remember(tag) { mutableStateOf(tag?.color ?: UserColorPalette.random()) }
 
     var showIconPickerDialog by remember { mutableStateOf(false) }
 
@@ -300,7 +329,7 @@ fun TagCreatorDialog(
     } else {
         UserIcons[icon]
     }?.let { painterResource(it) }
-    var nameError by remember { mutableStateOf<String?>(null) }
+    var nameError by remember(tag) { mutableStateOf<String?>(null) }
 
     val innerPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
     val itemSpacing = 12.dp
@@ -319,23 +348,34 @@ fun TagCreatorDialog(
         ActionDialog(
             modifier = modifier.onGloballyPositioned { coords -> parentDialogOffset = coords.positionOnScreen().round() },
             onDismiss = onDismiss,
-            title = { Text("Create new tag") },
+            title = { if (tag == null) {
+                Text("Create new tag")
+            } else {
+                Text("Edit tag")
+            } },
             actions = {
                 TextButton(onClick = onDismiss) {
                     Text("Cancel")
                 }
 
+                // Must be a callable function because onClick callback modifies states that this value depends on.
+                val canSubmit = {
+                    nameError == null && iconResource != null && (tag?.let { tag ->
+                        // Check that changes have been made if editing an existing tag.
+                        name != tag.name || icon != tag.icon || color != tag.color
+                    } ?: true)
+                }
                 PlainToolTipBox("Submit new tag") {
                     FilledTextIconButton(
                         onClick = {
-                            nameError = NewTransactionViewModel.validateTagName(allTags, name)
+                            nameError = NewTransactionViewModel.validateTagName(name, isNewTag = tag == null)
 
-                            if (nameError == null) {
+                            if (canSubmit()) {
                                 onSubmit(Tag(name, icon, color))
                                 onDismiss()
                             }
                         },
-                        enabled = nameError == null && iconResource != null,
+                        enabled = canSubmit(),
                         icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
                         text = { Text("Submit") },
                     )
@@ -372,10 +412,9 @@ fun TagCreatorDialog(
                 @Suppress("AssignedValueIsNeverRead")
                 PlainToolTipBox("Select tag icon") {
                     IconButton(
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                                    .copy(alpha = itemBackgroundOpacity)
+                        modifier = Modifier.semantics { contentDescription = "Select tag icon" }
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh
+                                .copy(alpha = itemBackgroundOpacity)
                             )
                             .circleContainer(
                                 borderStyle = if (icon == null) BorderStyle.Dashed() else BorderStyle.Solid,
@@ -385,7 +424,7 @@ fun TagCreatorDialog(
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     ) {
-                        iconResource?.let { Icon(it, "Select tag icon") }
+                        iconResource?.let { Icon(it, null) }
                     }
                 }
 
@@ -406,7 +445,7 @@ fun TagCreatorDialog(
                     value = name,
                     onValueChange = {
                         name = it
-                        nameError = NewTransactionViewModel.validateTagName(allTags, name)
+                        nameError = NewTransactionViewModel.validateTagName(name, isNewTag = tag == null)
                     },
                 )
 
@@ -417,10 +456,11 @@ fun TagCreatorDialog(
                 )
             }
 
-            Spacer(Modifier.height(innerPadding.calculateBottomPadding()))
-
+            if (iconResource == null || nameError != null) {
+                Spacer(Modifier.height(innerPadding.calculateBottomPadding()))
+            }
             if (iconResource == null) {
-                Text("FATAL Error: Icon \"$icon\" does not exist.",
+                Text("Internal Error: Icon \"$icon\" does not exist.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -438,72 +478,133 @@ fun TagCreatorDialog(
 /** Small pill-shaped container that displays a [Tag]'s info.
  * The frame's background is the [Tag]'s [color][Tag.color].
  *
- * Optionally, the frame will contain an `x` button at the end of the content if **`onRemove`** is not `null`. */
+ * Optionally, the frame can have *actions* when interacting with the UI element:
+ *  1. **`onClick`**: The user can click anywhere on the frame to trigger this action.
+ *       Ideally it should change the **`isSelected`** value.
+ *  2. **`onRemove`**: Adds a *clickable* `x` button at the end of the content,
+ *       allowing the user to remove the [Tag] from the list of *selected tags*.
+ *  3. **`longPress`**: Makes the frame itself *clickable* for a longer duration,
+ *       and shows a menu with more actions (i.e. **`onEdit`** and **`onDelete`**). */
 @Composable
 fun TagFrame(
     tag: Tag,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
+    onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
+    longPress: Boolean = false,
 ) {
+    UserIcons.load(LocalContext.current)
     val padding = PaddingValues(top = 2.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)
 
-    Row(
-        modifier = Modifier
-            .wrapContentWidth(Alignment.Start)
-            .wrapContentHeight()
-            .run { if (isSelected) {
-                border(width = 2.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.tertiary)
-                .shadow(3.dp, TAG_SHAPE)
-            } else this }
-            .clip(TAG_SHAPE)
-            .background(color = tag.color, shape = TAG_SHAPE)
-            .then(modifier)
-            .padding(padding),
-        horizontalArrangement = Arrangement.spacedBy(
-            padding.calculateEndPadding(LocalLayoutDirection.current)
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (tag.icon != null) {
-            when (val icon = UserIcons[tag.icon]) {
-                // Show dash-bordered circle if icon does not exist
-                null -> {
-                    Box(Modifier
-                        .size(18.dp)
-                        .border(
-                            width = Dp.Hairline,
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            style = BorderStyle.Dashed(
-                                dashOnLength = 5.dp,
-                                dashOffLength = 1.5.dp,
-                            ),
+    var showActionsMenu by rememberSaveable(longPress) { mutableStateOf(false) }
+    var showTagEditor by rememberSaveable(longPress) { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .wrapContentWidth(Alignment.Start)
+                .wrapContentHeight()
+                .run { if (isSelected) {
+                    border(width = 2.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.tertiary)
+                    .shadow(3.dp, TAG_SHAPE)
+                } else this }
+                .clip(TAG_SHAPE)
+                .background(color = tag.color, shape = TAG_SHAPE)
+                .run { if (longPress || onClick != null) {
+                    combinedClickable(
+                        onLongClick = if (longPress) {{ showActionsMenu = true }} else null,
+                        onClick = onClick ?: { },
+                    )
+                } else this }
+                .then(modifier)
+                .padding(padding),
+            horizontalArrangement = Arrangement.spacedBy(
+                padding.calculateEndPadding(LocalLayoutDirection.current)
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val contentColor = correctContentContrast(tag.color)
+
+            if (tag.icon != null) {
+                when (val icon = UserIcons[tag.icon]) {
+                    // Show dash-bordered circle if icon does not exist
+                    null -> {
+                        Box(Modifier
+                            .size(18.dp)
+                            .border(
+                                width = Dp.Hairline,
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = BorderStyle.Dashed(
+                                    dashOnLength = 5.dp,
+                                    dashOffLength = 1.5.dp,
+                                ),
+                            )
                         )
+                    }
+                    else -> Icon(painterResource(icon), null,
+                        tint = contentColor,
                     )
                 }
-                else -> Icon(painterResource(icon), null)
+            }
+
+            Text(tag.name, color = contentColor)
+
+            if (onRemove != null) {
+                val size = with(LocalDensity.current) {
+                    LocalTextStyle.current
+                        .lineHeight
+                        .takeOrElse { 16.sp }
+                        .toDp()
+                }
+                IconButton(modifier = Modifier.size(size), onClick = onRemove) {
+                    Icon(painterResource(R.drawable.close_24px), "Remove tag",
+                        modifier = Modifier.size(size - 4.dp),
+                        tint = contentColor,
+                    )
+                }
             }
         }
 
-        val contentColor = correctContentContrast(tag.color)
-
-        Text(tag.name, color = contentColor)
-
-        if (onRemove != null) {
-            val size = with(LocalDensity.current) {
-                LocalTextStyle.current
-                    .lineHeight
-                    .takeOrElse { 16.sp }
-                    .toDp()
-            }
-            IconButton(modifier = Modifier.size(size), onClick = onRemove) {
-                Icon(painterResource(R.drawable.close_24px), "Remove tag",
-                    modifier = Modifier.size(size - 4.dp),
-                    tint = contentColor,
+        if (longPress) {
+            DropdownMenu(
+                modifier = Modifier.padding(horizontal = DROPDOWN_MENU_VERTICAL_PADDING),
+                expanded = showActionsMenu,
+                onDismissRequest = { showActionsMenu = false },
+                properties = POPUP_PROPERTIES,
+                shape = MaterialTheme.shapes.large,
+            ) {
+                DropdownMenuItem(
+                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(painterResource(R.drawable.edit), "Edit tag") },
+                    onClick = {
+                        showActionsMenu = false
+                        showTagEditor = true
+                    },
+                )
+                DropdownMenuItem(
+                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
+                    text = { Text("Delete") },
+                    leadingIcon = { Icon(painterResource(R.drawable.delete_forever), "Delete tag") },
+                    onClick = { NewTransactionViewModel.deleteTag(tag) },
+                    colors = MenuDefaults.itemColors(
+                        textColor = MaterialTheme.colorScheme.error,
+                        leadingIconColor = MaterialTheme.colorScheme.error,
+                    ),
                 )
             }
         }
+    }
+
+    @Suppress("AssignedValueIsNeverRead")
+    if (showTagEditor) {
+        TagEditorDialog(
+            tag = tag,
+            onSubmit = { NewTransactionViewModel.editTag(tag.name, it) },
+            onDismiss = { showTagEditor = false },
+        )
     }
 }
 
@@ -514,6 +615,7 @@ fun IconPickerDialog(
     onSubmit: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    UserIcons.load(LocalContext.current)
     var selectedIcon by remember { mutableStateOf(initiallySelectedIcon) }
     val searchState = rememberTextFieldState()
 
@@ -565,7 +667,9 @@ fun IconPickerDialog(
             contentPadding = PaddingValues(vertical = gridSurfacePadding),
         ) {
             this.items(
-                items = UserIcons.toList().filter { it.first.contains(searchState.text, ignoreCase = true) },
+                items = UserIcons
+                    .filter { it.key.contains(searchState.text, ignoreCase = true) }
+                    .toList(),
                 key = { it.second },
             ) { icon ->
                 val density = LocalDensity.current
@@ -608,11 +712,10 @@ fun IconPickerDialog(
 @Preview(showBackground = true)
 @Composable
 private fun TagsPickerPreview() {
+    NewTransactionViewModel.replaceAllTags(FAKE_TAGS)
     BudgietTheme {
         TagsPickerDialog(
-            allTags = listOf(),
-            selectedTags = listOf(),
-            onNewTag = { },
+            selectedTags = listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name },
             onSubmit = { },
             onDismiss = { },
         )
@@ -621,24 +724,10 @@ private fun TagsPickerPreview() {
 
 @Preview(showBackground = true)
 @Composable
-private fun TagsPickerWithContentPreview() {
+private fun TagEditorPreview() {
     BudgietTheme {
-        TagsPickerDialog(
-            allTags = FAKE_TAGS,
-            selectedTags = listOf(FAKE_TAGS[0], FAKE_TAGS[2]),
-            onNewTag = { },
-            onSubmit = { },
-            onDismiss = { },
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun TagCreatorPreview() {
-    BudgietTheme {
-        TagCreatorDialog(
-            allTags = FAKE_TAGS,
+        TagEditorDialog(
+            tag = null,
             onSubmit = { },
             onDismiss = { },
         )

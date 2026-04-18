@@ -134,7 +134,10 @@ class NewTransactionViewModel: ViewModel() {
     var location by mutableStateOf<Location?>(null)
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
     var totalPrice by mutableDoubleStateOf(0.0)
-    var tags = mutableStateSetOf<Tag>()
+    /** Stores the **ID** of the [Tag]s that have been selected by the user.
+     *
+     * Since [Tag] names are unique, the name itself can be used as the ID. */
+    var selectedTags = mutableStateSetOf<String>()
     var description by mutableStateOf("")
 
     fun submit() {
@@ -152,31 +155,49 @@ class NewTransactionViewModel: ViewModel() {
 
     companion object {
         /** A fake "database" containing tag data in memory. will be removed once the real database is implemented. */
+        // TODO:
         private val fakeTagsDb = mutableStateListOf<Tag>()
 
-        val tagNameCharLimit = 9
+        val tagNameCharLimit = 15
 
-        fun getAllTags(): List<Tag> {
-            // TODO:
-            return this.fakeTagsDb
-        }
+        /** Makes the [ViewModel] ignore the internal database, and instead will hold the [Tag]s data in a [MutableList] in memory.
+         *
+         * Don't use in production :D */
+        internal fun replaceAllTags(allTags: List<Tag>)
+            = this.fakeTagsDb
+                .apply { removeAll { true } }
+                .addAll(allTags)
+
+        val allTags: List<Tag> = this.fakeTagsDb
         fun createNewTag(tag: Tag) {
-            // TODO:
             this.fakeTagsDb.add(tag)
+        }
+        fun editTag(name: String, newTag: Tag) {
+            this.fakeTagsDb
+                .indexOfFirst { it.name == name }
+                .also { idx -> if (idx == -1) {
+                    throw IllegalArgumentException("Attempting to edit non-existent tag with name \"$name\"")
+                } }
+                .also { idx ->
+                    this.fakeTagsDb.removeAt(idx)
+                    this.fakeTagsDb.add(idx, newTag)
+                }
+            // TODO: also replace from selected tags
+        }
+        fun deleteTag(tag: Tag) {
+            this.fakeTagsDb.remove(tag)
+            // TODO: also remove from selected tags
         }
 
         /** Check if the provided **`name`** can be used for a new Tag.
-         * Otherwise, returns an **Error** message.
-         *
-         * @param allTags The collection of all the [Tag]s that have been created and that exist in the database.
-         * @param name The name of the new [Tag] that is attempted to be created. */
-        fun validateTagName(allTags: Collection<Tag>, name: String): String? {
+         * Otherwise, returns an **Error** message. */
+        fun validateTagName(name: String, isNewTag: Boolean = true): String? {
             // TODO: only allow ascii and dont allow whitespace
             return if (name.isEmpty()) {
                 "Tag name must not be empty."
             } else if (name.length > this.tagNameCharLimit) {
-                "Tag name must be 9 characters or less."
-            } else if (allTags.find { it.name == name } != null) {
+                "Tag name must be ${this.tagNameCharLimit} characters or less."
+            } else if (isNewTag && this.allTags.find { it.name == name } != null) {
                 "A tag with this name already exists."
             } else {
                 null
@@ -252,7 +273,8 @@ fun NewTransactionForm(
         }
         FormField("Tags") {
             TagsField(
-                selectedTags = viewModel.tags,
+                selectedTags = viewModel.selectedTags,
+                onRemoveTag = { viewModel.selectedTags.remove(it) },
                 onButtonClick = { dialogState = DialogState.TagsPicker },
             )
         }
@@ -294,10 +316,8 @@ fun NewTransactionForm(
             onSubmit = { viewModel.location = it },
         )
         DialogState.TagsPicker -> TagsPickerDialog(
-            allTags = NewTransactionViewModel.getAllTags(),
-            selectedTags = viewModel.tags,
-            onNewTag = { NewTransactionViewModel.createNewTag(it) },
-            onSubmit = { viewModel.tags.addAll(it) },
+            selectedTags = viewModel.selectedTags,
+            onSubmit = { viewModel.selectedTags.addAll(it) },
             onDismiss = dialogDismiss,
         )
     }
@@ -1025,12 +1045,12 @@ fun DescriptionField(
 @Preview(showBackground = true)
 @Composable
 private fun NewTransactionPreview() {
+    NewTransactionViewModel.replaceAllTags(FAKE_TAGS)
     BudgietTheme {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
-                    FAKE_TAGS.subList(0, 3)
-                        .forEach { tags.add(it) }
+                    selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },
                 onDismiss = { }
             )

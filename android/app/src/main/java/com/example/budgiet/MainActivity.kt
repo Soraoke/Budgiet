@@ -40,10 +40,8 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 class MainActivity : ComponentActivity() {
     private val newTransactionViewModel by this.viewModels<NewTransactionViewModel>()
@@ -52,20 +50,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (userIcons == null) {
-            if (userIconsJobMutex.tryLock()) {
-                if (userIconsJob == null) {
-                    @OptIn(DelicateCoroutinesApi::class)
-                    userIconsJob = GlobalScope.launch {
-                        runWork {
-                            initUserIcons(this@MainActivity)
-                        }
-                    }
-                }
-                userIconsJobMutex.unlock()
-            }
-        }
-
+        UserIcons.load(this)
         setContent {
             BudgietTheme {
                 MainPage(modifier = Modifier.fillMaxSize(), newTransactionViewModel)
@@ -167,6 +152,25 @@ object UserIcons: Map<String, Int> {
     override fun containsKey(key: String): Boolean = userIcons?.containsKey(key) ?: false
     override fun containsValue(value: Int): Boolean = userIcons?.containsValue(value) ?: false
     override fun get(key: String): Int? = userIcons?.get(key)
+
+    /** Attempts to *load key-value* pairs (name to DrawableId) of the [UserIcons] stored in the App's package.
+     *
+     * Does nothing if it has already been called once before. */
+    internal fun load(context: Context) {
+        if (userIcons == null) {
+            if (userIconsJobMutex.tryLock()) {
+                if (userIconsJob == null) {
+                    @OptIn(DelicateCoroutinesApi::class)
+                    userIconsJob = GlobalScope.launch {
+                        runWork {
+                            initUserIcons(context)
+                        }
+                    }
+                }
+                userIconsJobMutex.unlock()
+            }
+        }
+    }
 }
 
 class Location(

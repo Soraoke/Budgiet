@@ -1,6 +1,7 @@
 package com.example.budgiet
 
 import androidx.compose.ui.semantics.SemanticsConfiguration
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.getAllSemanticsNodes
@@ -8,6 +9,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.SemanticsNodeInteractionCollection
+import androidx.compose.ui.test.filter
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
@@ -31,6 +33,9 @@ fun SemanticsNodeInteraction.onDescendants(
     matcher = isDescendantOf(this),
     useUnmergedTree = useUnmergedTree,
 )
+
+fun SemanticsNodeInteractionCollection.filterNodes(filter: (SemanticsNode) -> Boolean): SemanticsNodeInteractionCollection
+    = this.filter(SemanticsMatcher("Node matches arbitrary filter", filter))
 
 /** Get the **value** of a property from a [SemanticsNode][SemanticsNodeInteraction].
  * Throws exception if property was *not found* or value was `null`.
