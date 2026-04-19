@@ -27,7 +27,7 @@ class LocationPickerTests {
         val newButton
             get() = this.rule.onNode(hasTextExactly("New"))
         val doneButton
-            get() = this.rule.onNode(hasTextExactly("Done"))
+            get() = this.rule.onNode(hasTextExactly("Submit"))
 
         init {
             this.rule.setContent {

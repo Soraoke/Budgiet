@@ -1,15 +1,5 @@
 package com.example.budgiet
 
-import android.content.Context
-import android.util.Log
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.runtime.toMutableStateList
-import androidx.compose.ui.platform.LocalContext
-import java.io.File
 import java.math.RoundingMode
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat

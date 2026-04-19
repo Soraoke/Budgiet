@@ -71,6 +71,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -651,7 +654,7 @@ fun PriceField(
     selectedPrice: Double,
     onPriceChange: (Double) -> Unit,
     locale: Locale = Locale.getDefault(),
-    selectedCurrency: Currency = remember { Currency.getInstance(locale) },
+    selectedCurrency: Currency = remember(locale) { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
     var fieldValue by remember { mutableStateOf(if (selectedPrice == 0.0) "" else {
@@ -661,6 +664,9 @@ fun PriceField(
     var parseError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
+    // TODO: move this function to rust.
+    //   The function should take full next text value, input key, input position;
+    //   and should return the transformed field value, and whether there should be a delay before applying it.
     fun validateInput() {
         if (fieldValue.isNotEmpty()) {
             val price = fieldValue.filter { c -> c != DecimalFormatSymbols.getInstance(locale).groupingSeparator }
@@ -742,15 +748,19 @@ fun CurrencySelectorButton(
     showCurrencyMenu: Boolean,
     onMenuStateChange: (Boolean) -> Unit,
     locale: Locale = Locale.getDefault(),
-    selectedCurrency: Currency = remember { Currency.getInstance(locale) },
+    selectedCurrency: Currency = remember(locale) { Currency.getInstance(locale) },
     onCurrencyChange: (Currency) -> Unit,
 ) {
     // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
-    val localeCurrency = remember { Currency.getInstance(locale) }
+    val localeCurrency = remember(locale) { Currency.getInstance(locale) }
 
     PlainToolTipBox("Change currency") {
         TextButton(
-            modifier = modifier.padding(start = 8.dp),
+            modifier = modifier.padding(start = 8.dp)
+                .semantics {
+                    contentDescription = "Select currency"
+                    stateDescription = "${selectedCurrency.currencyCode} ${selectedCurrency.displayName}"
+                },
             onClick = { onMenuStateChange(!showCurrencyMenu) },
             contentPadding = ButtonDefaults.TextButtonContentPadding.let { padding ->
                 PaddingValues(
@@ -761,13 +771,15 @@ fun CurrencySelectorButton(
                 )
             },
         ) {
+            Icon(painterResource(R.drawable.arrow_drop_down_24px), null)
+
             val icon = getCurrencyIcon(selectedCurrency)
             val code = selectedCurrency.currencyCode
 
-            Icon(painterResource(R.drawable.arrow_drop_down_24px), "Open currency menu")
             if (icon != null) {
                 Icon(icon, null)
             }
+
             // Only show currency name in the field if it is not the locale's currency.
             // If the icon is not shown, must show the currency code either way.
             if (code != localeCurrency.currencyCode
@@ -879,11 +891,10 @@ fun CurrencySelectorButton(
             PlainToolTipBox(currency.displayName) {
                 this.MenuItem(
                     // Apply a scrim color for the one that is selected.
-                    modifier = if (currency == selectedCurrency) {
-                        Modifier.background(MaterialTheme.colorScheme.surfaceDim)
-                    } else {
-                        Modifier
-                    },
+                    modifier = Modifier.semantics { contentDescription = currency.displayName }
+                        .run { if (currency == selectedCurrency) {
+                            background(MaterialTheme.colorScheme.surfaceDim)
+                        } else this },
                     headlineContent = { Text(currency.currencyCode) },
                     // Even if there is no icon for this currency, activate leadingIcon to align all the currency codes.
                     leadingIcon = {
