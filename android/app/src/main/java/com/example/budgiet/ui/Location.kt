@@ -9,7 +9,9 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -55,12 +57,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.into
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -76,6 +80,7 @@ import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
+import kotlin.math.min
 
 val FAKE_LOCATIONS = mapOf(
     0u  to Location("Chipotle", "123 Main Street, Bronx NY"),
@@ -113,18 +118,19 @@ class LocationViewModel: ViewModel() {
 
     var selectedLocation by mutableStateOf<DbEntry<Location>?>(null)
 
-    // TODO: doc
+    // TODO: doc, throws
     fun locationsPage(query: CharSequence?, start: UInt, len: UInt): List<DbEntry<Location>> {
-        return this.fakeDb
+        val list = this.fakeDb
             .entries.toList()
             .map { DbEntry(it.key, it.value) }
             .run { if (query != null) {
                 filter {
                     it.data.name.contains(query)
-                    || it.data.address.contains(query)
+                            || it.data.address.contains(query)
                 }
             } else this }
-            .subList(start.toInt(), (start + len).toInt())
+
+        return list.subList(start.toInt(), min((start + len).toInt(), list.size))
 
         // TODO: real impl
     }
@@ -139,30 +145,48 @@ class LocationViewModel: ViewModel() {
         TODO()
     }
 
-    fun newLocation(name: String, address: String): DbEntry<Location> {
-        // TODO: update locations loaded in pager
-        TODO()
+    fun newLocation(data: Location): DbEntry<Location> {
+        var id = 0u
+        while (this.fakeDb.keys.contains(id)) {
+            id++
+        }
+
+        this.fakeDb[id] = data
+        return DbEntry(id, data)
+
         // TODO: real impl
     }
 
-    fun editLocation(id: UInt, data: Location) {
-        // TODO: id must not change
+    fun editLocation(id: UInt, newData: Location) {
         // TODO: update locations loaded in pager
         TODO()
         // TODO: real impl
     }
 
     fun deleteLocation(id: UInt) {
-        // TODO: update locations loaded in pager
-        TODO()
+        this.fakeDb.remove(id)
         // TODO: real impl
     }
 
     fun validateName(name: String, isNewLocation: Boolean = true): Result<Unit> {
-        TODO()
+        val msg = if (name.isEmpty()) {
+            "Name must not be empty"
+        } else {
+            null
+        }
+
+        return msg?.let { Result.Err(Exception(msg)) }
+            ?: Result.Ok(Unit)
     }
     fun validateAddress(address: String, isNewLocation: Boolean = true): Result<Unit> {
-        TODO()
+        val msg = if (address.isEmpty()) {
+            "Address must not be empty"
+        } else {
+            null
+        }
+
+        return msg?.let { Result.Err(Exception(msg)) }
+            ?: Result.Ok(Unit)
     }
 }
 
@@ -348,34 +372,66 @@ private fun LocationSearchDialog(
                 )
             }
 
+            val emptyListModifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.large)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(ActionDialogPadding.Default.dialogEdges)
+
             Column {
                 // Show search results if the SearchBar has a query,
                 // otherwise show recent locations
                 if (queryIsEmpty) {
-                    Text("Recent",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = ActionDialogPadding.TightlyPacked.dialogEdges.calculateStartPadding(LocalLayoutDirection.current))
+                    Text("Recent", Modifier
+                        .fillMaxWidth()
+                        .padding(start = ActionDialogPadding.TightlyPacked.dialogEdges.calculateStartPadding(LocalLayoutDirection.current))
                     )
 
                     ListColumn(visibleItems = searchColumnSize) {
-                        this.pagedItemsIndexed(
-                            pager = recentsPager,
-                            itemKey = { _, item -> item.id.toInt() }, // Why can't use UInt ....
-                        ) { idx, item ->
-                            if (idx == 0) {
-                                LocationItem(item, newLocationAdded)
-                            } else {
-                                LocationItem(item)
+                        if (recentsPager.isLoading().not()
+                        && recentsPager.items.itemSnapshotList.isEmpty()) {
+                            this.item {
+                                Column(
+                                    emptyListModifier,
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Text("There are no existing Locations.", textAlign = TextAlign.Center)
+                                    Text("Press \"New\" to create one.", textAlign = TextAlign.Center)
+                                }
+                            }
+                        } else {
+                            this.pagedItemsIndexed(
+                                pager = recentsPager,
+                                itemKey = { _, item -> item.id.toInt() }, // Why can't use UInt ....
+                            ) { idx, item ->
+                                if (idx == 0) {
+                                    LocationItem(item, newLocationAdded)
+                                } else {
+                                    LocationItem(item)
+                                }
                             }
                         }
                     }
                 } else {
                     ListColumn(visibleItems = searchColumnSize) {
-                        this.pagedItems(
-                            pager = searchPager,
-                            itemKey = { item -> item.id.toInt() },
-                        ) { item -> this.LocationItem(item) }
+                        if (searchPager.isLoading().not()
+                        && searchPager.items.itemSnapshotList.isEmpty()) {
+                            this.item {
+                                Column(
+                                    emptyListModifier,
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Text("No matching locations", textAlign = TextAlign.Center)
+                                }
+                            }
+                        } else {
+                            this.pagedItems(
+                                pager = searchPager,
+                                itemKey = { item -> item.id.toInt() },
+                            ) { item -> this.LocationItem(item) }
+                        }
                     }
                 }
             }
@@ -398,6 +454,10 @@ private fun NewLocationDialog(
     val menuShape = MaterialTheme.shapes.medium
     val menuItemPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
     val maxMenuItems = 10u
+    val menuItemModifier = Modifier
+        .widthIn(min = 0.dp)
+        .padding(menuItemPadding)
+        .clip(menuShape)
 
     var locationName by remember { mutableStateOf("") }
     var locationAddress by remember { mutableStateOf("") }
@@ -425,7 +485,7 @@ private fun NewLocationDialog(
                         addressError = viewModel.validateAddress(locationName)
 
                         if (nameError is Result.Ok && addressError is Result.Ok) {
-                            onSubmit(viewModel.newLocation(locationName, locationAddress))
+                            onSubmit(viewModel.newLocation(Location(locationName, locationAddress)))
                             onDismiss()
                         }
                     },
@@ -460,19 +520,19 @@ private fun NewLocationDialog(
             )
         }
 
-        val suggestedNames = remember(locationName) {
+        val suggestedNames = remember(locationName) { runCatching {
             viewModel.locationsPage(locationName, 0u, maxMenuItems)
                 .map { it.data.name }
                 // Only allow a single instance of a name to exist.
                 // Due to the list becoming a set, some items wil be culled,
                 // so the size won't necessarily be the same as maxMenuItems.
                 .toSet()
-        }
+        }.into() }
 
         var shouldShowMenu by remember { mutableStateOf(false) }
         val expanded = shouldShowMenu
-                && locationName.isNotEmpty()
-                && suggestedNames.isNotEmpty()
+            && locationName.isNotEmpty()
+            && suggestedNames.isOkAnd { it.isNotEmpty() }
 
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -499,12 +559,10 @@ private fun NewLocationDialog(
                 matchAnchorWidth = false,
                 shape = menuShape,
             ) {
-                suggestedNames.forEach { name ->
+                // This is only expanded if suggestedNames is Ok, so it is safe to unwrap.
+                suggestedNames.unwrap().forEach { name ->
                     DropdownMenuItem(
-                        modifier = Modifier
-                            .widthIn(min = 0.dp)
-                            .padding(menuItemPadding)
-                            .clip(menuShape),
+                        modifier = menuItemModifier,
                         text = { Text(name) },
                         onClick = {
                             locationName = name
@@ -562,6 +620,19 @@ fun LocationFieldPreview() {
             onClick = { },
         )
     } }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LocationPickerEmptyPreview() {
+    BudgietTheme {
+        LocationSearchDialog(
+            viewModel = viewModel<LocationViewModel>(),
+            onDismiss = { },
+            onSubmit = { },
+            onNewClick = { }
+        )
+    }
 }
 
 @Preview(showBackground = true)

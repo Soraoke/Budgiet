@@ -160,6 +160,12 @@ class PagerController<T: Any> private constructor(
     val appendStatus: LoadState
         get() = this.items.loadState.append
 
+    /** Returns whether the [Pager] is currently loading any items. */
+    fun isLoading()
+        = this.prependStatus is LoadState.Loading
+        || this.refreshStatus is LoadState.Loading
+        || this.appendStatus is LoadState.Loading
+
     companion object {
         /** Initializes the controller to operate on the provided [Pager] **items**. */
         @SuppressLint("ComposableNaming")

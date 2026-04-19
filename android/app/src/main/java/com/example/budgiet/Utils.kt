@@ -87,7 +87,23 @@ sealed class Result<out T> {
             is Err -> this
         }
     }
+
+    fun isOkAnd(predicate: (T) -> Boolean): Boolean = this is Ok && predicate(this.value)
+    fun isErrAnd(predicate: (Throwable) -> Boolean): Boolean = this is Err && predicate(this.error)
+
+    companion object {
+        /** Converts a [kotlin.Result] to this app's custom [Result]. */
+        fun <T> fromKt(result: kotlin.Result<T>): Result<T> {
+            return if (result.isSuccess) {
+                Ok(result.getOrNull()!!)
+            } else {
+                Err(result.exceptionOrNull()!!)
+            }
+        }
+    }
 }
+/** Converts a [kotlin.Result] to this app's custom [Result]. */
+fun <T> kotlin.Result<T>.into(): Result<T> = Result.fromKt(this)
 
 /** Unwrap a **nullable** value, or *throw* and [Exception][Throwable] if it was `null`.
  *

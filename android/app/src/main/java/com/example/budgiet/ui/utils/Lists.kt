@@ -534,6 +534,7 @@ class LazyMenuItemScope internal constructor(
                 Text("Error: $type", color = color, style = MaterialTheme.typography.labelLarge)
                 message?.let { Text(message, color = color) }
             } },
+            enabled = false,
             onClick = { }
         )
     }
