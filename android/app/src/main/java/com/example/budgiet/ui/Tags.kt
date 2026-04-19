@@ -52,6 +52,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
@@ -76,6 +77,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.budgiet.Result
 import com.example.budgiet.R
 import com.example.budgiet.UserIcons
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -113,20 +117,80 @@ val FAKE_TAGS = mutableListOf(
     Tag("Utility", "domain_infrastructure", UserColorPalette.Yellow),
 )
 
+class TagsViewModel: ViewModel() {
+    /** A fake "database" containing tag data in memory. will be removed once the real database is implemented. */
+    // TODO:
+    private val fakeTagsDb = mutableStateListOf<Tag>()
+
+    val tagNameCharLimit = 15
+
+    val allTags: List<Tag> = this.fakeTagsDb
+
+    /** Stores the **ID** of the [Tag]s that have been selected by the user.
+     *
+     * Since [Tag] names are unique, the name itself can be used as the ID. */
+    var selectedTags = mutableStateSetOf<String>()
+
+    /** Makes the [ViewModel] ignore the internal database, and instead will hold the [Tag]s data in a [MutableList] in memory.
+     *
+     * Don't use in production :D */
+    internal fun useAlternativeTags(allTags: List<Tag>)
+        = this.fakeTagsDb
+            .apply { removeAll { true } }
+            .addAll(allTags)
+
+    fun createNewTag(tag: Tag) {
+        this.fakeTagsDb.add(tag)
+    }
+    fun editTag(name: String, newTag: Tag) {
+        this.fakeTagsDb
+            .indexOfFirst { it.name == name }
+            .also { idx -> if (idx == -1) {
+                throw IllegalArgumentException("Attempting to edit non-existent tag with name \"$name\"")
+            } }
+            .also { idx ->
+                this.fakeTagsDb.removeAt(idx)
+                this.fakeTagsDb.add(idx, newTag)
+            }
+        // TODO: also replace from selected tags
+    }
+    fun deleteTag(tag: Tag) {
+        this.fakeTagsDb.remove(tag)
+        // TODO: also remove from selected tags
+    }
+
+    /** Check if the provided **`name`** can be used for a new Tag.
+     * Otherwise, returns an **Error** message. */
+    fun validateTagName(name: String, isNewTag: Boolean = true): Result<Unit> {
+        // TODO: only allow ascii and dont allow whitespace
+        val msg = if (name.isEmpty()) {
+            "Tag name must not be empty."
+        } else if (name.length > this.tagNameCharLimit) {
+            "Tag name must be ${this.tagNameCharLimit} characters or less."
+        } else if (isNewTag && this.allTags.find { it.name == name } != null) {
+            "A tag with this name already exists."
+        } else {
+            null
+        }
+
+        return msg?.let { Result.Err(Exception(msg)) }
+            ?: Result.Ok(Unit)
+    }
+}
+
 /** Displays the tags selected by the user to be assigned to the new Transaction.
  *
- * @param selectedTags The tags that will be displayed.
+ * @param viewModel Contains the **`selectedTags`** that will be displayed.
  * @param onButtonClick The action to run when the button that opens the [TagsPickerDialog] is clicked. */
 @Suppress("UnusedReceiverParameter")
 @Composable
 fun RowScope.TagsField(
     modifier: Modifier = Modifier,
-    selectedTags: Set<String>,
-    onRemoveTag: (String) -> Unit,
+    viewModel: TagsViewModel,
     onButtonClick: () -> Unit,
 ) {
-    val selectedTags = NewTransactionViewModel.allTags
-        .filter { selectedTags.contains(it.name) }
+    val selectedTags = viewModel.allTags
+        .filter { viewModel.selectedTags.contains(it.name) }
 
     if (selectedTags.isNotEmpty()) {
         val shape = RoundedCornerShape(
@@ -153,7 +217,8 @@ fun RowScope.TagsField(
             Spacer(Modifier.width(TAG_GRID_PADDING.calculateStartPadding(LocalLayoutDirection.current) / 2))
             selectedTags.forEach { tag ->
                 TagFrame(tag,
-                    onRemove = { onRemoveTag(tag.name) },
+                    viewModel = viewModel,
+                    onRemove = { viewModel.selectedTags.remove(tag.name) },
                     longPress = true,
                 )
             }
@@ -188,35 +253,29 @@ fun RowScope.TagsField(
  *
  * [Tag]s that were initially selected (defined by **`selectedTags`**) will be highlighted.
  *
- * @param selectedTags Tags that were selected before the dialog was opened.
- * @param onSubmit The action to run when the user clicks the `'Done'` button.
- *   This provides an argument with the [List] of [Tag]s that the user selected (including ones from [selectedTags]).
- *   These tags can then be added to the [Set] that stores all the selected tags.
  * @param onDismiss The action to run when the [Dialog][ActionDialog] needs to be closed. */
 @Composable
 fun TagsPickerDialog(
     modifier: Modifier = Modifier,
-    selectedTags: Collection<String>,
-    onSubmit: (Collection<String>) -> Unit,
+    viewModel: TagsViewModel,
     onDismiss: () -> Unit,
 ) {
     val searchState = rememberTextFieldState()
 
     var showTagCreator by rememberSaveable { mutableStateOf(false) }
-    val innerSelectedTags = remember(selectedTags) {
+    val innerSelectedTags = remember(viewModel.selectedTags) {
         mutableStateSetOf<String>()
-            .apply { addAll(selectedTags) }
+            .apply { addAll(viewModel.selectedTags) }
     }
 
     if (showTagCreator) {
+        @Suppress("AssignedValueIsNeverRead")
         TagEditorDialog(
             modifier = modifier,
             tag = null,
-            onSubmit = { NewTransactionViewModel.createNewTag(it) },
-            onDismiss = {
-                @Suppress("AssignedValueIsNeverRead")
-                showTagCreator = false
-            },
+            validateNewName = { viewModel.validateTagName(it, isNewTag = true) },
+            onSubmit = { viewModel.createNewTag(it) },
+            onDismiss = { showTagCreator = false },
         )
     } else {
         ActionDialog(
@@ -237,7 +296,7 @@ fun TagsPickerDialog(
                 PlainToolTipBox("Submit selected tags") {
                     FilledTextIconButton(
                         onClick = {
-                            onSubmit(innerSelectedTags)
+                            viewModel.selectedTags.addAll(innerSelectedTags)
                             onDismiss()
                         },
                         icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
@@ -251,7 +310,7 @@ fun TagsPickerDialog(
                 .heightIn(min = TextFieldDefaults.MinHeight, max = TAG_GRID_MAX_HEIGHT)
                 .border(width = 1.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.outline)
 
-            if (NewTransactionViewModel.allTags.isEmpty()) {
+            if (viewModel.allTags.isEmpty()) {
                 Box(modifier) {
                     Column(
                         modifier = Modifier.padding(ActionDialogPadding.Default.dialogEdges),
@@ -270,11 +329,12 @@ fun TagsPickerDialog(
                     horizontalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
                     verticalArrangement = Arrangement.spacedBy(TAG_FRAME_SPACING),
                 ) {
-                    NewTransactionViewModel.allTags
+                    viewModel.allTags
                         .filter { it.name.contains(searchState.text, ignoreCase = true) }
                         .forEach { tag ->
                             TagFrame(
                                 tag = tag,
+                                viewModel = viewModel,
                                 isSelected = innerSelectedTags.contains(tag.name),
                                 onClick = {
                                     if (innerSelectedTags.contains(tag.name)) {
@@ -308,12 +368,19 @@ fun TagsPickerDialog(
 /** Shows a [Dialog][ActionDialog] that allows the user to modify the details of a [Tag].
  * This also serves as a **creator dialog** if the **`tag`** argument is `null`.
  *
+ * @param onSubmit The action to run when the user clicks the `'Submit'` button.
+ *   This provides an argument with the *new* [Tag] data.
+ *   This function should call [TagsViewModel.createNewTag] or [TagsViewModel.editTag]
+ *   respective to the purpose of this dialog (to edit an existing tag or create a new one).
+ * @param validateNewName A function that checks if a *new or existing* [Tag]
+ *   can use the new **name** that the user is trying to assign to it.
  * @param tag The data of the [Tag] that is being modified.
  *   Pass `null` if the dialog is intended to **create** a *new [Tag]*. */
 @Composable
 fun TagEditorDialog(
     modifier: Modifier = Modifier,
     tag: Tag?,
+    validateNewName: (String) -> Result<Unit>,
     onSubmit: (Tag) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -368,7 +435,7 @@ fun TagEditorDialog(
                 PlainToolTipBox("Submit new tag") {
                     FilledTextIconButton(
                         onClick = {
-                            nameError = NewTransactionViewModel.validateTagName(name, isNewTag = tag == null)
+                            nameError = validateNewName(name).getErrOrNull()?.message
 
                             if (canSubmit()) {
                                 onSubmit(Tag(name, icon, color))
@@ -445,7 +512,7 @@ fun TagEditorDialog(
                     value = name,
                     onValueChange = {
                         name = it
-                        nameError = NewTransactionViewModel.validateTagName(name, isNewTag = tag == null)
+                        nameError = validateNewName(name).getErrOrNull()?.message
                     },
                 )
 
@@ -489,6 +556,7 @@ fun TagEditorDialog(
 fun TagFrame(
     tag: Tag,
     modifier: Modifier = Modifier,
+    viewModel: TagsViewModel,
     isSelected: Boolean = false,
     onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
@@ -588,7 +656,7 @@ fun TagFrame(
                     modifier = Modifier.clip(MaterialTheme.shapes.medium),
                     text = { Text("Delete") },
                     leadingIcon = { Icon(painterResource(R.drawable.delete_forever), "Delete tag") },
-                    onClick = { NewTransactionViewModel.deleteTag(tag) },
+                    onClick = { viewModel.deleteTag(tag) },
                     colors = MenuDefaults.itemColors(
                         textColor = MaterialTheme.colorScheme.error,
                         leadingIconColor = MaterialTheme.colorScheme.error,
@@ -602,7 +670,8 @@ fun TagFrame(
     if (showTagEditor) {
         TagEditorDialog(
             tag = tag,
-            onSubmit = { NewTransactionViewModel.editTag(tag.name, it) },
+            validateNewName = { viewModel.validateTagName(it, isNewTag = false) },
+            onSubmit = { viewModel.editTag(tag.name, it) },
             onDismiss = { showTagEditor = false },
         )
     }
@@ -712,11 +781,12 @@ fun IconPickerDialog(
 @Preview(showBackground = true)
 @Composable
 private fun TagsPickerPreview() {
-    NewTransactionViewModel.replaceAllTags(FAKE_TAGS)
     BudgietTheme {
         TagsPickerDialog(
-            selectedTags = listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name },
-            onSubmit = { },
+            viewModel = viewModel<TagsViewModel>().apply {
+                useAlternativeTags(FAKE_TAGS)
+                selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
+            },
             onDismiss = { },
         )
     }
@@ -728,6 +798,7 @@ private fun TagEditorPreview() {
     BudgietTheme {
         TagEditorDialog(
             tag = null,
+            validateNewName = { Result.Ok(Unit) },
             onSubmit = { },
             onDismiss = { },
         )

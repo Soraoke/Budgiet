@@ -3,7 +3,6 @@ package com.example.budgiet.transactionTests
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -38,11 +37,11 @@ import com.example.budgiet.filterNodes
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
 import com.example.budgiet.ui.FAKE_TAGS
-import com.example.budgiet.ui.NewTransactionViewModel
 import com.example.budgiet.ui.Tag
 import com.example.budgiet.ui.TagEditorDialog
 import com.example.budgiet.ui.TagsField
 import com.example.budgiet.ui.TagsPickerDialog
+import com.example.budgiet.ui.TagsViewModel
 import org.junit.Rule
 import org.junit.Test
 
@@ -53,6 +52,7 @@ class TagsPickerTests {
     private class TestState(
         private val rule: ComposeContentTestRule,
         tags: List<Tag> = FAKE_TAGS,
+        initiallySelectedTags: List<String> = listOf(),
     ) {
         val tagsFieldContainer
             get() = this.rule.onNodeWithTag(TAGS_FIELD_TEST_TAG)
@@ -79,18 +79,19 @@ class TagsPickerTests {
             return this.tagEditorDialog
         }
 
-        val selectedTags = mutableStateSetOf<String>()
         private var showPicker by mutableStateOf(false)
 
         init {
-            NewTransactionViewModel.replaceAllTags(tags)
+            val viewModel = TagsViewModel().apply {
+                useAlternativeTags(tags)
+                selectedTags.addAll(initiallySelectedTags)
+            }
 
             this.rule.setContent {
                 Row {
                     TagsField(
                         modifier = Modifier.testTag(TAGS_FIELD_TEST_TAG),
-                        selectedTags = selectedTags,
-                        onRemoveTag = { selectedTags.remove(it) },
+                        viewModel = viewModel,
                         onButtonClick = { showPicker = true },
                     )
                 }
@@ -98,8 +99,7 @@ class TagsPickerTests {
                 if (showPicker) {
                     TagsPickerDialog(
                         modifier = Modifier.testTag(TAGS_DIALOG_TEST_TAG),
-                        selectedTags = selectedTags,
-                        onSubmit = { selectedTags.addAll(it) },
+                        viewModel = viewModel,
                         onDismiss = { showPicker = false },
                     )
                 }
@@ -214,9 +214,8 @@ class TagsPickerTests {
 
     @Test
     fun editTag() {
-        val state = TestState(this.rule)
         val tagName = FAKE_TAGS[1].name
-        state.selectedTags.add(tagName)
+        val state = TestState(this.rule, initiallySelectedTags = listOf(tagName))
 
         state.tagsFieldContainer
             .onDescendants(this.rule)
@@ -257,9 +256,8 @@ class TagsPickerTests {
 
     @Test
     fun deleteTag() {
-        val state = TestState(this.rule)
         val tagName = FAKE_TAGS[1].name
-        state.selectedTags.add(tagName)
+        val state = TestState(this.rule, initiallySelectedTags = listOf(tagName))
 
         state.tagsFieldContainer
             .onDescendants(this.rule)
