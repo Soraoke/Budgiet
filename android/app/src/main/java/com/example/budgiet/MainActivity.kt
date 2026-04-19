@@ -173,42 +173,6 @@ object UserIcons: Map<String, Int> {
     }
 }
 
-class Location(
-    val id: UInt,
-    val name: String,
-    val address: String,
-)
-fun getRecentLocations(start: UInt = 0u, len: UInt = 10u): List<Location> {
-    // Returns a list of bogus locations for now
-    return List(len.toInt()) { i ->
-        val id = i.toUInt() + start
-        if (id % 2u == 0u) {
-            Location(id = id, name = "Chipotle", "$id$id$id Main Street, Bronx NY")
-        } else {
-            Location(id = id, name = "Aldi", "$id$id$id IsNuts Lane, Los Angeles CA")
-        }
-    }
-}
-fun getLocationsSearchPage(query: CharSequence, start: UInt, len: UInt): List<Location> {
-    // Returns a list of bogus locations for now
-    return if (query.isEmpty()) {
-        listOf()
-    } else {
-        List(len.toInt()) { i ->
-            val id = i.toUInt() + start
-            if (id % 2u == 0u) {
-                Location(id = id, name = query.toString(), "$id$id$id Main Street, Bronx NY")
-            } else {
-                Location(id = id, name = query.toString(), "$id$id$id IsNuts Lane, Los Angeles CA")
-            }
-        }
-    }
-}
-fun addNewLocation(name: String, address: String) {
-
-}
-
-
 @Preview(showBackground = true)
 @Composable
 fun MainPagePreview() {

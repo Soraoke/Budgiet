@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
@@ -108,13 +109,19 @@ val TAG_SHAPE
 val SELECTED_TAG_BORDER_COLOR
     @Composable get() = MaterialTheme.colorScheme.tertiaryFixedDim
 
-val FAKE_TAGS = mutableListOf(
+val FAKE_TAGS = listOf(
     Tag("Groceries", "shopping_cart", UserColorPalette.Green),
     Tag("Transportation", "rail_subway_train_transport", UserColorPalette.Blue),
     Tag("Take-out", "fast_food_restaurant", UserColorPalette.Orange),
     Tag("School", "education_school_cap", UserColorPalette.Brown),
     Tag("Trips", "hiking_person", UserColorPalette.Turquoise),
     Tag("Utility", "domain_infrastructure", UserColorPalette.Yellow),
+)
+
+data class Tag(
+    val name: String,
+    val icon: String?,
+    val color: Color,
 )
 
 class TagsViewModel: ViewModel() {
@@ -136,7 +143,7 @@ class TagsViewModel: ViewModel() {
      * Don't use in production :D */
     internal fun useAlternativeTags(allTags: List<Tag>)
         = this.fakeTagsDb
-            .apply { removeAll { true } }
+            .apply { clear() }
             .addAll(allTags)
 
     fun createNewTag(tag: Tag) {
@@ -178,7 +185,7 @@ class TagsViewModel: ViewModel() {
     }
 }
 
-/** Displays the tags selected by the user to be assigned to the new Transaction.
+/** Displays the [Tag]s selected by the user to be assigned to the [NewTransaction][NewTransactionForm].
  *
  * @param viewModel Contains the **`selectedTags`** that will be displayed.
  * @param onButtonClick The action to run when the button that opens the [TagsPickerDialog] is clicked. */
