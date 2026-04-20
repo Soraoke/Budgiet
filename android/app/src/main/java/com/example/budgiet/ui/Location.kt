@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -348,7 +352,7 @@ private fun LocationSearchDialog(
     ) {
         AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
             @Composable
-            fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, isNew: Boolean = false) {
+            fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, query: CharSequence? = null, isNew: Boolean = false) {
                 val containerColor = if (isNew && animateNewItemScrim) {
                     LaunchedEffect(Unit) {
                         delay(scrimAnimationDuration.toLong())
@@ -368,6 +372,29 @@ private fun LocationSearchDialog(
                     ListItemDefaults.containerColor
                 }
 
+                /** Creates an [AnnotatedString] that highlights (**emboldens**) substring instances of the **`query`** in the **`text`**.
+                 *
+                 * Does nothing if the **`query`** is `null`. */
+                fun highlightMatches(text: String, query: CharSequence?): AnnotatedString {
+                    val instances = Regex(query.toString(), RegexOption.IGNORE_CASE)
+                        .findAll(text)
+                        .map { it.range.first }
+
+                    val spans = if (query != null) {
+                        instances.map { idx ->
+                            AnnotatedString.Range(
+                                item = SpanStyle(fontWeight = FontWeight.ExtraBold),
+                                start = idx,
+                                end = idx + query.length,
+                            )
+                        }.toList()
+                    } else {
+                        emptyList()
+                    }
+
+                    return AnnotatedString(text, spanStyles = spans)
+                }
+
                 this.DataItem(
                     modifier = Modifier
                         .semantics {
@@ -380,9 +407,8 @@ private fun LocationSearchDialog(
                     colors = ListItemDefaults.colors(
                         containerColor = containerColor,
                     ),
-                    // TODO: Highlight/bold the parts of the text that match the search
-                    headlineContent = { Text(item.data.name) },
-                    supportingContent = { Text(item.data.address) },
+                    headlineContent = { Text(highlightMatches(item.data.name, query)) },
+                    supportingContent = { Text(highlightMatches(item.data.address, query)) },
                 )
             }
 
@@ -441,7 +467,7 @@ private fun LocationSearchDialog(
                                 pager = searchPager,
                                 itemKey = { item -> item.id.toInt() },
                             ) { item ->
-                                this.LocationItem(item)
+                                this.LocationItem(item, query = searchState.text)
                             }
                         }
                     }
@@ -472,187 +498,196 @@ private fun NewLocationDialog(
         .padding(menuItemPadding)
         .clip(menuShape)
 
+    var showNearbyDialog by rememberSaveable { mutableStateOf(false) }
+
     var locationName by remember { mutableStateOf("") }
     var locationAddress by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
     var addressError by remember { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
 
-    ActionDialog(
-        modifier = modifier,
-        onDismiss = onDismiss,
-        title = {
-            Text("New location",
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-        },
-        actions = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-
-            PlainToolTipBox("Submit new location") {
-                FilledTextIconButton(
-                    onClick = {
-                        nameError = viewModel.validateName(locationName)
-                        addressError = viewModel.validateAddress(locationName)
-
-                        if (nameError is Result.Ok && addressError is Result.Ok) {
-                            onCreated(viewModel.newLocation(Location(locationName, locationAddress)))
-                            onDismiss()
-                        }
-                    },
-                    icon = { Icon(painterResource(R.drawable.check_24px), null) },
-                    text = { Text("Submit") },
-                )
-            }
-        }
+    @Composable
+    fun TextField(
+        label: String,
+        modifier: Modifier = Modifier,
+        value: String,
+        onValueChange: (String) -> Unit,
+        error: Result<Unit>,
+        suggestedValues: Result<Set<String>>?,
     ) {
-        @Composable
-        fun Field(
-            modifier: Modifier = Modifier,
-            label: String,
-            value: String,
-            onValueChange: (String) -> Unit,
-            error: Result<Unit>,
-            suggestedValues: Result<Set<String>>?,
+        var shouldShowMenu by remember { mutableStateOf(false) }
+        val expanded = shouldShowMenu
+                && value.isNotEmpty()
+                && suggestedValues?.run { this is Result.Err || isOkAnd { it.isNotEmpty() } }
+                ?: true // Show a loading menu if null
+
+        ExposedDropdownMenuBox(
+            modifier = modifier,
+            expanded = expanded,
+            onExpandedChange = { shouldShowMenu = it },
         ) {
-            var shouldShowMenu by remember { mutableStateOf(false) }
-            val expanded = shouldShowMenu
-                    && value.isNotEmpty()
-                    && suggestedValues?.run { this is Result.Err || isOkAnd { it.isNotEmpty() } }
-                    ?: true // Show a loading menu if null
-
-            ExposedDropdownMenuBox(
-                modifier = modifier,
-                expanded = expanded,
-                onExpandedChange = { shouldShowMenu = it },
-            ) {
-                TextField(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
-                        .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
-                    label = { Text(label) },
-                    colors = TextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                    value = value,
-                    onValueChange = onValueChange,
-                    isError = error is Result.Err,
-                    supportingText = if (error is Result.Err) {{
-                        Text(error.error.message!!)
-                    }} else null,
-                )
-
-                ExposedDropdownMenu(
-                    modifier = Modifier
-                        .hideDropdownMenuPadding()
-                        .heightIn(max = menuMaxHeight),
-                    expanded = expanded,
-                    onDismissRequest = { shouldShowMenu = false },
-                    matchAnchorWidth = false,
-                    shape = menuShape,
-                ) {
-                    when (suggestedValues) {
-                        is Result.Ok -> suggestedValues.value.forEach { suggestedValue ->
-                            DropdownMenuItem(
-                                modifier = menuItemModifier,
-                                text = { Text(suggestedValue) },
-                                onClick = {
-                                    onValueChange(suggestedValue)
-                                    shouldShowMenu = false
-                                }
-                            )
-                        }
-                        is Result.Err -> {
-                            val type = suggestedValues.error.javaClass.name
-                            val msg = suggestedValues.error.message
-
-                            MenuErrorItem(type = type, message = msg)
-                        }
-                        null -> MenuLoadingItem()
-                    }
-                }
-            }
-        }
-
-        @Composable
-        fun getSuggestedItems(
-            query: String,
-            map: (DbEntry<Location>) -> String
-        ) = rememberWork(query) {
-            // Use Set; only allow a single instance of an item to exist.
-            val set = mutableSetOf<String>()
-            var start = 0u
-
-            while (set.size < maxMenuItems.toInt()) {
-                val page = viewModel.locationsPage(query, start, maxMenuItems)
-                if (page.isEmpty()) {
-                    break
-                }
-                set.addAll(page
-                    .map(map)
-                    .filter { it.contains(query) }
-                )
-                start += maxMenuItems
-            }
-
-            set as Set<String>
-        }
-
-        val suggestedNames by getSuggestedItems(locationName) { item -> item.data.name }
-
-        val suggestedAddresses by getSuggestedItems(locationAddress) { item -> item.data.address }
-
-        Field(
-            label = "Name",
-            value = locationName,
-            onValueChange = {
-                locationName = it
-                nameError = viewModel.validateName(it)
-            },
-            error = nameError,
-            suggestedValues = suggestedNames,
-        )
-
-        Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val spacing = 4.dp
-            val unevenPadding = PaddingValues(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
-
-            Field(
+            TextField(
                 modifier = Modifier
-                    .weight(1.0f)
-                    .padding(end = spacing),
-                label = "Address",
-                value = locationAddress,
-                onValueChange = {
-                    locationAddress = it
-                    addressError = viewModel.validateAddress(it)
-                },
-                error = addressError,
-                suggestedValues = suggestedAddresses,
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                    .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
+                label = { Text(label) },
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                value = value,
+                onValueChange = onValueChange,
+                isError = error is Result.Err,
+                supportingText = if (error is Result.Err) {{
+                    Text(error.error.message!!)
+                }} else null,
             )
 
-            PlainToolTipBox("Select suggested nearby addresses") {
-                FilledIconButton(
-                    onClick = { TODO() },
-                    modifier = Modifier.size(TextFieldDefaults.MinHeight),
-                    shape = halfRoundedCornerShape(Corner.Left),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryFixed,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryFixed,
+            ExposedDropdownMenu(
+                modifier = Modifier
+                    .hideDropdownMenuPadding()
+                    .heightIn(max = menuMaxHeight),
+                expanded = expanded,
+                onDismissRequest = { shouldShowMenu = false },
+                matchAnchorWidth = false,
+                shape = menuShape,
+            ) {
+                when (suggestedValues) {
+                    is Result.Ok -> suggestedValues.value.forEach { suggestedValue ->
+                        DropdownMenuItem(
+                            modifier = menuItemModifier,
+                            text = { Text(suggestedValue) },
+                            onClick = {
+                                onValueChange(suggestedValue)
+                                shouldShowMenu = false
+                            }
+                        )
+                    }
+                    is Result.Err -> {
+                        val type = suggestedValues.error.javaClass.name
+                        val msg = suggestedValues.error.message
+
+                        MenuErrorItem(type = type, message = msg)
+                    }
+                    null -> MenuLoadingItem()
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun getSuggestedItems(
+        query: String,
+        map: (DbEntry<Location>) -> String
+    ) = rememberWork(query) {
+        // Use Set; only allow a single instance of an item to exist.
+        val set = mutableSetOf<String>()
+        var start = 0u
+
+        while (set.size < maxMenuItems.toInt()) {
+            val page = viewModel.locationsPage(query, start, maxMenuItems)
+            if (page.isEmpty()) {
+                break
+            }
+            set.addAll(page
+                .map(map)
+                .filter { it.contains(query, ignoreCase = true) }
+            )
+            start += maxMenuItems
+        }
+
+        set as Set<String>
+    }
+
+    @Suppress("AssignedValueIsNeverRead")
+    if (showNearbyDialog) {
+        NearbyLocationsDialog(
+            modifier = modifier,
+            viewModel = viewModel,
+            mode = NearbyDialogMode.Addresses,
+            onDismiss = { showNearbyDialog = false },
+        )
+    } else {
+        ActionDialog(
+            modifier = modifier,
+            onDismiss = onDismiss,
+            title = {
+                Text("New location",
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            },
+            actions = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+
+                PlainToolTipBox("Submit new location") {
+                    FilledTextIconButton(
+                        onClick = {
+                            nameError = viewModel.validateName(locationName)
+                            addressError = viewModel.validateAddress(locationName)
+
+                            if (nameError is Result.Ok && addressError is Result.Ok) {
+                                onCreated(viewModel.newLocation(Location(locationName, locationAddress)))
+                                onDismiss()
+                            }
+                        },
+                        icon = { Icon(painterResource(R.drawable.check_24px), null) },
+                        text = { Text("Submit") },
                     )
-                ) {
-                    Icon(painterResource(R.drawable.location_on_24px), null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(unevenPadding)
-                    )
+                }
+            }
+        ) {
+            val suggestedNames by getSuggestedItems(locationName) { item -> item.data.name }
+            val suggestedAddresses by getSuggestedItems(locationAddress) { item -> item.data.address }
+
+            TextField("Name",
+                value = locationName,
+                onValueChange = {
+                    locationName = it
+                    nameError = viewModel.validateName(it)
+                },
+                error = nameError,
+                suggestedValues = suggestedNames,
+            )
+
+            Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val spacing = 4.dp
+                val unevenPadding = PaddingValues(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
+
+                TextField("Address",
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .padding(end = spacing),
+                    value = locationAddress,
+                    onValueChange = {
+                        locationAddress = it
+                        addressError = viewModel.validateAddress(it)
+                    },
+                    error = addressError,
+                    suggestedValues = suggestedAddresses,
+                )
+
+                PlainToolTipBox("Select suggested nearby addresses") {
+                    FilledIconButton(
+                        onClick = { showNearbyDialog = true },
+                        modifier = Modifier.size(TextFieldDefaults.MinHeight),
+                        shape = halfRoundedCornerShape(Corner.Left),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryFixed,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryFixed,
+                        )
+                    ) {
+                        Icon(painterResource(R.drawable.location_on_24px), null,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(unevenPadding)
+                        )
+                    }
                 }
             }
         }
@@ -674,7 +709,10 @@ fun NearbyLocationsDialog(
     ActionDialog(
         modifier = modifier,
         onDismiss = onDismiss,
-        title = { Text("Nearby locations") },
+        title = { Text("Nearby ${when (mode) {
+            NearbyDialogMode.FullLocations -> "locations"
+            NearbyDialogMode.Addresses -> "addresses"
+        }}") },
         actions = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
@@ -693,6 +731,7 @@ fun NearbyLocationsDialog(
         },
     ) {
         // TODO:
+        Text("TODO: Not yet implemented")
     }
 }
 
