@@ -141,7 +141,7 @@ fun NewTransactionForm(
                 trailingIcon = {
                     PlainToolTipBox("Select Date") {
                         IconButton(onClick = { dialogState = DialogState.DatePicker }) {
-                            Icon(painterResource(R.drawable.date_range_24px), "Select Date")
+                            Icon(painterResource(R.drawable.date_range_24px), null)
                         }
                     }
                 },
@@ -377,11 +377,10 @@ fun CurrencySelectorButton(
     // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
     val localeCurrency = remember(locale) { Currency.getInstance(locale) }
 
-    PlainToolTipBox("Change currency") {
+    PlainToolTipBox("Select currency") {
         TextButton(
             modifier = modifier.padding(start = 8.dp)
                 .semantics {
-                    contentDescription = "Select currency"
                     stateDescription = "${selectedCurrency.currencyCode} ${selectedCurrency.displayName}"
                 },
             onClick = { onMenuStateChange(!showCurrencyMenu) },
@@ -514,7 +513,7 @@ fun CurrencySelectorButton(
             PlainToolTipBox(currency.displayName) {
                 this.MenuItem(
                     // Apply a scrim color for the one that is selected.
-                    modifier = Modifier.semantics { contentDescription = currency.displayName }
+                    modifier = Modifier
                         .run { if (currency == selectedCurrency) {
                             background(MaterialTheme.colorScheme.surfaceDim)
                         } else this },
@@ -535,12 +534,11 @@ fun CurrencySelectorButton(
         }
 
         this.item(key = "DELETE") {
-            PlainToolTipBox("Clear list of recent currencies to reset the list to its original state") {
+            PlainToolTipBox("Clear recents history") {
                 this.MenuItem(
                     leadingIcon = {
                         Icon(
-                            painterResource(R.drawable.close_24px),
-                            "Clear recents",
+                            painterResource(R.drawable.close_24px), null,
                             tint = MaterialTheme.colorScheme.error,
                         )
                     },

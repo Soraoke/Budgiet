@@ -226,7 +226,7 @@ fun RowScope.LocationField(
             onClick = { TODO() },
             shape = halfRoundedCornerShape(Corner.Left)
         ) {
-            Icon(painterResource(R.drawable.location_on_24px), "Auto-select Location")
+            Icon(painterResource(R.drawable.location_on_24px), null)
         }
     }
 }
@@ -326,7 +326,7 @@ private fun LocationSearchDialog(
             PlainToolTipBox("Add new location") {
                 FilledTextIconButton(
                     onClick = onNewClick,
-                    icon = { Icon(painterResource(R.drawable.add_24px), "New Location") },
+                    icon = { Icon(painterResource(R.drawable.add_24px), null) },
                     text = { Text("New") },
                 )
             }
@@ -489,7 +489,7 @@ private fun NewLocationDialog(
                             onDismiss()
                         }
                     },
-                    icon = { Icon(painterResource(R.drawable.check_24px), "Submit") },
+                    icon = { Icon(painterResource(R.drawable.check_24px), null) },
                     text = { Text("Submit") },
                 )
             }
@@ -598,7 +598,7 @@ private fun NewLocationDialog(
                     )
                 ) {
                     Icon(painterResource(R.drawable.location_on_24px),
-                        "Auto-detect Address",
+                        null,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp)

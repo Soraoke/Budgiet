@@ -68,6 +68,8 @@ import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -183,9 +185,12 @@ fun TextIconButton(
  * When the user activates the [PlainTooltip] (i.e. by long-pressing the **content**),
  * the **text** passed in will pup up with a box around it.
  *
- * @param text The text that will be displayed as the content of the anchor.
+ * @param text The text that will be displayed as the content of the *tooltip*.
  * @param positioning Where the **tooltip** should be placed relative to the [content] anchor.
  * @param spacing The amount of space between the **tooltip** and the [content].
+ * @param setContentDescription Adds a [ContentDescription][androidx.compose.ui.semantics.SemanticsPropertyReceiver.contentDescription]
+ *   [Modifier] to the [TooltipBox] using the **[text]** argument.
+ *   This is so that you can leave **contentDescription** as `null` for icons and such that are in the [TooltipBox][PlainToolTipBox].
  * @param dialogPosition The position of the first *window* that was created within the app's screen.
  *   This argument is only necessary if this composable is called from a
  *   [Popup][androidx.compose.ui.window.Popup] or [DropdownMenu][androidx.compose.material3.DropdownMenu] that is within a [Dialog][Dialog],
@@ -215,11 +220,14 @@ fun PlainToolTipBox(
     modifier: Modifier = Modifier,
     positioning: TooltipAnchorPosition = TooltipAnchorPosition.Above,
     spacing: Dp = TOOLTIP_ANCHOR_SPACING,
+    setContentDescription: Boolean = true,
     dialogPosition: IntOffset? = null,
     content: @Composable (() -> Unit)
 ) {
     TooltipBox(
-        modifier = modifier,
+        modifier = modifier.run { if (setContentDescription) {
+            semantics { contentDescription = text }
+        } else this },
         positionProvider = if (dialogPosition == null) {
             TooltipDefaults.rememberTooltipPositionProvider(
                 positioning = positioning,

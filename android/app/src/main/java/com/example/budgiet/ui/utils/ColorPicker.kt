@@ -134,7 +134,7 @@ fun ColorPickerButton(
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceDim,
                 )
             ) {
-                Icon(painterResource(R.drawable.colors_24px), "Change tag color")
+                Icon(painterResource(R.drawable.colors_24px), null)
             }
         }
 
@@ -184,12 +184,14 @@ fun ColorPickerButton(
                  */
                 extraOnClick: (() -> Unit)? = null,
             ) {
+                val colorStr = "#${color.rgbToHex()}"
                 PlainToolTipBox(
-                    text = "#${color.rgbToHex()}",
+                    text = colorStr,
+                    setContentDescription = false,
                     dialogPosition = parentDialogOffset,
                 ) {
                     Box(modifier
-                        .semantics { this.stateDescription = color.rgbToHex() }
+                        .semantics { this.stateDescription = colorStr }
                         .itemModifier(color, true)
                         .clickable {
                             onColorChange(color)
@@ -238,7 +240,7 @@ fun ColorPickerButton(
                                 .clickable { showColorPickerDialog = true },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(painterResource(R.drawable.add_24px), "Add new color")
+                            Icon(painterResource(R.drawable.add_24px), null)
                         }
                     }
                 }
