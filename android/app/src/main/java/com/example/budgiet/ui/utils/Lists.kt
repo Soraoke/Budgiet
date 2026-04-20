@@ -445,12 +445,12 @@ fun ListColumn(
     val itemHeight = remember { mutableStateOf<Dp?>(null) }
     // Get the height of the first item in the list to determine the size of the whole List widget.
     val listMaxHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * visibleItems + dividerThickness * 3
-    val listMinHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * 1.25f + dividerThickness
+//    val listMinHeight = (itemHeight.value ?: LIST_ITEM_DEFAULT_HEIGHT) * 1.25f + dividerThickness
 
     LazyColumn(
         // List's height should be conscious of its items' and dividers' heights.
         modifier = modifier
-            .heightIn(min = listMinHeight, max = listMaxHeight)
+            .heightIn(max = listMaxHeight)
             .clip(shape),
         state = state,
         contentPadding = contentPadding,
@@ -504,40 +504,53 @@ class LazyMenuItemScope internal constructor(
     }
 
     @Composable
-    override fun LoadingItem(modifier: Modifier, progressIndicator: @Composable () -> Unit) {
-        DropdownMenuItem(
-            modifier = modifier
-                .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
-                .widthIn(min = this.itemWidth ?: MENU_ITEM_DEFAULT_WIDTH),
-            text = { Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                progressIndicator()
-            } },
-            onClick = { }
+    override fun LoadingItem(modifier: Modifier, progressIndicator: @Composable () -> Unit)
+        = MenuLoadingItem(modifier = modifier
+            .heightIn(min = this.itemHeight ?: LIST_ITEM_DEFAULT_HEIGHT)
+            .widthIn(min = this.itemWidth ?: MENU_ITEM_DEFAULT_WIDTH)
         )
-    }
     @Composable
-    override fun ErrorItem(modifier: Modifier, type: String, message: String?) {
-        val color = MaterialTheme.colorScheme.error
-        DropdownMenuItem(
-            // This item does not need to be resized,
-            // but it should also not set the List height because it has an irregular size due to the error message.
-            modifier = modifier,
-            leadingIcon = { Icon(
-                painterResource(R.drawable.error_24px),
-                "Error",
-                tint = color,
-            ) },
-            text = { Column {
-                Text("Error: $type", color = color, style = MaterialTheme.typography.labelLarge)
-                message?.let { Text(message, color = color) }
-            } },
-            enabled = false,
-            onClick = { }
-        )
-    }
+    override fun ErrorItem(modifier: Modifier, type: String, message: String?)
+        = MenuErrorItem(modifier, type, message)
+}
+
+@Composable
+fun MenuLoadingItem(modifier: Modifier = Modifier, progressIndicator: @Composable () -> Unit = { CircularProgressIndicator() }) {
+    DropdownMenuItem(
+        modifier = modifier,
+        text = { Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            progressIndicator()
+        } },
+        enabled = false,
+        onClick = { },
+    )
+}
+
+@Composable
+fun MenuErrorItem(modifier: Modifier = Modifier, type: String, message: String? = null) {
+    val color = MaterialTheme.colorScheme.error
+    DropdownMenuItem(
+        // This item does not need to be resized,
+        // but it should also not set the List height because it has an irregular size due to the error message.
+        modifier = modifier,
+        leadingIcon = { Icon(
+            painterResource(R.drawable.error_24px),
+            "Error",
+            tint = color,
+        ) },
+        text = { Column {
+            Text("Error: $type" + if (message != null) ": " else "",
+                color = color,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            message?.let { Text(message, color = color) }
+        } },
+        enabled = false,
+        onClick = { },
+    )
 }
 
 /** A [DropdownMenu] that can hold a *list* of items and *lazily* display only the items that will be visible.

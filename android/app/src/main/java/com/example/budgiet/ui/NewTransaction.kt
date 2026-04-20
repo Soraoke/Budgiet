@@ -51,7 +51,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
@@ -120,7 +119,7 @@ class NewTransactionViewModel: ViewModel() {
 }
 
 private enum class DialogState {
-    None, DatePicker, LocationPicker, TagsPicker;
+    None, DatePicker, LocationPicker, NearbyLocationsPicker, TagsPicker;
 }
 @Composable
 fun NewTransactionForm(
@@ -150,7 +149,8 @@ fun NewTransactionForm(
         FormField("Location") {
             LocationField(
                 viewModel = viewModel.location,
-                onClick = { dialogState = DialogState.LocationPicker },
+                onClickSelect = { dialogState = DialogState.LocationPicker },
+                onClickNearby = { dialogState = DialogState.NearbyLocationsPicker },
             )
         }
         FormField("Price") {
@@ -204,6 +204,10 @@ fun NewTransactionForm(
             onSubmit = { viewModel.date = it },
         )
         DialogState.LocationPicker -> LocationPickerDialog(
+            viewModel = viewModel.location,
+            onDismiss = dialogDismiss,
+        )
+        DialogState.NearbyLocationsPicker -> NearbyLocationsDialog(
             viewModel = viewModel.location,
             onDismiss = dialogDismiss,
         )

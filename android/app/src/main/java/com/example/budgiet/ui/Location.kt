@@ -64,9 +64,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.R
 import com.example.budgiet.Result
-import com.example.budgiet.into
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
+import com.example.budgiet.rememberWork
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
@@ -74,6 +74,8 @@ import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
+import com.example.budgiet.ui.utils.MenuErrorItem
+import com.example.budgiet.ui.utils.MenuLoadingItem
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
@@ -124,13 +126,21 @@ class LocationViewModel: ViewModel() {
             .entries.toList()
             .map { DbEntry(it.key, it.value) }
             .run { if (query != null) {
-                filter {
-                    it.data.name.contains(query)
-                            || it.data.address.contains(query)
+                val filtered = filter {
+                    it.data.name.contains(query, ignoreCase = true)
+                }.toMutableList()
+                if (filtered.size < len.toInt()) {
+                    filtered.addAll(this.filter {
+                        it.data.address.contains(query, ignoreCase = true)
+                    })
                 }
+                filtered
             } else this }
 
-        return list.subList(start.toInt(), min((start + len).toInt(), list.size))
+        val toIdx = min((start + len).toInt(), list.size)
+        val fromIdx = min(start.toInt(), toIdx)
+        // TODO: sort by recents
+        return list.subList(fromIdx, toIdx)
 
         // TODO: real impl
     }
@@ -196,20 +206,23 @@ class LocationViewModel: ViewModel() {
  *  1. Displays the *currently selected [Location]* and opens the [LocationPickerDialog].
  *  2. To search from [nearbyLocations][LocationViewModel.nearbyLocations].
  *
- * @param onClick The action that runs when the first button is *clicked*.
- *   This action should open the [LocationPickerDialog]. */
+ * @param onClickSelect The action that runs when the *"Select location"* button is *clicked*.
+ *   This action should open the [LocationPickerDialog].
+ * @param onClickNearby The action that runs when the *"Nearby locations"* button is *clicked*.
+ *   This action should open the [NearbyLocationsDialog]. */
 @Suppress("UnusedReceiverParameter")
 @Composable
 fun RowScope.LocationField(
     viewModel: LocationViewModel,
-    onClick: () -> Unit,
+    onClickSelect: () -> Unit,
+    onClickNearby: () -> Unit,
 ) {
     FilledTonalButton(
         modifier = Modifier.semantics {
             contentDescription = "Select location"
             stateDescription = viewModel.selectedLocation?.data?.name ?: "None selected"
         },
-        onClick = onClick,
+        onClick = onClickSelect,
         // Modify the shape on the left-side of the button to connect with the auto-select location button.
         shape = halfRoundedCornerShape(Corner.Right),
     ) {
@@ -221,9 +234,9 @@ fun RowScope.LocationField(
             }
         )
     }
-    PlainToolTipBox("Auto-select Location") {
+    PlainToolTipBox("Nearby locations") {
         FilledIconButton(
-            onClick = { TODO() },
+            onClick = onClickNearby,
             shape = halfRoundedCornerShape(Corner.Left)
         ) {
             Icon(painterResource(R.drawable.location_on_24px), null)
@@ -238,7 +251,7 @@ fun LocationPickerDialog(
     onDismiss: () -> Unit,
 ) {
     var showNewLocationDialog by remember { mutableStateOf(false) }
-    var newLocationAdded by remember { mutableStateOf(false) }
+    var newLocationId by remember { mutableStateOf<UInt?>(null) }
 
     @Suppress("AssignedValueIsNeverRead")
     if (showNewLocationDialog) {
@@ -246,7 +259,7 @@ fun LocationPickerDialog(
             modifier = modifier,
             viewModel = viewModel,
             onDismiss = { showNewLocationDialog = false },
-            onSubmit = { newLocationAdded = true },
+            onCreated = { newLocationId = it.id },
         )
     } else {
         LocationSearchDialog(
@@ -255,7 +268,7 @@ fun LocationPickerDialog(
             onDismiss = onDismiss,
             onSubmit = { viewModel.selectedLocation = it },
             onNewClick = { showNewLocationDialog = true },
-            newLocationAdded = newLocationAdded,
+            newLocationId = newLocationId,
         )
     }
 }
@@ -268,14 +281,14 @@ fun LocationPickerDialog(
  * @param onSubmit The action that runs when the user clicks the `"Submit"` button.
  *   Passes the [Location] and its **ID** as the argument.
  *   This action should set the [selectedLocation][LocationViewModel.selectedLocation].
- * @param newLocationAdded When a new [Location] item was added to the list of locations,
- *   The first item in the list of *Recents* will have an *animated scrim* to indicate that that item was just added.
+ * @param newLocationId When a new [Location] item was added to the list of locations,
+ *   that item (by ID) in the list of *Recents* will have an *animated scrim* to indicate that it was just added.
  * @param onNewClick The action to run when the `"New Location"` button is clicked.  */
 @Composable
 private fun LocationSearchDialog(
     modifier: Modifier = Modifier,
     viewModel: LocationViewModel,
-    newLocationAdded: Boolean = false,
+    newLocationId: UInt? = null,
     onDismiss: () -> Unit,
     onSubmit: (DbEntry<Location>) -> Unit,
     onNewClick: () -> Unit,
@@ -286,6 +299,7 @@ private fun LocationSearchDialog(
     val scrimColor = MaterialTheme.colorScheme.secondaryContainer
     val pageSize = ceil(searchColumnSize).toUInt() * 3u
     val searchState = rememberTextFieldState()
+    var animateNewItemScrim by remember(newLocationId) { mutableStateOf(newLocationId != null) }
 
     val searchPager = rememberQueryListPager(
         queryState = searchState,
@@ -334,12 +348,11 @@ private fun LocationSearchDialog(
     ) {
         AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
             @Composable
-            fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, animateScrim: Boolean = false) {
-                var runAnimation by remember { mutableStateOf(animateScrim) }
-                val containerColor = if (runAnimation) {
+            fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, isNew: Boolean = false) {
+                val containerColor = if (isNew && animateNewItemScrim) {
                     LaunchedEffect(Unit) {
                         delay(scrimAnimationDuration.toLong())
-                        runAnimation = false
+                        animateNewItemScrim = false
                     }
                     rememberInfiniteTransition()
                         .animateColor(
@@ -367,6 +380,7 @@ private fun LocationSearchDialog(
                     colors = ListItemDefaults.colors(
                         containerColor = containerColor,
                     ),
+                    // TODO: Highlight/bold the parts of the text that match the search
                     headlineContent = { Text(item.data.name) },
                     supportingContent = { Text(item.data.address) },
                 )
@@ -401,15 +415,11 @@ private fun LocationSearchDialog(
                                 }
                             }
                         } else {
-                            this.pagedItemsIndexed(
+                            this.pagedItems(
                                 pager = recentsPager,
-                                itemKey = { _, item -> item.id.toInt() }, // Why can't use UInt ....
-                            ) { idx, item ->
-                                if (idx == 0) {
-                                    LocationItem(item, newLocationAdded)
-                                } else {
-                                    LocationItem(item)
-                                }
+                                itemKey = { item -> item.id.toInt() }, // Why can't use UInt ....
+                            ) { item ->
+                                LocationItem(item, isNew = item.id == newLocationId)
                             }
                         }
                     }
@@ -430,7 +440,9 @@ private fun LocationSearchDialog(
                             this.pagedItems(
                                 pager = searchPager,
                                 itemKey = { item -> item.id.toInt() },
-                            ) { item -> this.LocationItem(item) }
+                            ) { item ->
+                                this.LocationItem(item)
+                            }
                         }
                     }
                 }
@@ -441,7 +453,7 @@ private fun LocationSearchDialog(
 
 /** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to create.
  *
- * @param onSubmit The action that runs when the user clicks the `"Submit"` button and the [Location] is created.
+ * @param onCreated The action that runs when the user clicks the `"Submit"` button and the [Location] is created.
  *   Note that this composable creates the [Location] automatically with the [viewModel][LocationViewModel],
  *   so the function should not try to add the location itself. */
 @Composable
@@ -449,11 +461,12 @@ private fun NewLocationDialog(
     modifier: Modifier = Modifier,
     viewModel: LocationViewModel,
     onDismiss: () -> Unit,
-    onSubmit: (DbEntry<Location>) -> Unit
+    onCreated: (DbEntry<Location>) -> Unit
 ) {
+    val maxMenuItems = 10u
+    val menuMaxHeight = 150.dp
     val menuShape = MaterialTheme.shapes.medium
     val menuItemPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-    val maxMenuItems = 10u
     val menuItemModifier = Modifier
         .widthIn(min = 0.dp)
         .padding(menuItemPadding)
@@ -485,7 +498,7 @@ private fun NewLocationDialog(
                         addressError = viewModel.validateAddress(locationName)
 
                         if (nameError is Result.Ok && addressError is Result.Ok) {
-                            onSubmit(viewModel.newLocation(Location(locationName, locationAddress)))
+                            onCreated(viewModel.newLocation(Location(locationName, locationAddress)))
                             onDismiss()
                         }
                     },
@@ -502,84 +515,119 @@ private fun NewLocationDialog(
             value: String,
             onValueChange: (String) -> Unit,
             error: Result<Unit>,
+            suggestedValues: Result<Set<String>>?,
         ) {
-            TextField(
-                modifier = modifier.fillMaxWidth(),
-                label = { Text(label) },
-                colors = TextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-                value = value,
-                onValueChange = onValueChange,
-                isError = error is Result.Err,
-                supportingText = if (error is Result.Err) {{
-                    Text(error.error.message!!)
-                }} else null,
-            )
-        }
+            var shouldShowMenu by remember { mutableStateOf(false) }
+            val expanded = shouldShowMenu
+                    && value.isNotEmpty()
+                    && suggestedValues?.run { this is Result.Err || isOkAnd { it.isNotEmpty() } }
+                    ?: true // Show a loading menu if null
 
-        val suggestedNames = remember(locationName) { runCatching {
-            viewModel.locationsPage(locationName, 0u, maxMenuItems)
-                .map { it.data.name }
-                // Only allow a single instance of a name to exist.
-                // Due to the list becoming a set, some items wil be culled,
-                // so the size won't necessarily be the same as maxMenuItems.
-                .toSet()
-        }.into() }
-
-        var shouldShowMenu by remember { mutableStateOf(false) }
-        val expanded = shouldShowMenu
-            && locationName.isNotEmpty()
-            && suggestedNames.isOkAnd { it.isNotEmpty() }
-
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { shouldShowMenu = it },
-        ) {
-            Field(
-                modifier = Modifier
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
-                    .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
-                label = "Name",
-                value = locationName,
-                onValueChange = {
-                    locationName = it
-                    nameError = viewModel.validateName(it)
-                },
-                error = nameError,
-            )
-            ExposedDropdownMenu(
-                modifier = Modifier
-                    .hideDropdownMenuPadding()
-                    .heightIn(max = 150.dp),
+            ExposedDropdownMenuBox(
+                modifier = modifier,
                 expanded = expanded,
-                onDismissRequest = { shouldShowMenu = false },
-                matchAnchorWidth = false,
-                shape = menuShape,
+                onExpandedChange = { shouldShowMenu = it },
             ) {
-                // This is only expanded if suggestedNames is Ok, so it is safe to unwrap.
-                suggestedNames.unwrap().forEach { name ->
-                    DropdownMenuItem(
-                        modifier = menuItemModifier,
-                        text = { Text(name) },
-                        onClick = {
-                            locationName = name
-                            shouldShowMenu = false
+                TextField(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                        .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
+                    label = { Text(label) },
+                    colors = TextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    value = value,
+                    onValueChange = onValueChange,
+                    isError = error is Result.Err,
+                    supportingText = if (error is Result.Err) {{
+                        Text(error.error.message!!)
+                    }} else null,
+                )
+
+                ExposedDropdownMenu(
+                    modifier = Modifier
+                        .hideDropdownMenuPadding()
+                        .heightIn(max = menuMaxHeight),
+                    expanded = expanded,
+                    onDismissRequest = { shouldShowMenu = false },
+                    matchAnchorWidth = false,
+                    shape = menuShape,
+                ) {
+                    when (suggestedValues) {
+                        is Result.Ok -> suggestedValues.value.forEach { suggestedValue ->
+                            DropdownMenuItem(
+                                modifier = menuItemModifier,
+                                text = { Text(suggestedValue) },
+                                onClick = {
+                                    onValueChange(suggestedValue)
+                                    shouldShowMenu = false
+                                }
+                            )
                         }
-                    )
+                        is Result.Err -> {
+                            val type = suggestedValues.error.javaClass.name
+                            val msg = suggestedValues.error.message
+
+                            MenuErrorItem(type = type, message = msg)
+                        }
+                        null -> MenuLoadingItem()
+                    }
                 }
             }
         }
 
+        @Composable
+        fun getSuggestedItems(
+            query: String,
+            map: (DbEntry<Location>) -> String
+        ) = rememberWork(query) {
+            // Use Set; only allow a single instance of an item to exist.
+            val set = mutableSetOf<String>()
+            var start = 0u
+
+            while (set.size < maxMenuItems.toInt()) {
+                val page = viewModel.locationsPage(query, start, maxMenuItems)
+                if (page.isEmpty()) {
+                    break
+                }
+                set.addAll(page
+                    .map(map)
+                    .filter { it.contains(query) }
+                )
+                start += maxMenuItems
+            }
+
+            set as Set<String>
+        }
+
+        val suggestedNames by getSuggestedItems(locationName) { item -> item.data.name }
+
+        val suggestedAddresses by getSuggestedItems(locationAddress) { item -> item.data.address }
+
+        Field(
+            label = "Name",
+            value = locationName,
+            onValueChange = {
+                locationName = it
+                nameError = viewModel.validateName(it)
+            },
+            error = nameError,
+            suggestedValues = suggestedNames,
+        )
+
         Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            val spacing = 4.dp
+            val unevenPadding = PaddingValues(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
+
             Field(
                 modifier = Modifier
                     .weight(1.0f)
-                    .padding(end = 8.dp),
+                    .padding(end = spacing),
                 label = "Address",
                 value = locationAddress,
                 onValueChange = {
@@ -587,25 +635,64 @@ private fun NewLocationDialog(
                     addressError = viewModel.validateAddress(it)
                 },
                 error = addressError,
+                suggestedValues = suggestedAddresses,
             )
-            PlainToolTipBox("Get address from GPS coordinates") {
+
+            PlainToolTipBox("Select suggested nearby addresses") {
                 FilledIconButton(
                     onClick = { TODO() },
-                    modifier = Modifier.size(TextFieldDefaults.MinHeight - 4.dp),
+                    modifier = Modifier.size(TextFieldDefaults.MinHeight),
+                    shape = halfRoundedCornerShape(Corner.Left),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primaryFixed,
                         contentColor = MaterialTheme.colorScheme.onPrimaryFixed,
                     )
                 ) {
-                    Icon(painterResource(R.drawable.location_on_24px),
-                        null,
+                    Icon(painterResource(R.drawable.location_on_24px), null,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(8.dp)
+                            .padding(unevenPadding)
                     )
                 }
             }
         }
+    }
+}
+
+enum class NearbyDialogMode {
+    FullLocations, Addresses,
+}
+@Composable
+fun NearbyLocationsDialog(
+    modifier: Modifier = Modifier,
+    viewModel: LocationViewModel,
+    mode: NearbyDialogMode = NearbyDialogMode.FullLocations,
+    onDismiss: () -> Unit,
+) {
+    var selected by remember { mutableStateOf(viewModel.selectedLocation) }
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        title = { Text("Nearby locations") },
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Use selected location") {
+                FilledTextIconButton(
+                    onClick = {
+                        viewModel.selectedLocation = selected
+                        onDismiss()
+                    },
+                    icon = { Icon(painterResource(R.drawable.check_24px), null) },
+                    text = { Text("Done") },
+                )
+            }
+        },
+    ) {
+        // TODO:
     }
 }
 
@@ -617,22 +704,10 @@ fun LocationFieldPreview() {
             viewModel = viewModel<LocationViewModel>().apply {
                 useAlternativeLocations(FAKE_LOCATIONS)
             },
-            onClick = { },
+            onClickSelect = { },
+            onClickNearby = { },
         )
     } }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun LocationPickerEmptyPreview() {
-    BudgietTheme {
-        LocationSearchDialog(
-            viewModel = viewModel<LocationViewModel>(),
-            onDismiss = { },
-            onSubmit = { },
-            onNewClick = { }
-        )
-    }
 }
 
 @Preview(showBackground = true)
@@ -659,7 +734,33 @@ private fun NewLocationPreview() {
                 useAlternativeLocations(FAKE_LOCATIONS)
             },
             onDismiss = { },
-            onSubmit = { _ -> }
+            onCreated = { _ -> }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun NearbyLocationsPreview() {
+    BudgietTheme {
+        NearbyLocationsDialog(
+            viewModel = viewModel<LocationViewModel>().apply {
+                useAlternativeLocations(FAKE_LOCATIONS)
+            },
+            onDismiss = { },
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LocationPickerEmptyPreview() {
+    BudgietTheme {
+        LocationSearchDialog(
+            viewModel = viewModel<LocationViewModel>(),
+            onDismiss = { },
+            onSubmit = { },
+            onNewClick = { }
         )
     }
 }
