@@ -10,8 +10,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -76,6 +77,7 @@ import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.FilledTextIconButton
+import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.ListColumnItemScope
 import com.example.budgiet.ui.utils.MenuErrorItem
@@ -172,17 +174,40 @@ class LocationViewModel: ViewModel() {
     }
 
     fun editLocation(id: UInt, newData: Location) {
-        // TODO: update locations loaded in pager
-        TODO()
+        this.fakeDb.replace(id, newData)
         // TODO: real impl
+
+        // Update selected location.
+        if (this.selectedLocation?.let { id == it.id } ?: false) {
+            this.selectedLocation = DbEntry(id, newData)
+        }
     }
 
     fun deleteLocation(id: UInt) {
         this.fakeDb.remove(id)
         // TODO: real impl
+
+        // Update selected location.
+        if (this.selectedLocation?.let { id == it.id } ?: false) {
+            this.selectedLocation = null
+        }
     }
 
-    fun validateName(name: String, isNewLocation: Boolean = true): Result<Unit> {
+    /** Returns an Error if the [Location] could not be submitted.
+     *
+     *  Note that this function *does not* check if the [**name**][Location.name] or [**address**][Location.address] are valid data.
+     *  This should be checked with [validateName] and [validateAddress] respectively. */
+    fun validateData(data: Location): Result<Unit> {
+        val msg = if (this.fakeDb.containsValue(data)) {
+            "A location with this name and address already exists"
+        } else {
+            null
+        }
+
+        return msg?.let { Result.Err(Exception(msg)) }
+            ?: Result.Ok(Unit)
+    }
+    fun validateName(name: String): Result<Unit> {
         val msg = if (name.isEmpty()) {
             "Name must not be empty"
         } else {
@@ -192,7 +217,7 @@ class LocationViewModel: ViewModel() {
         return msg?.let { Result.Err(Exception(msg)) }
             ?: Result.Ok(Unit)
     }
-    fun validateAddress(address: String, isNewLocation: Boolean = true): Result<Unit> {
+    fun validateAddress(address: String): Result<Unit> {
         val msg = if (address.isEmpty()) {
             "Address must not be empty"
         } else {
@@ -255,15 +280,26 @@ fun LocationPickerDialog(
     onDismiss: () -> Unit,
 ) {
     var showNewLocationDialog by remember { mutableStateOf(false) }
+    /** Stores the [Location] that is being edited (only if the dialog should edit an existing location, not create a new one). */
+    var editLocation by remember { mutableStateOf<DbEntry<Location>?>(null) }
     var newLocationId by remember { mutableStateOf<UInt?>(null) }
 
     @Suppress("AssignedValueIsNeverRead")
     if (showNewLocationDialog) {
-        NewLocationDialog(
+        LocationEditorDialog(
             modifier = modifier,
+            location = editLocation?.data,
             viewModel = viewModel,
-            onDismiss = { showNewLocationDialog = false },
-            onCreated = { newLocationId = it.id },
+            onDismiss = {
+                showNewLocationDialog = false
+                editLocation = null
+            },
+            onSubmit = { newLocationId = editLocation?.let { editLoc ->
+                viewModel.editLocation(editLoc.id, it)
+                editLoc.id
+            } ?: run {
+                viewModel.newLocation(it).id
+            } },
         )
     } else {
         LocationSearchDialog(
@@ -272,6 +308,10 @@ fun LocationPickerDialog(
             onDismiss = onDismiss,
             onSubmit = { viewModel.selectedLocation = it },
             onNewClick = { showNewLocationDialog = true },
+            onEditClick = {
+                showNewLocationDialog = true
+                editLocation = it
+            },
             newLocationId = newLocationId,
         )
     }
@@ -287,7 +327,10 @@ fun LocationPickerDialog(
  *   This action should set the [selectedLocation][LocationViewModel.selectedLocation].
  * @param newLocationId When a new [Location] item was added to the list of locations,
  *   that item (by ID) in the list of *Recents* will have an *animated scrim* to indicate that it was just added.
- * @param onNewClick The action to run when the `"New Location"` button is clicked.  */
+ * @param onNewClick The action to run when the `"New Location"` button is clicked.
+ *   This should show the [LocationEditorDialog] for creating a *new* [Location].
+ * @param onEditClick The action to run when the `"Edit"` button is clicked from a Location's [ItemActionsMenu].
+ *   Like [onNewClick], this should show the [LocationEditorDialog] for editing the [Location] in the argument. */
 @Composable
 private fun LocationSearchDialog(
     modifier: Modifier = Modifier,
@@ -296,13 +339,15 @@ private fun LocationSearchDialog(
     onDismiss: () -> Unit,
     onSubmit: (DbEntry<Location>) -> Unit,
     onNewClick: () -> Unit,
+    onEditClick: (DbEntry<Location>) -> Unit,
 ) {
     val searchColumnSize = 3.5f
-    val scrimAnimationSpeed = 250 // In millis
-    val scrimAnimationDuration = scrimAnimationSpeed * 5 // Repeat n times; In millis
+    val newItemAnimationSpeed = 250 // In millis
+    val newItemAnimationDuration = newItemAnimationSpeed * 5 // Repeat n times; In millis
     val scrimColor = MaterialTheme.colorScheme.secondaryContainer
     val pageSize = ceil(searchColumnSize).toUInt() * 3u
     val searchState = rememberTextFieldState()
+    /** Animation is reset when the newLocation value is modified. */
     var animateNewItemScrim by remember(newLocationId) { mutableStateOf(newLocationId != null) }
 
     val searchPager = rememberQueryListPager(
@@ -321,6 +366,91 @@ private fun LocationSearchDialog(
         // Cancel pending page loading jobs.
         searchState.clearText()
         searchPager.refresh()
+    }
+
+    @Composable
+    fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, query: CharSequence? = null, isNew: Boolean = false) {
+        val defaultContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        val newItemAnimatedColor = if (isNew && animateNewItemScrim) {
+            LaunchedEffect(Unit) {
+                delay(newItemAnimationDuration.toLong())
+                animateNewItemScrim = false
+            }
+            rememberInfiniteTransition()
+                .animateColor(
+                    initialValue = defaultContainerColor,
+                    targetValue = scrimColor,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(newItemAnimationSpeed),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                )
+                .value
+        } else {
+            null
+        }
+
+        /** Creates an [AnnotatedString] that highlights (**emboldens**) substring instances of the **`query`** in the **`text`**.
+         *
+         * Does nothing if the **`query`** is `null`. */
+        fun highlightMatches(text: String, query: CharSequence?): AnnotatedString {
+            val instances = Regex(query.toString(), RegexOption.IGNORE_CASE)
+                .findAll(text)
+                .map { it.range.first }
+
+            val spans = if (query != null) {
+                instances.map { idx ->
+                    AnnotatedString.Range(
+                        item = SpanStyle(fontWeight = FontWeight.ExtraBold),
+                        start = idx,
+                        end = idx + query.length,
+                    )
+                }.toList()
+            } else {
+                emptyList()
+            }
+
+            return AnnotatedString(text, spanStyles = spans)
+        }
+
+        var showActionsMenu by rememberSaveable { mutableStateOf(false) }
+
+        Box {
+            DataItem(
+                modifier = Modifier
+                    .semantics {
+                        contentDescription = "${item.data.name} at address ${item.data.address}"
+                    }
+                    .combinedClickable(
+                        onClick = {
+                            onSubmit(item)
+                            close()
+                        },
+                        onLongClick = { showActionsMenu = true }
+                    ),
+                colors = ListItemDefaults.colors(
+                    // Show a scrim
+                    containerColor = if (showActionsMenu) {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    } else if (viewModel.selectedLocation?.let { it.id == item.id } ?: false) {
+                        MaterialTheme.colorScheme.surfaceContainerLowest
+                    } else newItemAnimatedColor
+                    ?: defaultContainerColor,
+                ),
+                headlineContent = { Text(highlightMatches(item.data.name, query)) },
+                supportingContent = { Text(highlightMatches(item.data.address, query)) },
+            )
+            ItemActionsMenu(
+                expanded = showActionsMenu,
+                onDismiss = { showActionsMenu = false },
+                onEditClick = { onEditClick(item) },
+                onDeleteClick = {
+                    viewModel.deleteLocation(item.id)
+                    searchPager.refresh()
+                    recentsPager.refresh()
+                },
+            )
+        }
     }
 
     ActionDialog(
@@ -351,67 +481,6 @@ private fun LocationSearchDialog(
         }
     ) {
         AnimatedContent(searchState.text.isEmpty()) { queryIsEmpty ->
-            @Composable
-            fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, query: CharSequence? = null, isNew: Boolean = false) {
-                val containerColor = if (isNew && animateNewItemScrim) {
-                    LaunchedEffect(Unit) {
-                        delay(scrimAnimationDuration.toLong())
-                        animateNewItemScrim = false
-                    }
-                    rememberInfiniteTransition()
-                        .animateColor(
-                            initialValue = ListItemDefaults.containerColor,
-                            targetValue = scrimColor,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(scrimAnimationSpeed),
-                                repeatMode = RepeatMode.Reverse,
-                            ),
-                        )
-                        .value
-                } else {
-                    ListItemDefaults.containerColor
-                }
-
-                /** Creates an [AnnotatedString] that highlights (**emboldens**) substring instances of the **`query`** in the **`text`**.
-                 *
-                 * Does nothing if the **`query`** is `null`. */
-                fun highlightMatches(text: String, query: CharSequence?): AnnotatedString {
-                    val instances = Regex(query.toString(), RegexOption.IGNORE_CASE)
-                        .findAll(text)
-                        .map { it.range.first }
-
-                    val spans = if (query != null) {
-                        instances.map { idx ->
-                            AnnotatedString.Range(
-                                item = SpanStyle(fontWeight = FontWeight.ExtraBold),
-                                start = idx,
-                                end = idx + query.length,
-                            )
-                        }.toList()
-                    } else {
-                        emptyList()
-                    }
-
-                    return AnnotatedString(text, spanStyles = spans)
-                }
-
-                this.DataItem(
-                    modifier = Modifier
-                        .semantics {
-                            contentDescription = "${item.data.name} at address ${item.data.address}"
-                        }
-                        .clickable(onClick = {
-                            onSubmit(item)
-                            close()
-                        }),
-                    colors = ListItemDefaults.colors(
-                        containerColor = containerColor,
-                    ),
-                    headlineContent = { Text(highlightMatches(item.data.name, query)) },
-                    supportingContent = { Text(highlightMatches(item.data.address, query)) },
-                )
-            }
-
             val emptyListModifier = Modifier
                 .fillMaxWidth()
                 .clip(MaterialTheme.shapes.large)
@@ -477,17 +546,20 @@ private fun LocationSearchDialog(
     }
 }
 
-/** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to create.
+/** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to *edit or create*.
  *
- * @param onCreated The action that runs when the user clicks the `"Submit"` button and the [Location] is created.
- *   Note that this composable creates the [Location] automatically with the [viewModel][LocationViewModel],
- *   so the function should not try to add the location itself. */
+ * @param location The data of the [Location] that is being modified.
+ * @param onSubmit The action that runs when the user clicks the `"Submit"` button and all the data has been validated.
+ *   This provides an argument with the *new* [Location] data.
+ *   This function should call [**newLocation**][LocationViewModel.newLocation] or [**editLocation**][LocationViewModel.editLocation]
+ *   respective to the purpose of this dialog (to edit an existing tag or create a new one). */
 @Composable
-private fun NewLocationDialog(
+private fun LocationEditorDialog(
     modifier: Modifier = Modifier,
+    location: Location?,
     viewModel: LocationViewModel,
     onDismiss: () -> Unit,
-    onCreated: (DbEntry<Location>) -> Unit
+    onSubmit: (Location) -> Unit
 ) {
     val maxMenuItems = 10u
     val menuMaxHeight = 150.dp
@@ -500,10 +572,12 @@ private fun NewLocationDialog(
 
     var showNearbyDialog by rememberSaveable { mutableStateOf(false) }
 
-    var locationName by remember { mutableStateOf("") }
-    var locationAddress by remember { mutableStateOf("") }
-    var nameError by remember { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
-    var addressError by remember { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    var locationName by rememberSaveable(location) { mutableStateOf(location?.name ?: "") }
+    var locationAddress by rememberSaveable(location) { mutableStateOf(location?.address ?: "") }
+    var nameError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    var addressError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    /** Disables the "Submit" button if attempting to submit causes an error. */
+    var submitError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
 
     @Composable
     fun TextField(
@@ -528,8 +602,11 @@ private fun NewLocationDialog(
             TextField(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(TextFieldDefaults.MinHeight)
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
                     .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
+                singleLine = true,
+                maxLines = 1,
                 label = { Text(label) },
                 colors = TextFieldDefaults.colors(
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -623,17 +700,26 @@ private fun NewLocationDialog(
                     Text("Cancel")
                 }
 
+                val canSubmit = {
+                    nameError is Result.Ok && addressError is Result.Ok && submitError is Result.Ok
+                    // Check that changes have been made if editing an existing location.
+                    && (location?.let { it != Location(locationName, locationAddress) } ?: true)
+                }
                 PlainToolTipBox("Submit new location") {
                     FilledTextIconButton(
                         onClick = {
+                            val newData = Location(locationName, locationAddress)
+
                             nameError = viewModel.validateName(locationName)
                             addressError = viewModel.validateAddress(locationName)
+                            submitError = viewModel.validateData(newData)
 
-                            if (nameError is Result.Ok && addressError is Result.Ok) {
-                                onCreated(viewModel.newLocation(Location(locationName, locationAddress)))
+                            if (canSubmit()) {
+                                onSubmit(newData)
                                 onDismiss()
                             }
                         },
+                        enabled = canSubmit(),
                         icon = { Icon(painterResource(R.drawable.check_24px), null) },
                         text = { Text("Submit") },
                     )
@@ -655,7 +741,7 @@ private fun NewLocationDialog(
 
             Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Top) {
                 val spacing = 4.dp
                 val unevenPadding = PaddingValues(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
 
@@ -690,6 +776,14 @@ private fun NewLocationDialog(
                     }
                 }
             }
+
+            Spacer(Modifier.height(ActionDialogPadding.Default.titleSpacerHeight))
+
+            submitError.let { submitStatus -> if (submitStatus is Result.Err) {
+                Text(submitStatus.error.message!!,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } }
         }
     }
 }
@@ -759,7 +853,8 @@ private fun LocationSearchPreview() {
             },
             onDismiss = { },
             onSubmit = { },
-            onNewClick = { }
+            onNewClick = { },
+            onEditClick = { },
         )
     }
 }
@@ -768,12 +863,13 @@ private fun LocationSearchPreview() {
 @Composable
 private fun NewLocationPreview() {
     BudgietTheme {
-        NewLocationDialog(
+        LocationEditorDialog(
+            location = null,
             viewModel = viewModel<LocationViewModel>().apply {
                 useAlternativeLocations(FAKE_LOCATIONS)
             },
             onDismiss = { },
-            onCreated = { _ -> }
+            onSubmit = { _ -> }
         )
     }
 }
@@ -799,7 +895,8 @@ private fun LocationPickerEmptyPreview() {
             viewModel = viewModel<LocationViewModel>(),
             onDismiss = { },
             onSubmit = { },
-            onNewClick = { }
+            onNewClick = { },
+            onEditClick = { },
         )
     }
 }

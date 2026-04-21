@@ -31,11 +31,14 @@ import androidx.compose.material3.CardElevation
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DockedSearchBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SelectableDates
@@ -52,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
@@ -440,6 +444,47 @@ fun ActionDialog(
                 )
             }
         }
+    }
+}
+
+/** A [DropdownMenu] with *options* to **`edit`** and **`delete`** an item from a list (e.g. locations, tags). */
+@Composable
+fun ItemActionsMenu(
+    modifier: Modifier = Modifier,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
+    DropdownMenu(
+        modifier = modifier.padding(horizontal = DROPDOWN_MENU_VERTICAL_PADDING),
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        properties = POPUP_PROPERTIES,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        DropdownMenuItem(
+            modifier = Modifier.clip(MaterialTheme.shapes.medium),
+            text = { Text("Edit") },
+            leadingIcon = { Icon(painterResource(R.drawable.edit), "Edit") },
+            onClick = {
+                onDismiss()
+                onEditClick()
+            },
+        )
+        DropdownMenuItem(
+            modifier = Modifier.clip(MaterialTheme.shapes.medium),
+            text = { Text("Delete") },
+            leadingIcon = { Icon(painterResource(R.drawable.delete_forever), "Delete") },
+            onClick = {
+                onDismiss()
+                onDeleteClick()
+            },
+            colors = MenuDefaults.itemColors(
+                textColor = MaterialTheme.colorScheme.error,
+                leadingIconColor = MaterialTheme.colorScheme.error,
+            ),
+        )
     }
 }
 

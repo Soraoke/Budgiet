@@ -35,8 +35,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -44,7 +42,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,8 +77,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.budgiet.Result
 import com.example.budgiet.R
+import com.example.budgiet.Result
 import com.example.budgiet.UserIcons
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.theme.UserColorPalette
@@ -91,9 +88,8 @@ import com.example.budgiet.ui.utils.BorderStyle
 import com.example.budgiet.ui.utils.ColorPickerButton
 import com.example.budgiet.ui.utils.ColorPickerDialog
 import com.example.budgiet.ui.utils.Corner
-import com.example.budgiet.ui.utils.DROPDOWN_MENU_VERTICAL_PADDING
 import com.example.budgiet.ui.utils.FilledTextIconButton
-import com.example.budgiet.ui.utils.POPUP_PROPERTIES
+import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
@@ -377,7 +373,7 @@ fun TagsPickerDialog(
  *
  * @param onSubmit The action to run when the user clicks the `'Submit'` button.
  *   This provides an argument with the *new* [Tag] data.
- *   This function should call [TagsViewModel.createNewTag] or [TagsViewModel.editTag]
+ *   This function should call [**createNewTag**][TagsViewModel.createNewTag] or [**editTag**][TagsViewModel.editTag]
  *   respective to the purpose of this dialog (to edit an existing tag or create a new one).
  * @param validateNewName A function that checks if a *new or existing* [Tag]
  *   can use the new **name** that the user is trying to assign to it.
@@ -432,12 +428,10 @@ fun TagEditorDialog(
                     Text("Cancel")
                 }
 
-                // Must be a callable function because onClick callback modifies states that this value depends on.
                 val canSubmit = {
-                    nameError == null && iconResource != null && (tag?.let { tag ->
-                        // Check that changes have been made if editing an existing tag.
-                        name != tag.name || icon != tag.icon || color != tag.color
-                    } ?: true)
+                    nameError == null && iconResource != null
+                    // Check that changes have been made if editing an existing tag.
+                    && (tag?.let { it != Tag(name, icon, color) } ?: true)
                 }
                 PlainToolTipBox("Submit new tag") {
                     FilledTextIconButton(
@@ -643,33 +637,12 @@ fun TagFrame(
         }
 
         if (longPress) {
-            DropdownMenu(
-                modifier = Modifier.padding(horizontal = DROPDOWN_MENU_VERTICAL_PADDING),
+            ItemActionsMenu(
                 expanded = showActionsMenu,
-                onDismissRequest = { showActionsMenu = false },
-                properties = POPUP_PROPERTIES,
-                shape = MaterialTheme.shapes.large,
-            ) {
-                DropdownMenuItem(
-                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
-                    text = { Text("Edit") },
-                    leadingIcon = { Icon(painterResource(R.drawable.edit), "Edit tag") },
-                    onClick = {
-                        showActionsMenu = false
-                        showTagEditor = true
-                    },
-                )
-                DropdownMenuItem(
-                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
-                    text = { Text("Delete") },
-                    leadingIcon = { Icon(painterResource(R.drawable.delete_forever), "Delete tag") },
-                    onClick = { viewModel.deleteTag(tag) },
-                    colors = MenuDefaults.itemColors(
-                        textColor = MaterialTheme.colorScheme.error,
-                        leadingIconColor = MaterialTheme.colorScheme.error,
-                    ),
-                )
-            }
+                onDismiss = { showActionsMenu = false },
+                onEditClick = { showTagEditor = true },
+                onDeleteClick = { viewModel.deleteTag(tag) },
+            )
         }
     }
 
