@@ -222,7 +222,7 @@ class TagsPickerTests {
             .filterToOne(hasTextExactly(tagName))
             .performMouseInput { longClick() }
 
-        this.rule.onNode(hasContentDescriptionExactly("Edit tag"))
+        this.rule.onNode(hasContentDescriptionExactly("Edit"))
             .performClick()
 
         val currentColor = state.tagEditorDialog
@@ -264,7 +264,7 @@ class TagsPickerTests {
             .filterToOne(hasTextExactly(tagName))
             .performMouseInput { longClick() }
 
-        this.rule.onNode(hasContentDescriptionExactly("Delete tag"))
+        this.rule.onNode(hasContentDescriptionExactly("Delete"))
             .performClick()
 
         this.rule.onNode(hasTextExactly(tagName))
