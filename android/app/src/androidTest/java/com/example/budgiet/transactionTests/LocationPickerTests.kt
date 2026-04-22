@@ -132,7 +132,6 @@ class LocationPickerTests {
 
     @Test
     fun searchLocation() {
-        // FIXME: sometimes this throws an error of repeated key use for LazyColumn.
         val state = TestState(this.rule)
         val targetName = FAKE_LOCATIONS[3u]!!.name
         val query = targetName.take(5)

@@ -135,15 +135,10 @@ class LocationViewModel: ViewModel() {
             .entries.toList()
             .map { DbEntry(it.key, it.value) }
             .run { if (query != null) {
-                val filtered = filter {
+                filter {
                     it.data.name.contains(query, ignoreCase = true)
-                }.toMutableList()
-                if (filtered.size < len.toInt()) {
-                    filtered.addAll(this.filter {
-                        it.data.address.contains(query, ignoreCase = true)
-                    })
+                    || it.data.address.contains(query, ignoreCase = true)
                 }
-                filtered
             } else this }
 
         val toIdx = min((start + len).toInt(), list.size)
