@@ -118,8 +118,13 @@ class NewTransactionViewModel: ViewModel() {
     }
 }
 
-private enum class DialogState {
-    None, DatePicker, LocationPicker, NearbyLocationsPicker, TagsPicker;
+private sealed class DialogState {
+    object None: DialogState()
+    object DatePicker: DialogState()
+    class LocationPicker(state: LocationPickerState): DialogState() {
+        var state by mutableStateOf(state)
+    }
+    object TagsPicker: DialogState()
 }
 @Composable
 fun NewTransactionForm(
@@ -127,7 +132,7 @@ fun NewTransactionForm(
     viewModel: NewTransactionViewModel,
     onDismiss: () -> Unit,
 ) {
-    var dialogState by remember { mutableStateOf(DialogState.None) }
+    var dialogState by remember { mutableStateOf<DialogState>(DialogState.None) }
     val dialogDismiss = { dialogState = DialogState.None }
 
     Column(modifier = modifier) {
@@ -149,8 +154,8 @@ fun NewTransactionForm(
         FormField("Location") {
             LocationField(
                 viewModel = viewModel.location,
-                onClickSelect = { dialogState = DialogState.LocationPicker },
-                onClickNearby = { dialogState = DialogState.NearbyLocationsPicker },
+                onClickSelect = { dialogState = DialogState.LocationPicker(LocationPickerState.Search) },
+                onClickNearby = { dialogState = DialogState.LocationPicker(LocationPickerState.Nearby) },
             )
         }
         FormField("Price") {
@@ -196,25 +201,23 @@ fun NewTransactionForm(
         }
     }
 
-    when (dialogState) {
-        DialogState.None -> { }
+    when (val dialogState = dialogState) {
         DialogState.DatePicker -> DatePickerDialog(
             selectedDate = viewModel.date,
             onDismiss = dialogDismiss,
             onSubmit = { viewModel.date = it },
         )
-        DialogState.LocationPicker -> LocationPickerDialog(
+        is DialogState.LocationPicker -> LocationPickerDialog(
             viewModel = viewModel.location,
-            onDismiss = dialogDismiss,
-        )
-        DialogState.NearbyLocationsPicker -> NearbyLocationsDialog(
-            viewModel = viewModel.location,
+            state = dialogState.state,
+            onStateChange = { dialogState.state = it },
             onDismiss = dialogDismiss,
         )
         DialogState.TagsPicker -> TagsPickerDialog(
             viewModel = viewModel.tags,
             onDismiss = dialogDismiss,
         )
+        DialogState.None -> { }
     }
 }
 

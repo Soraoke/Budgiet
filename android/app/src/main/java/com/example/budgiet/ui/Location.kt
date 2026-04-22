@@ -273,47 +273,69 @@ fun RowScope.LocationField(
     }
 }
 
+/** State structure for [LocationEditorDialog].
+ *
+ * Can be one of **[Search]**, **[Nearby]**, **[New]**, and **[Edit]**. */
+sealed class LocationPickerState {
+    /** Select one of the [Location]s that already exist in the *database* from a list.
+     * Also has a *search bar* for filtering **name** and **address**. */
+    object Search: LocationPickerState()
+    /** Select one of the [Location]s that already exist in the *database* from a **Map View**. */
+    object Nearby: LocationPickerState()
+    /** Form to *create* a new [Location] item. */
+    object New: LocationPickerState()
+    /** Form to *edit* an existing [Location] item. */
+    class Edit(val location: DbEntry<Location>): LocationPickerState()
+}
+// TODO: doc
 @Composable
 fun LocationPickerDialog(
     modifier: Modifier = Modifier,
     viewModel: LocationViewModel,
+    state: LocationPickerState,
+    onStateChange: (LocationPickerState) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var showNewLocationDialog by remember { mutableStateOf(false) }
-    /** Stores the [Location] that is being edited (only if the dialog should edit an existing location, not create a new one). */
-    var editLocation by remember { mutableStateOf<DbEntry<Location>?>(null) }
     var newLocationId by remember { mutableStateOf<UInt?>(null) }
 
-    @Suppress("AssignedValueIsNeverRead")
-    if (showNewLocationDialog) {
-        LocationEditorDialog(
-            modifier = modifier,
-            location = editLocation?.data,
-            viewModel = viewModel,
-            onDismiss = {
-                showNewLocationDialog = false
-                editLocation = null
-            },
-            onSubmit = { newLocationId = editLocation?.let { editLoc ->
-                viewModel.editLocation(editLoc.id, it)
-                editLoc.id
-            } ?: run {
-                viewModel.newLocation(it).id
-            } },
-        )
-    } else {
-        LocationSearchDialog(
-            modifier = modifier,
-            viewModel = viewModel,
-            onDismiss = onDismiss,
-            onSubmit = { viewModel.selectedLocation = it },
-            onNewClick = { showNewLocationDialog = true },
-            onEditClick = {
-                showNewLocationDialog = true
-                editLocation = it
-            },
-            newLocationId = newLocationId,
-        )
+    when (state) {
+        LocationPickerState.Search -> {
+            LocationSearchDialog(
+                modifier = modifier,
+                viewModel = viewModel,
+                onDismiss = onDismiss,
+                onSubmit = { viewModel.selectedLocation = it },
+                onNewClick = { onStateChange(LocationPickerState.New) },
+                onEditClick = { onStateChange(LocationPickerState.Edit(it)) },
+                newLocationId = newLocationId,
+            )
+        }
+        LocationPickerState.Nearby -> {
+            NearbyLocationsDialog(
+                modifier = modifier,
+                viewModel = viewModel,
+                onDismiss = onDismiss,
+            )
+        }
+        LocationPickerState.New,
+        is LocationPickerState.Edit -> {
+            val editLocation = if (state is LocationPickerState.Edit) {
+                state.location
+            } else null
+
+            LocationEditorDialog(
+                modifier = modifier,
+                location = editLocation?.data,
+                viewModel = viewModel,
+                onDismiss = { onStateChange(LocationPickerState.Search) },
+                onSubmit = { newLocationId = editLocation?.let { editLoc ->
+                    viewModel.editLocation(editLoc.id, it)
+                    editLoc.id
+                } ?: run {
+                    viewModel.newLocation(it).id
+                } },
+            )
+        }
     }
 }
 
@@ -690,7 +712,7 @@ private fun LocationEditorDialog(
             modifier = modifier,
             onDismiss = onDismiss,
             title = {
-                Text("New location",
+                Text(if (location != null) "Edit location" else "New location",
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.headlineSmall,
                 )
@@ -705,7 +727,7 @@ private fun LocationEditorDialog(
                     // Check that changes have been made if editing an existing location.
                     && (location?.let { it != Location(locationName, locationAddress) } ?: true)
                 }
-                PlainToolTipBox("Submit new location") {
+                PlainToolTipBox("Submit") {
                     FilledTextIconButton(
                         onClick = {
                             val newData = Location(locationName, locationAddress)
