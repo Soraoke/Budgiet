@@ -26,6 +26,7 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onChild
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
@@ -228,6 +229,7 @@ class TagsPickerTests {
         val currentColor = state.tagEditorDialog
             .onDescendants(this.rule)
             .filterToOne(hasContentDescriptionExactly("Change tag color"))
+            .onChild()
             .performClick()
             .getSemanticsProperty(SemanticsProperties.StateDescription)
             .getOrThrow()

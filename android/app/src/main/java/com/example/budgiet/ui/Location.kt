@@ -87,6 +87,7 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import kotlinx.coroutines.delay
+import java.time.LocalTime
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -107,6 +108,8 @@ val FAKE_LOCATIONS = mapOf(
 data class Location(
     val name: String,
     val address: String,
+    // TODO: remove this when we have a real db
+    val lastUsed: LocalTime? = null,
 )
 
 data class DbEntry<T>(
@@ -145,8 +148,8 @@ class LocationViewModel: ViewModel() {
 
         val toIdx = min((start + len).toInt(), list.size)
         val fromIdx = min(start.toInt(), toIdx)
-        // TODO: sort by recents
         return list.subList(fromIdx, toIdx)
+            .sortedByDescending { it.data.lastUsed }
 
         // TODO: real impl
     }
@@ -162,6 +165,8 @@ class LocationViewModel: ViewModel() {
     }
 
     fun newLocation(data: Location): DbEntry<Location> {
+        val data = data.copy(lastUsed = LocalTime.now())
+
         var id = 0u
         while (this.fakeDb.keys.contains(id)) {
             id++
@@ -174,6 +179,8 @@ class LocationViewModel: ViewModel() {
     }
 
     fun editLocation(id: UInt, newData: Location) {
+        val newData = newData.copy(lastUsed = LocalTime.now())
+
         this.fakeDb.replace(id, newData)
         // TODO: real impl
 
@@ -287,7 +294,8 @@ sealed class LocationPickerState {
     /** Form to *edit* an existing [Location] item. */
     class Edit(val location: DbEntry<Location>): LocationPickerState()
 }
-// TODO: doc
+/** Shows a [Dialog][ActionDialog] that allows the user to select a [Location].
+ * Shows different content depending on the [LocationPickerState]. */
 @Composable
 fun LocationPickerDialog(
     modifier: Modifier = Modifier,
@@ -298,6 +306,7 @@ fun LocationPickerDialog(
 ) {
     var newLocationId by remember { mutableStateOf<UInt?>(null) }
 
+    @Suppress("AssignedValueIsNeverRead")
     when (state) {
         LocationPickerState.Search -> {
             LocationSearchDialog(
@@ -446,6 +455,8 @@ private fun LocationSearchDialog(
                     .combinedClickable(
                         onClick = {
                             onSubmit(item)
+                            // Put item first in the list (sorted by lastUsed).
+                            viewModel.editLocation(item.id, item.data)
                             close()
                         },
                         onLongClick = { showActionsMenu = true }

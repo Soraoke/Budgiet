@@ -30,6 +30,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.example.budgiet.assert
+import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
 import com.example.budgiet.ui.DbEntry
 import com.example.budgiet.ui.FAKE_LOCATIONS
@@ -56,10 +57,10 @@ class LocationPickerTests {
             get() = this.rule.onNode(hasContentDescriptionExactly("Select location"))
         /** The `"New"` button in the **LocationSearchDialog**. */
         val newButton
-            get() = this.rule.onNode(hasContentDescriptionExactly("Add new location"))
+            get() = this.rule.onNode(hasContentDescriptionExactly("Add new location")).onChild()
         /** The `"Submit"` button in the **LocationEditorDialog**. */
         val submitButton
-            get() = this.rule.onNode(hasContentDescriptionExactly("Submit"))
+            get() = this.rule.onNode(hasContentDescriptionExactly("Submit")).onChild()
 
         val dialogNode
             get() = this.rule.onNode(hasTestTag(DIALOG_TEST_TAG))
@@ -98,7 +99,6 @@ class LocationPickerTests {
                     )
                 }
 
-                // FIXME: sometimes this throws an error of repeated key use for LazyColumn.
                 dialogState?.let { state ->
                     LocationPickerDialog(
                         modifier = Modifier.testTag(DIALOG_TEST_TAG),
@@ -132,6 +132,7 @@ class LocationPickerTests {
 
     @Test
     fun searchLocation() {
+        // FIXME: sometimes this throws an error of repeated key use for LazyColumn.
         val state = TestState(this.rule)
         val targetName = FAKE_LOCATIONS[3u]!!.name
         val query = targetName.take(5)
@@ -176,7 +177,13 @@ class LocationPickerTests {
             .onDescendants(this.rule)
             .filterToOne(hasScrollAction())
             .onChildAt(0)
-            .assertTextEquals("$name, $address")
+            .getSemanticsProperty(SemanticsProperties.Text)
+            .getOrThrow()
+            .assert({
+                it.size == 2
+                && it[0].text == name
+                && it[1].text == address
+            })
     }
 
     @Test
@@ -192,8 +199,9 @@ class LocationPickerTests {
         this.rule.onNode(hasContentDescriptionExactly("Edit"))
             .performClick()
 
-        // heck that submit is disabled before making changes
-        state.submitButton.assertIsNotEnabled()
+        // Check that submit is disabled before making changes
+        state.submitButton
+            .assertIsNotEnabled()
 
         state.dialogNode
             .onDescendants(this.rule)
@@ -201,12 +209,20 @@ class LocationPickerTests {
             .apply { performTextClearance() }
             .performTextInput(newName)
 
+        state.submitButton.performClick()
+
         // Check that the new item exists AND is first in the list.
         state.dialogNode
             .onDescendants(this.rule)
             .filterToOne(hasScrollAction())
             .onChildAt(0)
-            .assertTextEquals("$newName, ${targetItem.address}")
+            .getSemanticsProperty(SemanticsProperties.Text)
+            .getOrThrow()
+            .assert({
+                it.size == 2
+                && it[0].text == newName
+                && it[1].text == targetItem.address
+            })
     }
 
     @Test
@@ -265,8 +281,7 @@ class LocationPickerTests {
             })
             .assertExists()
 
-        state.submitButton.onChild()
-            .assertIsNotEnabled()
+        state.submitButton.assertIsNotEnabled()
     }
 
     @Test
