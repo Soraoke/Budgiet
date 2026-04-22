@@ -88,6 +88,7 @@ import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
 import kotlinx.coroutines.delay
 import java.time.LocalTime
+import java.util.Objects
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -107,10 +108,17 @@ val FAKE_LOCATIONS = mapOf(
 
 data class Location(
     val name: String,
-    val address: String,
+    val address: String? = null,
     // TODO: remove this when we have a real db
     val lastUsed: LocalTime? = null,
-)
+) {
+    override fun equals(other: Any?) = when (other) {
+        is Location -> this.name == other.name && this.address == other.address
+        else -> false
+    }
+    override fun toString() = "$name${address?.let { " at $it" } ?: ""}"
+    override fun hashCode() = Objects.hash(name, address)
+}
 
 data class DbEntry<T>(
     val id: UInt,
@@ -137,7 +145,7 @@ class LocationViewModel: ViewModel() {
             .run { if (query != null) {
                 filter {
                     it.data.name.contains(query, ignoreCase = true)
-                    || it.data.address.contains(query, ignoreCase = true)
+                    || it.data.address?.contains(query, ignoreCase = true) ?: false
                 }
             } else this }
 
@@ -195,19 +203,51 @@ class LocationViewModel: ViewModel() {
         }
     }
 
-    /** Returns an Error if the [Location] could not be submitted.
+    /** Returns an Error if the [Location] could not be submitted because of collisions with *other* [Location]s.
      *
-     *  Note that this function *does not* check if the [**name**][Location.name] or [**address**][Location.address] are valid data.
+     *  This function should only check the **`data`** against *other distinct* items,
+     *  so it has to avoid checking it against the original [Location] data it is editing from.
+     *  If the function is being called for ***editing*** an existing [Location] item,
+     *  the **`ogData`** argument should have that data, otherwise the argument should be `null`.
+     *
+     *  Note that this function *does not* check if the [**name**][Location.name] or [**address**][Location.address] are valid data that can be put in the database.
      *  This should be checked with [validateName] and [validateAddress] respectively. */
-    fun validateData(data: Location): Result<Unit> {
-        val msg = if (this.fakeDb.containsValue(data)) {
-            "A location with this name and address already exists"
-        } else {
-            null
-        }
+    // TODO: make unit test (but in rust) for this:
+    //   Add new location (name, addr) when location (name, addr) with the same (addr) but diff name exists
+    //   Add new location (name, no addr) when location (name, addr) with same (name) exists
+    //   Add new location (name, no addr) when location (name, no addr) with same (name) exists
+    //   Add new location (name, addr) when location (name, addr) with same (name, addr) exists
+    //   Add location A (name, addrA), Add location B (name, addrB), Try add location A and B again (fail)
+    //   Edit existing location, repeating all same rules as above.
+    fun validateData(data: Location, ogData: Location? = null): Result<Unit> {
+        this.fakeDb.values
+            // Don't check data against original item data.
+            .run { ogData?.let {
+                filter { !(it.name == ogData.name && it.address == ogData.address) }
+            } ?: this }
+            .forEach { other ->
+                val msg = if (data.name == other.name) {
+                    when (Pair(data.address == null, other.address == null)) {
+                        Pair(true, true),
+                        Pair(false, true) -> "A location with this name and no address already exists.\nTry using another name."
+                        Pair(true, false) -> "A location with this name already exists.\nTry adding an address (or use another name) to differentiate them."
+                        Pair(false, false) -> if (data.address == other.address) {
+                            "A location with this name and address already exists."
+                        } else {
+                            null
+                        }
+                        else -> null
+                    }
+                } else {
+                    null
+                }
 
-        return msg?.let { Result.Err(Exception(msg)) }
-            ?: Result.Ok(Unit)
+                msg?.let {
+                    return Result.Err(Exception(msg))
+                }
+            }
+
+        return Result.Ok(Unit)
     }
     fun validateName(name: String): Result<Unit> {
         val msg = if (name.isEmpty()) {
@@ -219,16 +259,7 @@ class LocationViewModel: ViewModel() {
         return msg?.let { Result.Err(Exception(msg)) }
             ?: Result.Ok(Unit)
     }
-    fun validateAddress(address: String): Result<Unit> {
-        val msg = if (address.isEmpty()) {
-            "Address must not be empty"
-        } else {
-            null
-        }
-
-        return msg?.let { Result.Err(Exception(msg)) }
-            ?: Result.Ok(Unit)
-    }
+    fun validateAddress(address: String) = Result.Ok(Unit)
 }
 
 /** Displays the [Location] selected by the user to be assigned to the [NewTransaction][NewTransactionForm].
@@ -241,29 +272,28 @@ class LocationViewModel: ViewModel() {
  *   This action should open the [LocationPickerDialog].
  * @param onClickNearby The action that runs when the *"Nearby locations"* button is *clicked*.
  *   This action should open the [NearbyLocationsDialog]. */
-@Suppress("UnusedReceiverParameter")
 @Composable
 fun RowScope.LocationField(
     viewModel: LocationViewModel,
     onClickSelect: () -> Unit,
     onClickNearby: () -> Unit,
 ) {
-    FilledTonalButton(
-        modifier = Modifier.semantics {
-            contentDescription = "Select location"
-            stateDescription = viewModel.selectedLocation?.data?.name ?: "None selected"
-        },
-        onClick = onClickSelect,
-        // Modify the shape on the left-side of the button to connect with the auto-select location button.
-        shape = halfRoundedCornerShape(Corner.Right),
+    Box(
+        modifier = Modifier.weight(1f),
+        contentAlignment = Alignment.TopEnd,
     ) {
-        Text(
-            if (viewModel.selectedLocation != null) {
-                viewModel.selectedLocation!!.data.name
-            } else {
-                "Select Location"
-            }
-        )
+        FilledTonalButton(
+            modifier = Modifier
+                .semantics {
+                    contentDescription = "Select location"
+                    stateDescription = viewModel.selectedLocation?.data?.toString() ?: "None selected"
+                },
+            onClick = onClickSelect,
+            // Modify the shape on the left-side of the button to connect with the auto-select location button.
+            shape = halfRoundedCornerShape(Corner.Right),
+        ) {
+            Text(viewModel.selectedLocation?.data?.toString() ?: "Select Location")
+        }
     }
     PlainToolTipBox("Nearby locations") {
         FilledIconButton(
@@ -444,9 +474,7 @@ private fun LocationSearchDialog(
         Box {
             DataItem(
                 modifier = Modifier
-                    .semantics {
-                        contentDescription = "${item.data.name} at address ${item.data.address}"
-                    }
+                    .semantics { contentDescription = item.data.toString() }
                     .combinedClickable(
                         onClick = {
                             onSubmit(item)
@@ -454,7 +482,7 @@ private fun LocationSearchDialog(
                             viewModel.editLocation(item.id, item.data)
                             close()
                         },
-                        onLongClick = { showActionsMenu = true }
+                        onLongClick = { showActionsMenu = true },
                     ),
                 colors = ListItemDefaults.colors(
                     // Show a scrim
@@ -466,7 +494,7 @@ private fun LocationSearchDialog(
                     ?: defaultContainerColor,
                 ),
                 headlineContent = { Text(highlightMatches(item.data.name, query)) },
-                supportingContent = { Text(highlightMatches(item.data.address, query)) },
+                supportingContent = item.data.address?.let {{ Text(highlightMatches(it, query)) }},
             )
             ItemActionsMenu(
                 expanded = showActionsMenu,
@@ -601,7 +629,7 @@ private fun LocationEditorDialog(
     var showNearbyDialog by rememberSaveable { mutableStateOf(false) }
 
     var locationName by rememberSaveable(location) { mutableStateOf(location?.name ?: "") }
-    var locationAddress by rememberSaveable(location) { mutableStateOf(location?.address ?: "") }
+    var locationAddress by rememberSaveable(location) { mutableStateOf(location?.address) }
     var nameError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
     var addressError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
     /** Disables the "Submit" button if attempting to submit causes an error. */
@@ -630,7 +658,6 @@ private fun LocationEditorDialog(
             TextField(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(TextFieldDefaults.MinHeight)
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
                     .onFocusEvent { if (it.isFocused) shouldShowMenu = true },
                 singleLine = true,
@@ -681,10 +708,13 @@ private fun LocationEditorDialog(
         }
     }
 
+    /** Return a list of suggested *items* (*[Location]s*) that have a property (defined by the **`map`** argument) that matches the **`query`**.
+     *
+     * The property will ***not*** be matched against the **`query`** if the value returned by **`map`** is `null`. */
     @Composable
     fun getSuggestedItems(
         query: String,
-        map: (DbEntry<Location>) -> String
+        map: (DbEntry<Location>) -> String?
     ) = rememberWork(query) {
         // Use Set; only allow a single instance of an item to exist.
         val set = mutableSetOf<String>()
@@ -696,7 +726,7 @@ private fun LocationEditorDialog(
                 break
             }
             set.addAll(page
-                .map(map)
+                .mapNotNull(map)
                 .filter { it.contains(query, ignoreCase = true) }
             )
             start += maxMenuItems
@@ -733,14 +763,14 @@ private fun LocationEditorDialog(
                     // Check that changes have been made if editing an existing location.
                     && (location?.let { it != Location(locationName, locationAddress) } ?: true)
                 }
-                PlainToolTipBox("Submit") {
+                PlainToolTipBox(if (location != null) "Save changes" else "Submit new location") {
                     FilledTextIconButton(
                         onClick = {
                             val newData = Location(locationName, locationAddress)
 
                             nameError = viewModel.validateName(locationName)
                             addressError = viewModel.validateAddress(locationName)
-                            submitError = viewModel.validateData(newData)
+                            submitError = viewModel.validateData(newData, ogData = location)
 
                             if (canSubmit()) {
                                 onSubmit(newData)
@@ -749,19 +779,20 @@ private fun LocationEditorDialog(
                         },
                         enabled = canSubmit(),
                         icon = { Icon(painterResource(R.drawable.check_24px), null) },
-                        text = { Text("Submit") },
+                        text = { Text(if (location != null) "Save" else "Submit") },
                     )
                 }
             }
         ) {
             val suggestedNames by getSuggestedItems(locationName) { item -> item.data.name }
-            val suggestedAddresses by getSuggestedItems(locationAddress) { item -> item.data.address }
+            val suggestedAddresses by getSuggestedItems(locationAddress ?: "") { item -> item.data.address }
 
             TextField("Name",
                 value = locationName,
                 onValueChange = {
                     locationName = it
                     nameError = viewModel.validateName(it)
+                    submitError = Result.Ok(Unit)
                 },
                 error = nameError,
                 suggestedValues = suggestedNames,
@@ -773,14 +804,15 @@ private fun LocationEditorDialog(
                 val spacing = 4.dp
                 val unevenPadding = PaddingValues(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
 
-                TextField("Address",
+                TextField("Address (optional)",
                     modifier = Modifier
                         .weight(1.0f)
                         .padding(end = spacing),
-                    value = locationAddress,
+                    value = locationAddress ?: "",
                     onValueChange = {
-                        locationAddress = it
+                        locationAddress = it.ifEmpty { null }
                         addressError = viewModel.validateAddress(it)
+                        submitError = Result.Ok(Unit)
                     },
                     error = addressError,
                     suggestedValues = suggestedAddresses,

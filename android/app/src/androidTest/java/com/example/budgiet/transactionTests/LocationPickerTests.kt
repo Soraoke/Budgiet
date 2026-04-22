@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
@@ -55,12 +56,19 @@ class LocationPickerTests {
         /** The button that opens the **LocationSearchDialog**. */
         val selectLocationButton
             get() = this.rule.onNode(hasContentDescriptionExactly("Select location"))
+                .assertHasClickAction()
         /** The `"New"` button in the **LocationSearchDialog**. */
         val newButton
-            get() = this.rule.onNode(hasContentDescriptionExactly("Add new location")).onChild()
+            get() = this.rule.onNode(hasContentDescriptionExactly("Add new location"))
+                .onChild()
+                .assertHasClickAction()
         /** The `"Submit"` button in the **LocationEditorDialog**. */
         val submitButton
-            get() = this.rule.onNode(hasContentDescriptionExactly("Submit")).onChild()
+            get() = this.rule.onNode(
+                hasContentDescriptionExactly("Submit new location")
+                or hasContentDescriptionExactly("Save changes")
+            ).onChild()
+                .assertHasClickAction()
 
         val dialogNode
             get() = this.rule.onNode(hasTestTag(DIALOG_TEST_TAG))
@@ -118,16 +126,16 @@ class LocationPickerTests {
     @Test
     fun selectLocation() {
         val state = TestState(this.rule)
-        val targetName = FAKE_LOCATIONS[3u]!!.name
+        val targetItem = FAKE_LOCATIONS[3u]!!
 
         // Select the item.
         state.showLocationPickerDialog()
-        state.onLocationItem(targetName)
+        state.onLocationItem(targetItem.name)
             .performClick()
 
         // Check that the item was selected.
         state.selectLocationButton
-            .assertTextEquals(targetName)
+            .assertTextEquals(targetItem.toString())
     }
 
     @Test
@@ -163,7 +171,7 @@ class LocationPickerTests {
             .performTextInput(name)
         state.dialogNode
             .onDescendants(this.rule)
-            .filterToOne(hasText("Address"))
+            .filterToOne(hasText("Address (optional)"))
             .performTextInput(address)
 
         state.submitButton.performClick()
@@ -263,8 +271,8 @@ class LocationPickerTests {
             .performTextInput(targetItem.name)
         state.dialogNode
             .onDescendants(this.rule)
-            .filterToOne(hasText("Address"))
-            .performTextInput(targetItem.address)
+            .filterToOne(hasText("Address (optional)"))
+            .apply { targetItem.address?.let { performTextInput(it) } }
 
         state.submitButton
             .assertIsEnabled()
