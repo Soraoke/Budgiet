@@ -110,6 +110,11 @@ fun MainPage(modifier: Modifier = Modifier, newTransactionViewModel: NewTransact
     }
 }
 
+data class DbEntry<T>(
+    val id: UInt,
+    val data: T,
+)
+
 private var userIcons: Map<String, Int>? = null
 private var userIconsJob: Job? = null
 // Add extra layer to mutex (value -> job -> mutex) so that the operation to check if the value is initialized is not expensive.
