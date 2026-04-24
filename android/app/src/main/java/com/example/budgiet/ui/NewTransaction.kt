@@ -99,6 +99,7 @@ class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location = LocationViewModel()
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
+    val items = ItemsViewModel()
     var totalPrice by mutableDoubleStateOf(0.0)
     val tags = TagsViewModel()
     var description by mutableStateOf("")
@@ -122,6 +123,9 @@ private sealed class DialogState {
     object None: DialogState()
     object DatePicker: DialogState()
     class LocationPicker(state: LocationPickerState): DialogState() {
+        var state by mutableStateOf(state)
+    }
+    class Items(state: ItemsDialogState): DialogState() {
         var state by mutableStateOf(state)
     }
     object TagsPicker: DialogState()
@@ -164,6 +168,13 @@ fun NewTransactionForm(
                 onPriceChange = { viewModel.totalPrice = it },
                 selectedCurrency = viewModel.currency,
                 onCurrencyChange = { viewModel.currency = it },
+            )
+        }
+        FormField("Items") {
+            ItemsField(
+                viewModel = viewModel.items,
+                onClickAdd = { dialogState = DialogState.Items(ItemsDialogState.Manual) },
+                onClickOcr = { dialogState = DialogState.Items(ItemsDialogState.Ocr) },
             )
         }
         FormField("Tags") {
@@ -209,6 +220,11 @@ fun NewTransactionForm(
         )
         is DialogState.LocationPicker -> LocationPickerDialog(
             viewModel = viewModel.location,
+            state = dialogState.state,
+            onStateChange = { dialogState.state = it },
+            onDismiss = dialogDismiss,
+        )
+        is DialogState.Items -> ItemsDialog(
             state = dialogState.state,
             onStateChange = { dialogState.state = it },
             onDismiss = dialogDismiss,

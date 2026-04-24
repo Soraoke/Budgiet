@@ -67,6 +67,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.budgiet.DbEntry
 import com.example.budgiet.R
 import com.example.budgiet.Result
 import com.example.budgiet.rememberListPager
@@ -119,11 +120,6 @@ data class Location(
     override fun toString() = "$name${address?.let { " at $it" } ?: ""}"
     override fun hashCode() = Objects.hash(name, address)
 }
-
-data class DbEntry<T>(
-    val id: UInt,
-    val data: T,
-)
 
 class LocationViewModel: ViewModel() {
     private val fakeDb = mutableStateMapOf<UInt, Location>()
