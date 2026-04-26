@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.budgiet.DbEntry
 import com.example.budgiet.R
 import com.example.budgiet.RecentItems
 import com.example.budgiet.Result
@@ -173,7 +174,7 @@ fun NewTransactionForm(
         FormField("Items") {
             ItemsField(
                 viewModel = viewModel.items,
-                onClickAdd = { dialogState = DialogState.Items(ItemsDialogState.Manual) },
+                onClickAdd = { dialogState = DialogState.Items(ItemsDialogState.View) },
                 onClickOcr = { dialogState = DialogState.Items(ItemsDialogState.Ocr) },
             )
         }
@@ -225,6 +226,7 @@ fun NewTransactionForm(
             onDismiss = dialogDismiss,
         )
         is DialogState.Items -> ItemsDialog(
+            viewModel = viewModel.items,
             state = dialogState.state,
             onStateChange = { dialogState.state = it },
             onDismiss = dialogDismiss,
@@ -645,6 +647,9 @@ private fun NewTransactionPreview() {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
+                    location.selectedLocation = DbEntry(0u, FAKE_LOCATIONS[0u]!!)
+                    items.items.putAll(FAKE_ITEMS)
+                    items.additionalTaxAmount = 2.5
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },
