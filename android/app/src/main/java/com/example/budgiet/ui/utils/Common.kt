@@ -230,7 +230,7 @@ fun PlainToolTipBox(
 ) {
     TooltipBox(
         modifier = modifier.run { if (setContentDescription) {
-            semantics { contentDescription = text }
+            semantics(mergeDescendants = true) { contentDescription = text }
         } else this },
         positionProvider = if (dialogPosition == null) {
             TooltipDefaults.rememberTooltipPositionProvider(
@@ -581,14 +581,18 @@ value class Corner private constructor(private val bitFlag: Byte) {
 }
 
 /** Assign *fully-rounded* shape to all corners of a UI element (e.g. [Button]),
- * except for the corners specified in the **sharpSide** argument.
- * Those sides specified are assigned a *sharp* shape (small corner radius). */
+ * except for the corners specified in the **`sharpSide`** argument.
+ * Those sides specified are assigned the **`sharpSize`** shape (small corner radius).
+ *
+ * The exact shape can be customized with **`sharpSize`** and **`roundSize`**. */
 @Composable
-fun halfRoundedCornerShape(sharpSide: Corner): RoundedCornerShape {
-    val sharpRadius = MaterialTheme.shapes.extraSmall.bottomEnd
-    val roundRadius = CornerSize(percent = 50)
+fun halfRoundedCornerShape(
+    sharpSide: Corner,
+    sharpSize: CornerSize = MaterialTheme.shapes.extraSmall.bottomEnd,
+    roundSize: CornerSize = CornerSize(percent = 50),
+): RoundedCornerShape {
     val corner = { corner: Corner ->
-        if (sharpSide includes corner) sharpRadius else roundRadius
+        if (sharpSide includes corner) sharpSize else roundSize
     }
 
     return RoundedCornerShape(

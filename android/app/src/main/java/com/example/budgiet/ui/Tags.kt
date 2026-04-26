@@ -314,15 +314,13 @@ fun TagsPickerDialog(
                 .border(width = 1.dp, shape = TAG_SHAPE, color = MaterialTheme.colorScheme.outline)
 
             if (viewModel.allTags.isEmpty()) {
-                Box(modifier) {
-                    Column(
-                        modifier = Modifier.padding(ActionDialogPadding.Default.dialogEdges),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text("There are no tags.", textAlign = TextAlign.Center)
-                        Text("Press \"New Tag\" to create one.", textAlign = TextAlign.Center)
-                    }
+                Column(
+                    modifier = modifier.padding(ActionDialogPadding.Default.dialogEdges),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text("There are no tags.", textAlign = TextAlign.Center)
+                    Text("Press \"New Tag\" to create one.", textAlign = TextAlign.Center)
                 }
             } else {
                 FlowRow(
@@ -756,6 +754,37 @@ fun IconPickerDialog(
             }
         }
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun TagsFieldPreview() {
+    BudgietTheme { Row(
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TagsField(
+            viewModel = viewModel<TagsViewModel>(),
+            onButtonClick = { },
+        )
+    } }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun TagsFieldFilledPreview() {
+    BudgietTheme { Row(
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TagsField(
+            viewModel = viewModel<TagsViewModel>().apply {
+                useAlternativeTags(FAKE_TAGS)
+                selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
+            },
+            onButtonClick = { },
+        )
+    } }
 }
 
 @Preview(showBackground = true)
