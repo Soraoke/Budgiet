@@ -4,18 +4,21 @@ the backend written in Rust.
 
 # Features
 
-To be written up
+TODO:
 
 # App Demo
 
-To be shown
+TODO:
 
 # Developer Setup
+
+Install [Rust](https://rust-lang.org/tools/install/) and add it to your `$PATH` (see instructions in install script).
+Ensure it is installed by reopening the terminal and running `cargo --help`.
 
 ## Android
 
  * Install [**Android Studio**](https://developer.android.com/studio).
- * Clone the repository: `git clone git@github.com:asder8215/Budgiet.git`
+ * Clone the repository: `git clone git@github.com:Soraoke/Budgiet.git`
  * Open the `Budgiet/android` directory with **Android Studio**.
   
    > After opening the project, you might not be able to build the app.
@@ -26,6 +29,14 @@ To be shown
 
  * Click on `Sync Project with Gradel Files`
    (the elephant icon with a down-left arrow on the right side of the top bar).
+
+> Note: On MacOS, Android Studio must be opened through the terminal with `open -a "/Applications/Android Studio.app"` because otherwise it will not use the user's `$PATH` variable (and thus it can't run cargo).
+>
+> Alternatively, you can follow [this blog post](https://www.bounga.org/tips/2020/04/07/instructs-mac-os-gui-apps-about-path-environment-variable/) to open it normally through the GUI.
+
+## IOS
+
+TODO:
 
 # Contributing to Budgiet
 
