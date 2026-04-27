@@ -144,6 +144,12 @@ class TagsPickerTests {
         state.tagsFieldContainer.assertDoesNotExist()
     }
 
+    /** Tests that clicking "Cancel" discards any changes in the tag selection. */
+    @Test
+    fun cancelSelectTagsFromPicker() {
+        TODO()
+    }
+
     /** Tests that the SearchBar in [TagsPickerDialog] filters tags by name correctly. */
     @Test
     fun tagsPickerSearch() {
