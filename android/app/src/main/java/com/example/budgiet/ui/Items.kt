@@ -3,8 +3,6 @@
 package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
@@ -29,7 +26,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -556,112 +552,83 @@ private fun ItemsViewDialog(
             }
         }
 
-        var rowWidth by remember { mutableStateOf<Dp?>(null) }
-        var newButtonWidth by remember { mutableStateOf<Dp?>(null) }
-
-        newItemCollapseTransition.AnimatedVisibility(visible = { state -> state is ItemsDialogState.New }) {
-            HorizontalDivider(Modifier.padding(top = ActionDialogPadding.TightlyPacked.actionsSpacerHeight))
-        }
-
         // New Item button ...
-        Row(modifier = Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { coords ->
-                with(density) {
-                    rowWidth = coords.size.width.toDp()
-                }
-            },
-            horizontalArrangement = Arrangement.Start,
+        Row(modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            newItemCollapseTransition.AnimatedContent(
-                modifier = Modifier
-                    .padding(start = rowWidth?.let { rowWidth -> newButtonWidth?.let { newButtonWidth ->
-                        newItemCollapseTransition.animateDp() { state ->
-                            if (state is ItemsDialogState.New) {
-                                0.dp
-                            } else {
-                                (rowWidth - newButtonWidth) / 2
-                            }
-                        }.value
-                    } } ?: 0.dp)
-            ) { state -> when (state) {
-                is ItemsDialogState.View -> {
-                    FilledTextIconButton(
-                        modifier = Modifier.onGloballyPositioned { coords -> with(density) {
-                            newButtonWidth = coords.size.width.toDp()
-                        } },
-                        icon = { Icon(painterResource(R.drawable.add_24px), null) },
-                        text = { Text("New item") },
-                        onClick = { onStateChange(ItemsDialogState.New) },
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                    )
-                }
-                // ... Becomes a "Cancel" button when editing.
-                is ItemsDialogState.New -> {
-                    PlainToolTipBox("Discard new item") {
-                        FilledIconButton(onClick = { onStateChange(ItemsDialogState.View) }) {
-                            Icon(painterResource(R.drawable.close_24px), null)
+            newItemCollapseTransition.AnimatedContent() { state ->
+                when (state) {
+                    is ItemsDialogState.View -> {
+                        FilledTextIconButton(
+                            icon = { Icon(painterResource(R.drawable.add_24px), null) },
+                            text = { Text("New item") },
+                            onClick = { onStateChange(ItemsDialogState.New) },
+                            colors = ButtonDefaults.filledTonalButtonColors(),
+                        )
+                    }
+                    is ItemsDialogState.New -> Column {
+                        @Composable
+                        fun NewItemField(
+                            modifier: Modifier = Modifier,
+                            label: String,
+                            value: String,
+                            onValueChange: (String) -> Unit,
+                            isError: Boolean,
+                        ) {
+                            OutlinedTextField(
+                                modifier = modifier,
+                                label = { Text(label,
+                                    autoSize = TextAutoSize.StepBased(maxFontSize = LocalTextStyle.current.fontSize),
+                                    overflow = TextOverflow.Visible,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                ) },
+                                value = value,
+                                onValueChange = onValueChange,
+                                shape = MaterialTheme.shapes.medium,
+                                isError = isError,
+                                singleLine = true,
+                                maxLines = 1,
+                            )
+                        }
+
+                        HorizontalDivider(Modifier.padding(top = ActionDialogPadding.TightlyPacked.actionsSpacerHeight))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(columnSpacing)) {
+                            NewItemField(
+                                modifier = Modifier.weight(nameColumnWeight),
+                                label = "Name",
+                                value = editingItemName,
+                                onValueChange = {
+                                    editingItemName = it
+                                    editItemNameError = viewModel.validateName(it, isNew = true)
+                                },
+                                isError = editItemNameError is Result.Err,
+                            )
+                            NewItemField(
+                                modifier = Modifier.weight(priceColumnWeight),
+                                label = "Price",
+                                value = editingItemPrice,
+                                onValueChange = {
+                                    editingItemPrice = it
+                                    editItemPriceResult = viewModel.parsePrice(it)
+                                },
+                                isError = editItemPriceResult is Result.Err,
+                            )
+                            NewItemField(
+                                modifier = Modifier.weight(amountColumnWeight),
+                                label = "Amount",
+                                value = editingItemAmount,
+                                onValueChange = {
+                                    editingItemAmount = it
+                                    editItemAmountResult = viewModel.parseAmount(it)
+                                },
+                                isError = editItemAmountResult is Result.Err,
+                            )
                         }
                     }
-                }
-                is ItemsDialogState.Edit -> { }
-                is ItemsDialogState.Ocr -> throw Exception("Unreachable")
-            } }
-
-            // New item value fields.
-            newItemCollapseTransition.AnimatedVisibility(visible = { state -> state is ItemsDialogState.New }) {
-                @Composable
-                fun NewItemField(
-                    modifier: Modifier = Modifier,
-                    label: String,
-                    value: String,
-                    onValueChange: (String) -> Unit,
-                    isError: Boolean,
-                ) {
-                    OutlinedTextField(
-                        modifier = modifier,
-                        label = { Text(label, autoSize = TextAutoSize.StepBased(maxFontSize = LocalTextStyle.current.fontSize)) },
-                        value = value,
-                        onValueChange = onValueChange,
-                        shape = MaterialTheme.shapes.medium,
-                        isError = isError,
-                        singleLine = true,
-                        maxLines = 1,
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(columnSpacing)) {
-                    NewItemField(
-                        modifier = Modifier.weight(nameColumnWeight),
-                        label = "Name",
-                        value = editingItemName,
-                        onValueChange = {
-                            editingItemName = it
-                            editItemNameError = viewModel.validateName(it, isNew = true)
-                        },
-                        isError = editItemNameError is Result.Err,
-                    )
-                    NewItemField(
-                        modifier = Modifier.weight(priceColumnWeight),
-                        label = "Price",
-                        value = editingItemPrice,
-                        onValueChange = {
-                            editingItemPrice = it
-                            editItemPriceResult = viewModel.parsePrice(it)
-                        },
-                        isError = editItemPriceResult is Result.Err,
-                    )
-                    NewItemField(
-                        modifier = Modifier.weight(amountColumnWeight),
-                        label = "Amount",
-                        value = editingItemAmount,
-                        onValueChange = {
-                            editingItemAmount = it
-                            editItemAmountResult = viewModel.parseAmount(it)
-                        },
-                        isError = editItemAmountResult is Result.Err,
-                    )
+                    else -> { }
                 }
             }
         }
