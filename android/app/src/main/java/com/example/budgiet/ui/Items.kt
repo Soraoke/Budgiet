@@ -3,12 +3,14 @@
 package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -22,7 +24,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -90,6 +94,8 @@ class ItemsViewModel: ViewModel() {
     // FIXME: preserve order
     val items = mutableStateMapOf<String, Item>()
     var additionalTaxAmount by mutableStateOf<Double?>(null)
+
+    fun totalPrice() = this.items.values.sumOf { it.amount * it.unitPrice } + (additionalTaxAmount ?: 0.0)
 
     // TODO: doc
     fun displayFieldSummary(): String {
@@ -253,14 +259,20 @@ private fun ItemsViewDialog(
         is ItemsDialogState.Edit -> state.value.amount.toString()
         else -> ""
     }) }
+    var taxAmount by remember { mutableStateOf(viewModel.additionalTaxAmount?.toString() ?: "") }
     var editItemNameError by remember(state) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
     var editItemPriceResult by remember(state) { mutableStateOf<Result<Double>>(Result.Ok(0.0)) }
     var editItemAmountResult by remember(state) { mutableStateOf<Result<Double>>(Result.Ok(0.0)) }
+    var taxAmountResult by remember(state) { mutableStateOf<Result<Double>>(Result.Ok(0.0)) }
 
     val columnSpacing = 2.dp
     val nameColumnWeight = 0.6f
     val priceColumnWeight = 0.3f
     val amountColumnWeight = 0.3f
+    val columnLabelTextStyle = MaterialTheme.typography.labelMedium
+    val rowShape = MaterialTheme.shapes.medium
+    val dividerPaddingSize = ActionDialogPadding.TightlyPacked.actionsSpacerHeight * 2
+    val itemColumnFieldPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp)
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
 
@@ -367,7 +379,7 @@ private fun ItemsViewDialog(
             }
         } else {
             Row { CompositionLocalProvider(
-                LocalTextStyle provides MaterialTheme.typography.labelMedium,
+                LocalTextStyle provides columnLabelTextStyle,
             ) {
                 Text("Name", Modifier.weight(nameColumnWeight))
                 // TODO: display used currency symbol
@@ -380,13 +392,12 @@ private fun ItemsViewDialog(
                     items = viewModel.items.values.toList(),
                     key = { it.name },
                 ) { item ->
-                    Box(contentAlignment = Alignment.CenterEnd) {
-                        var multiplySignXOffset by remember(density, LocalTextStyle) { mutableStateOf<Dp?>(null) }
+                    Column {
                         var showMenu by remember { mutableStateOf(false) }
+                        val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
                         var focusedField by remember { mutableStateOf<Int?>(null) }
 
                         val sharpColumnShape = MaterialTheme.shapes.extraSmall
-                        val roundColumnShape = MaterialTheme.shapes.medium
 
                         @Composable
                         fun RowScope.ItemColumnField(
@@ -397,7 +408,6 @@ private fun ItemsViewDialog(
                             onEditingValueChange: (String) -> Unit,
                             isError: Boolean,
                         ) {
-                            val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
                             val isSelected = showMenu || isEditing
                             val focusRequester = remember { FocusRequester() }
 
@@ -420,12 +430,12 @@ private fun ItemsViewDialog(
                                     val startShape = halfRoundedCornerShape(
                                         Corner.Right,
                                         sharpSize = sharpColumnShape.bottomEnd,
-                                        roundSize = roundColumnShape.bottomStart,
+                                        roundSize = rowShape.bottomStart,
                                     )
                                     val endShape = halfRoundedCornerShape(
                                         Corner.Left,
                                         sharpSize = sharpColumnShape.bottomStart,
-                                        roundSize = roundColumnShape.bottomEnd,
+                                        roundSize = rowShape.bottomEnd,
                                     )
 
                                     when (side) {
@@ -447,110 +457,139 @@ private fun ItemsViewDialog(
                                 } else {
                                     ListItemDefaults.containerColor
                                 })
-                                .padding(vertical = 16.dp, horizontal = 12.dp)
+                                .padding(itemColumnFieldPadding)
                                 .then(modifier)
                             ) {
                                 if (isEditing) {
-                                    val lineColor = if (isError) {
-                                        MaterialTheme.colorScheme.error
-                                    } else {
-                                        MaterialTheme.colorScheme.primary
-                                    }
-
-                                    var cursorState by remember { mutableStateOf(when {
-                                        editingValue.isEmpty() -> TextRange.Zero
-                                        else -> TextRange(editingValue.length, editingValue.length)
-                                    }) }
-                                    BasicTextField(
-                                        modifier = Modifier
-                                            .focusRequester(focusRequester)
-                                            .drawBehind {
-                                                val lineStroke = 2.dp.toPx()
-                                                val lineNegativePadding = 3.dp.toPx()
-                                                val y = this.size.height - lineStroke + lineNegativePadding
-                                                this.drawLine(
-                                                    color = lineColor,
-                                                    start = Offset(-lineNegativePadding, y),
-                                                    end = Offset(this.size.width + lineNegativePadding, y),
-                                                    strokeWidth = lineStroke,
-                                                    cap = StrokeCap.Round,
-                                                )
-                                            },
-                                        value = TextFieldValue(
-                                            text = editingValue,
-                                            selection = cursorState,
-                                        ),
-                                        onValueChange = { newState ->
-                                            cursorState = newState.selection
-                                            if (newState.text != editingValue) {
-                                                onEditingValueChange(newState.text)
-                                            }
-                                        },
-                                        textStyle = LocalTextStyle.current,
-                                        singleLine = true,
-                                        maxLines = 1,
+                                    SmallBasicTextField(
+                                        modifier = Modifier.focusRequester(focusRequester),
+                                        value = editingValue,
+                                        onValueChange = onEditingValueChange,
+                                        isError = isError,
                                     )
                                 } else {
                                     Text(staticValue)
                                 }
                             }
                         }
-                        
-                        Row(
-                            modifier = Modifier.applyHeightToList(),
-                            horizontalArrangement = Arrangement.spacedBy(columnSpacing),
-                        ) {
-                            ItemColumnField(-1,
-                                staticValue = item.name,
-                                editingValue = editingItemName,
-                                onEditingValueChange = {
-                                    editingItemName = it
-                                    editItemNameError = viewModel.validateName(it, isNew = false)
-                                },
-                                isError = editItemNameError is Result.Err,
-                            )
-                            ItemColumnField(0,
-                                staticValue = item.unitPrice.toString(),
-                                editingValue = editingItemPrice,
-                                onEditingValueChange = {
-                                    editingItemPrice = it
-                                    editItemPriceResult = viewModel.parsePrice(it)
-                                },
-                                isError = editItemPriceResult is Result.Err,
-                            )
-                            ItemColumnField(1,
-                                modifier = Modifier.onGloballyPositioned { coords -> with(density) {
-                                    if (multiplySignXOffset == null) {
-                                        multiplySignXOffset = coords.size.width.toDp() * -1
-                                    }
-                                } },
-                                staticValue = item.amount.toString(),
-                                editingValue = editingItemAmount,
-                                onEditingValueChange = {
-                                    editingItemAmount = it
-                                    editItemAmountResult = viewModel.parseAmount(it)
-                                },
-                                isError = editItemAmountResult is Result.Err,
+
+                        newItemCollapseTransition.AnimatedVisibility(visible = { isEditing }) {
+                            Text("Edit item",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.align(Alignment.Start)
+                                    .padding(start = columnSpacing * 4)
                             )
                         }
 
-                        // Multiply icon.
-                        Icon(painterResource(R.drawable.close_24px), contentDescription = null,
-                            modifier = Modifier.offset(x = multiplySignXOffset?.minus(12.dp + columnSpacing / 2) ?: 0.dp, y = 0.dp),
-                        )
+                        Box(contentAlignment = Alignment.CenterEnd) {
+                            var amountColumnWidth by remember(density, LocalTextStyle) { mutableStateOf<Dp?>(null) }
 
-                        ItemActionsMenu(
-                            expanded = showMenu,
-                            onDismiss = { showMenu = false },
-                            onEditClick = {
-                                onStateChange(ItemsDialogState.Edit(item))
-                            },
-                            onDeleteClick = { viewModel.items.remove(item.name) },
-                        )
+                            Row(
+                                modifier = Modifier.applyHeightToList(),
+                                horizontalArrangement = Arrangement.spacedBy(columnSpacing),
+                            ) {
+                                ItemColumnField(-1,
+                                    staticValue = item.name,
+                                    editingValue = editingItemName,
+                                    onEditingValueChange = {
+                                        editingItemName = it
+                                        editItemNameError = viewModel.validateName(it, isNew = false)
+                                    },
+                                    isError = editItemNameError is Result.Err,
+                                )
+                                ItemColumnField(0,
+                                    staticValue = item.unitPrice.toString(),
+                                    editingValue = editingItemPrice,
+                                    onEditingValueChange = {
+                                        editingItemPrice = it
+                                        editItemPriceResult = viewModel.parsePrice(it)
+                                    },
+                                    isError = editItemPriceResult is Result.Err,
+                                )
+                                ItemColumnField(1,
+                                    modifier = Modifier.onGloballyPositioned { coords -> with(density) {
+                                        if (amountColumnWidth == null) {
+                                            amountColumnWidth = coords.size.width.toDp() * -1
+                                        }
+                                    } },
+                                    staticValue = item.amount.toString(),
+                                    editingValue = editingItemAmount,
+                                    onEditingValueChange = {
+                                        editingItemAmount = it
+                                        editItemAmountResult = viewModel.parseAmount(it)
+                                    },
+                                    isError = editItemAmountResult is Result.Err,
+                                )
+                            }
+
+                            // Multiply icon.
+                            Icon(painterResource(R.drawable.close_24px), contentDescription = null,
+                                modifier = Modifier.offset(x = amountColumnWidth?.minus(12.dp + columnSpacing / 2) ?: 0.dp, y = 0.dp),
+                            )
+
+                            ItemActionsMenu(
+                                expanded = showMenu,
+                                onDismiss = { showMenu = false },
+                                onEditClick = {
+                                    onStateChange(ItemsDialogState.Edit(item))
+                                },
+                                onDeleteClick = { viewModel.items.remove(item.name) },
+                            )
+                        }
                     }
                 }
             }
         }
+
+        newItemCollapseTransition.AnimatedVisibility(visible = { state ->
+            state is ItemsDialogState.View
+        }) { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(0.5f)) {
+                Text("Tax amount (optional)",
+                    style = columnLabelTextStyle,
+                    modifier = Modifier.padding(top = dividerPaddingSize, start = 10.dp)
+                )
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // TODO: display used currency symbol
+                    Icon(painterResource(R.drawable.currency_dollar_24px), null)
+                    Box(Modifier
+                        .clip(rowShape)
+                        .background(ListItemDefaults.containerColor)
+                        .padding(itemColumnFieldPadding)
+                        .fillMaxWidth()
+                    ) {
+                        SmallBasicTextField(
+                            value = taxAmount,
+                            onValueChange = {
+                                taxAmount = it
+                                TODO("parse")
+                            },
+                            isError = taxAmountResult is Result.Err,
+                        )
+                    }
+                }
+            }
+            Column(Modifier.weight(0.5f)) {
+                Text("Total price",
+                    style = columnLabelTextStyle,
+                    modifier = Modifier.padding(top = dividerPaddingSize, start = 24.dp)
+                )
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // TODO: display used currency symbol
+                    Icon(painterResource(R.drawable.currency_dollar_24px), null)
+                    Box(Modifier
+                        .clip(rowShape)
+                        .background(ListItemDefaults.containerColor)
+                        .padding(itemColumnFieldPadding)
+                        .fillMaxWidth()
+                    ) {
+                        Text("${viewModel.totalPrice()}")
+                    }
+                }
+            }
+        } }
 
         // New Item button ...
         Row(modifier = Modifier.fillMaxWidth(),
@@ -561,6 +600,7 @@ private fun ItemsViewDialog(
                 when (state) {
                     is ItemsDialogState.View -> {
                         FilledTextIconButton(
+                            modifier = Modifier.padding(top = dividerPaddingSize),
                             icon = { Icon(painterResource(R.drawable.add_24px), null) },
                             text = { Text("New item") },
                             onClick = { onStateChange(ItemsDialogState.New) },
@@ -593,7 +633,8 @@ private fun ItemsViewDialog(
                             )
                         }
 
-                        HorizontalDivider(Modifier.padding(top = ActionDialogPadding.TightlyPacked.actionsSpacerHeight))
+                        HorizontalDivider(Modifier.padding(vertical = dividerPaddingSize))
+                        Text("New Item", style = columnLabelTextStyle)
 
                         Row(horizontalArrangement = Arrangement.spacedBy(columnSpacing)) {
                             NewItemField(
@@ -637,23 +678,75 @@ private fun ItemsViewDialog(
         when (state) {
             is ItemsDialogState.View -> { }
             is ItemsDialogState.New,
-            is ItemsDialogState.Edit -> {
+            is ItemsDialogState.Edit -> CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.error){
                 fun errorMsg(error: Throwable): String
                     = error.message ?: error.javaClass.name
 
                 if (editItemNameError is Result.Err) {
-                    Text(errorMsg(editItemNameError.unwrapErr()), color = MaterialTheme.colorScheme.error)
+                    Text(errorMsg(editItemNameError.unwrapErr()))
                 }
                 if (editItemPriceResult is Result.Err) {
-                    Text(errorMsg(editItemPriceResult.unwrapErr()), color = MaterialTheme.colorScheme.error)
+                    Text(errorMsg(editItemPriceResult.unwrapErr()))
                 }
                 if (editItemAmountResult is Result.Err) {
-                    Text(errorMsg(editItemAmountResult.unwrapErr()), color = MaterialTheme.colorScheme.error)
+                    Text(errorMsg(editItemAmountResult.unwrapErr()))
+                }
+                if (taxAmountResult is Result.Err) {
+                    Text(errorMsg(taxAmountResult.unwrapErr()))
                 }
             }
             is ItemsDialogState.Ocr -> throw Exception("Unreachable")
         }
     }
+}
+
+/** Small TextField that fits inside the small columns of the Items list. */
+@Composable
+private fun SmallBasicTextField(
+    modifier: Modifier = Modifier,
+    value: String,
+    onValueChange: (String) -> Unit,
+    isError: Boolean,
+) {
+    val lineColor = if (isError) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    var cursorState by remember { mutableStateOf(when {
+        value.isEmpty() -> TextRange.Zero
+        else -> TextRange(value.length, value.length)
+    }) }
+    @Suppress("AssignedValueIsNeverRead")
+    BasicTextField(
+        modifier = modifier
+            .drawBehind {
+                val lineStroke = 2.dp.toPx()
+                val lineNegativePadding = 3.dp.toPx()
+                val y = this.size.height - lineStroke + lineNegativePadding
+                this.drawLine(
+                    color = lineColor,
+                    start = Offset(-lineNegativePadding, y),
+                    end = Offset(this.size.width + lineNegativePadding, y),
+                    strokeWidth = lineStroke,
+                    cap = StrokeCap.Round,
+                )
+            },
+        value = TextFieldValue(
+            text = value,
+            selection = cursorState,
+        ),
+        onValueChange = { newState ->
+            cursorState = newState.selection
+            if (newState.text != value) {
+                onValueChange(newState.text)
+            }
+        },
+        textStyle = LocalTextStyle.current,
+        singleLine = true,
+        maxLines = 1,
+    )
 }
 
 /** Shows a [Dialog][ActionDialog] to allow the user to ***scan*** a picture of a *digital or paper receipt*
