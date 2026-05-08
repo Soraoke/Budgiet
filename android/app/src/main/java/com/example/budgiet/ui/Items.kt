@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,10 +29,12 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,10 +43,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -121,7 +132,13 @@ class ItemsViewModel: ViewModel() {
     }
 }
 
-// TODO: docs
+/** Displays the total number of [Item]s and their *total cost*,
+ * along with 2 buttons to bring up dialogs to view/edit the items or scan a receipt.
+ *
+ * @param onClickAdd The action that runs when the `"Add items"` button is *clicked*.
+ *   This action should open the [ItemsViewDialog].
+ * @param onClickOcr The action that runs when the `"Scan a receipt"` button is *clicked*.
+ *   This action should open the [ItemsOcrDialog].*/
 @Composable
 fun RowScope.ItemsField(
     viewModel: ItemsViewModel,
@@ -130,7 +147,9 @@ fun RowScope.ItemsField(
 ) {
     if (viewModel.items.isNotEmpty()) {
         Text(viewModel.displayFieldSummary(),
-            modifier = Modifier.weight(1f).align(Alignment.CenterVertically),
+            modifier = Modifier
+                .weight(1f)
+                .align(Alignment.CenterVertically),
             textAlign = TextAlign.End,
             overflow = TextOverflow.Visible,
         )
@@ -174,11 +193,19 @@ fun RowScope.ItemsField(
     }
 }
 
-// TODO: doc all
+/** State structure for [ItemsDialog].
+ *
+ * Can be one of **[View]**, **[New]**, **[Edit]**, and **[Ocr]**. */
 sealed class ItemsDialogState {
+    /** Displays the List of [Item]s with no pending actions. */
     object View: ItemsDialogState()
+    /** Displays a series of **TextField**s below the List of [Item]s to create a new [Item].
+     * The `"Submit"` button adds the new item and returns the **state** to [View]. */
     object New: ItemsDialogState()
+    /** Converts the row of a specific [Item] into a series of **TextField**s to edit the data of that [Item].
+     * The `"Submit"` button modifies the items list in memory and returns the **state** to [View]. */
     class Edit(val value: Item): ItemsDialogState()
+    /** Prompts user for a scan of a receipt (see [ItemsOcrDialog]). */
     object Ocr: ItemsDialogState()
 }
 @Composable
@@ -204,7 +231,10 @@ fun ItemsDialog(
     }
 }
 
-// TODO: doc
+/** Displays the [Dialog][ActionDialog] that contain the [Item]s data for this transaction.
+ *
+ * The UI of the dialog depends on the **`state`** (see [ItemsDialogState]).
+ * The dialog can be in any state *except* [Ocr][ItemsDialogState.Ocr], since that is handled in a separate composable. */
 @Composable
 private fun ItemsViewDialog(
     modifier: Modifier = Modifier,
@@ -213,11 +243,6 @@ private fun ItemsViewDialog(
     onStateChange: (ItemsDialogState) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // TODO: use tempItems?
-    // TODO: review tooltips/contentDescriptions because this no longer uses temp items
-//    val tempItems = remember { mutableStateMapOf<String, Item>().apply {
-//        putAll(viewModel.items)
-//    } }
     val newItemCollapseTransition = updateTransition(state, "NewItemCollapseButton")
 
     var editingItemName by remember(state) { mutableStateOf(when (state) {
@@ -248,13 +273,26 @@ private fun ItemsViewDialog(
         onDismiss = onDismiss,
         padding = ActionDialogPadding.TightlyPacked,
         title = { Text("Transaction items",
-            modifier = Modifier.fillMaxWidth()
-                .padding(start = ActionDialogPadding.Default.dialogEdges.calculateStartPadding(layoutDirection)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = ActionDialogPadding.Default.dialogEdges.calculateStartPadding(
+                        layoutDirection
+                    )
+                ),
             style = MaterialTheme.typography.headlineSmall,
         ) },
         actions = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            newItemCollapseTransition.AnimatedContent { state ->
+                when (state) {
+                    is ItemsDialogState.New,
+                    is ItemsDialogState.Edit -> {
+                        TextButton(onClick = { onStateChange(ItemsDialogState.View) }) {
+                            Text("Cancel")
+                        }
+                    }
+                    else -> { Box { } }
+                }
             }
 
             // The "Submit" button is different depending on whether the user is currently inputting data for a new item.
@@ -284,7 +322,7 @@ private fun ItemsViewDialog(
 
                 when (state) {
                     is ItemsDialogState.View -> {
-                        PlainToolTipBox("Apply items") {
+                        PlainToolTipBox("Close items dialog") {
                             FilledTextIconButton(
                                 icon = { Icon(painterResource(R.drawable.check_24px), null) },
                                 text = { Text("Done") },
@@ -336,7 +374,8 @@ private fun ItemsViewDialog(
                 LocalTextStyle provides MaterialTheme.typography.labelMedium,
             ) {
                 Text("Name", Modifier.weight(nameColumnWeight))
-                Text("Price", Modifier.weight(priceColumnWeight))
+                // TODO: display used currency symbol
+                Text("Price ($)", Modifier.weight(priceColumnWeight))
                 Text("Amount", Modifier.weight(amountColumnWeight))
             } }
 
@@ -348,77 +387,168 @@ private fun ItemsViewDialog(
                     Box(contentAlignment = Alignment.CenterEnd) {
                         var multiplySignXOffset by remember(density, LocalTextStyle) { mutableStateOf<Dp?>(null) }
                         var showMenu by remember { mutableStateOf(false) }
+                        var focusedField by remember { mutableStateOf<Int?>(null) }
 
                         val sharpColumnShape = MaterialTheme.shapes.extraSmall
                         val roundColumnShape = MaterialTheme.shapes.medium
 
+                        @Composable
+                        fun RowScope.ItemColumnField(
+                            side: Int,
+                            modifier: Modifier = Modifier,
+                            staticValue: String,
+                            editingValue: String,
+                            onEditingValueChange: (String) -> Unit,
+                            isError: Boolean,
+                        ) {
+                            val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
+                            val isSelected = showMenu || isEditing
+                            val focusRequester = remember { FocusRequester() }
+
+                            LaunchedEffect(side, focusedField, isEditing) {
+                                if (isEditing && focusedField == side) {
+                                    focusRequester.requestFocus()
+                                }
+                            }
+
+                            Box(Modifier
+                                .weight(
+                                    when (side) {
+                                        -1 -> nameColumnWeight
+                                        0 -> priceColumnWeight
+                                        1 -> amountColumnWeight
+                                        else -> throw Exception("Unreachable")
+                                    }
+                                )
+                                .clip(run {
+                                    val startShape = halfRoundedCornerShape(
+                                        Corner.Right,
+                                        sharpSize = sharpColumnShape.bottomEnd,
+                                        roundSize = roundColumnShape.bottomStart,
+                                    )
+                                    val endShape = halfRoundedCornerShape(
+                                        Corner.Left,
+                                        sharpSize = sharpColumnShape.bottomStart,
+                                        roundSize = roundColumnShape.bottomEnd,
+                                    )
+
+                                    when (side) {
+                                        -1 -> startShape
+                                        0 -> sharpColumnShape
+                                        1 -> endShape
+                                        else -> throw Exception("Unreachable")
+                                    }
+                                })
+                                .combinedClickable(
+                                    onClick = { },
+                                    onLongClick = {
+                                        showMenu = true
+                                        focusedField = side
+                                    },
+                                )
+                                .background(if (isSelected) {
+                                    MaterialTheme.colorScheme.surfaceContainerLowest
+                                } else {
+                                    ListItemDefaults.containerColor
+                                })
+                                .padding(vertical = 16.dp, horizontal = 12.dp)
+                                .then(modifier)
+                            ) {
+                                if (isEditing) {
+                                    val lineColor = if (isError) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+
+                                    var cursorState by remember { mutableStateOf(when {
+                                        editingValue.isEmpty() -> TextRange.Zero
+                                        else -> TextRange(editingValue.length, editingValue.length)
+                                    }) }
+                                    BasicTextField(
+                                        modifier = Modifier
+                                            .focusRequester(focusRequester)
+                                            .drawBehind {
+                                                val lineStroke = 2.dp.toPx()
+                                                val lineNegativePadding = 3.dp.toPx()
+                                                val y = this.size.height - lineStroke + lineNegativePadding
+                                                this.drawLine(
+                                                    color = lineColor,
+                                                    start = Offset(-lineNegativePadding, y),
+                                                    end = Offset(this.size.width + lineNegativePadding, y),
+                                                    strokeWidth = lineStroke,
+                                                    cap = StrokeCap.Round,
+                                                )
+                                            },
+                                        value = TextFieldValue(
+                                            text = editingValue,
+                                            selection = cursorState,
+                                        ),
+                                        onValueChange = { newState ->
+                                            cursorState = newState.selection
+                                            if (newState.text != editingValue) {
+                                                onEditingValueChange(newState.text)
+                                            }
+                                        },
+                                        textStyle = LocalTextStyle.current,
+                                        singleLine = true,
+                                        maxLines = 1,
+                                    )
+                                } else {
+                                    Text(staticValue)
+                                }
+                            }
+                        }
+                        
                         Row(
                             modifier = Modifier.applyHeightToList(),
                             horizontalArrangement = Arrangement.spacedBy(columnSpacing),
                         ) {
-                            @Composable
-                            fun columnModifier(side: Int)
-                                = Modifier.weight(when (side) {
-                                       -1 -> nameColumnWeight
-                                        0 -> priceColumnWeight
-                                        1 -> amountColumnWeight
-                                        else -> throw Exception("Unreachable")
-                                    })
-                                    .clip(run {
-                                        val startShape = halfRoundedCornerShape(Corner.Right,
-                                            sharpSize = sharpColumnShape.bottomEnd,
-                                            roundSize = roundColumnShape.bottomStart,
-                                        )
-                                        val endShape = halfRoundedCornerShape(Corner.Left,
-                                            sharpSize = sharpColumnShape.bottomStart,
-                                            roundSize = roundColumnShape.bottomEnd,
-                                        )
-
-                                        when (side) {
-                                           -1 -> startShape
-                                            0 -> sharpColumnShape
-                                            1 -> endShape
-                                            else -> throw Exception("Unreachable")
-                                        }
-                                    })
-                                    .combinedClickable(
-                                        onClick = { },
-                                        onLongClick = {
-                                            // TODO: detect which column was long-pressed and make the cursor focus on that column first.
-                                            showMenu = true
-                                        },
-                                    )
-                                    .background(ListItemDefaults.containerColor)
-                                    .padding(vertical = 16.dp, horizontal = 12.dp)
-
-
-                            Box(columnModifier(-1)) {
-                                // TODO: make into editable fields
-                                Text(item.name)
-                            }
-                            Box(columnModifier(0)) {
-                                Text(item.unitPrice.toString())
-                            }
-                            Box(columnModifier(1)
-                                .onGloballyPositioned { coords -> with(density) {
+                            ItemColumnField(-1,
+                                staticValue = item.name,
+                                editingValue = editingItemName,
+                                onEditingValueChange = {
+                                    editingItemName = it
+                                    editItemNameError = viewModel.validateName(it, isNew = false)
+                                },
+                                isError = editItemNameError is Result.Err,
+                            )
+                            ItemColumnField(0,
+                                staticValue = item.unitPrice.toString(),
+                                editingValue = editingItemPrice,
+                                onEditingValueChange = {
+                                    editingItemPrice = it
+                                    editItemPriceResult = viewModel.parsePrice(it)
+                                },
+                                isError = editItemPriceResult is Result.Err,
+                            )
+                            ItemColumnField(1,
+                                modifier = Modifier.onGloballyPositioned { coords -> with(density) {
                                     if (multiplySignXOffset == null) {
                                         multiplySignXOffset = coords.size.width.toDp() * -1
                                     }
-                                } }
-                            ) {
-                                Text(item.amount.toString())
-                            }
+                                } },
+                                staticValue = item.amount.toString(),
+                                editingValue = editingItemAmount,
+                                onEditingValueChange = {
+                                    editingItemAmount = it
+                                    editItemAmountResult = viewModel.parseAmount(it)
+                                },
+                                isError = editItemAmountResult is Result.Err,
+                            )
                         }
 
                         // Multiply icon.
                         Icon(painterResource(R.drawable.close_24px), contentDescription = null,
-                            modifier = Modifier.offset(x = multiplySignXOffset?.minus(12.dp) ?: 0.dp, y = 0.dp),
+                            modifier = Modifier.offset(x = multiplySignXOffset?.minus(12.dp + columnSpacing / 2) ?: 0.dp, y = 0.dp),
                         )
 
                         ItemActionsMenu(
                             expanded = showMenu,
                             onDismiss = { showMenu = false },
-                            onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
+                            onEditClick = {
+                                onStateChange(ItemsDialogState.Edit(item))
+                            },
                             onDeleteClick = { viewModel.items.remove(item.name) },
                         )
                     }
@@ -429,29 +559,32 @@ private fun ItemsViewDialog(
         var rowWidth by remember { mutableStateOf<Dp?>(null) }
         var newButtonWidth by remember { mutableStateOf<Dp?>(null) }
 
-        newItemCollapseTransition.AnimatedVisibility({ state is ItemsDialogState.New }) {
+        newItemCollapseTransition.AnimatedVisibility(visible = { state -> state is ItemsDialogState.New }) {
             HorizontalDivider(Modifier.padding(top = ActionDialogPadding.TightlyPacked.actionsSpacerHeight))
         }
 
         // New Item button ...
         Row(modifier = Modifier
             .fillMaxWidth()
-            .onGloballyPositioned { coords -> with(density) {
-                rowWidth = coords.size.width.toDp()
-            } },
+            .onGloballyPositioned { coords ->
+                with(density) {
+                    rowWidth = coords.size.width.toDp()
+                }
+            },
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             newItemCollapseTransition.AnimatedContent(
-                modifier = Modifier.padding(start = rowWidth?.let { rowWidth -> newButtonWidth?.let { newButtonWidth ->
-                    newItemCollapseTransition.animateDp() { state ->
-                        if (state is ItemsDialogState.New) {
-                            0.dp
-                        } else {
-                            (rowWidth - newButtonWidth) / 2
-                        }
-                    }.value
-                } } ?: 0.dp)
+                modifier = Modifier
+                    .padding(start = rowWidth?.let { rowWidth -> newButtonWidth?.let { newButtonWidth ->
+                        newItemCollapseTransition.animateDp() { state ->
+                            if (state is ItemsDialogState.New) {
+                                0.dp
+                            } else {
+                                (rowWidth - newButtonWidth) / 2
+                            }
+                        }.value
+                    } } ?: 0.dp)
             ) { state -> when (state) {
                 is ItemsDialogState.View -> {
                     FilledTextIconButton(
@@ -477,13 +610,14 @@ private fun ItemsViewDialog(
             } }
 
             // New item value fields.
-            newItemCollapseTransition.AnimatedVisibility(visible = { state is ItemsDialogState.New }) { Row {
+            newItemCollapseTransition.AnimatedVisibility(visible = { state -> state is ItemsDialogState.New }) {
                 @Composable
                 fun NewItemField(
                     modifier: Modifier = Modifier,
                     label: String,
                     value: String,
                     onValueChange: (String) -> Unit,
+                    isError: Boolean,
                 ) {
                     OutlinedTextField(
                         modifier = modifier,
@@ -491,39 +625,45 @@ private fun ItemsViewDialog(
                         value = value,
                         onValueChange = onValueChange,
                         shape = MaterialTheme.shapes.medium,
+                        isError = isError,
                         singleLine = true,
                         maxLines = 1,
                     )
                 }
 
-                NewItemField(
-                    modifier = Modifier.weight(nameColumnWeight),
-                    label = "Name",
-                    value = editingItemName,
-                    onValueChange = {
-                        editingItemName = it
-                        editItemNameError = viewModel.validateName(it, isNew = true)
-                    },
-                )
-                NewItemField(
-                    modifier = Modifier.weight(priceColumnWeight),
-                    label = "Price",
-                    value = editingItemPrice,
-                    onValueChange = {
-                        editingItemPrice = it
-                        editItemPriceResult = viewModel.parsePrice(it)
-                    },
-                )
-                NewItemField(
-                    modifier = Modifier.weight(amountColumnWeight),
-                    label = "Amount",
-                    value = editingItemAmount,
-                    onValueChange = {
-                        editingItemAmount = it
-                        editItemAmountResult = viewModel.parseAmount(it)
-                    },
-                )
-            } }
+                Row(horizontalArrangement = Arrangement.spacedBy(columnSpacing)) {
+                    NewItemField(
+                        modifier = Modifier.weight(nameColumnWeight),
+                        label = "Name",
+                        value = editingItemName,
+                        onValueChange = {
+                            editingItemName = it
+                            editItemNameError = viewModel.validateName(it, isNew = true)
+                        },
+                        isError = editItemNameError is Result.Err,
+                    )
+                    NewItemField(
+                        modifier = Modifier.weight(priceColumnWeight),
+                        label = "Price",
+                        value = editingItemPrice,
+                        onValueChange = {
+                            editingItemPrice = it
+                            editItemPriceResult = viewModel.parsePrice(it)
+                        },
+                        isError = editItemPriceResult is Result.Err,
+                    )
+                    NewItemField(
+                        modifier = Modifier.weight(amountColumnWeight),
+                        label = "Amount",
+                        value = editingItemAmount,
+                        onValueChange = {
+                            editingItemAmount = it
+                            editItemAmountResult = viewModel.parseAmount(it)
+                        },
+                        isError = editItemAmountResult is Result.Err,
+                    )
+                }
+            }
         }
 
         // New/Edit item errors.
@@ -532,7 +672,7 @@ private fun ItemsViewDialog(
             is ItemsDialogState.New,
             is ItemsDialogState.Edit -> {
                 fun errorMsg(error: Throwable): String
-                        = error.message ?: error.javaClass.name
+                    = error.message ?: error.javaClass.name
 
                 if (editItemNameError is Result.Err) {
                     Text(errorMsg(editItemNameError.unwrapErr()), color = MaterialTheme.colorScheme.error)
