@@ -100,7 +100,7 @@ class NewTransactionViewModel: ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location = LocationViewModel()
     var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
-    val items = ItemsViewModel()
+    val items = ItemsViewModel(this.currency)
     var totalPrice by mutableDoubleStateOf(0.0)
     val tags = TagsViewModel()
     var description by mutableStateOf("")
