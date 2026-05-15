@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -52,6 +54,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +67,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.into
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
@@ -73,6 +78,8 @@ import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.ListColumn
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
+import java.util.Currency
+import java.util.Locale
 
 val FAKE_ITEMS = mapOf(
     "Ham" to Item("Ham", 1.0, 5.99),
@@ -90,7 +97,7 @@ data class Item(
     // TODO: val unitType: Pounds, liters, unit, etc.
 )
 
-class ItemsViewModel: ViewModel() {
+class ItemsViewModel(val currency: Currency = Currency.getInstance(Locale.getDefault())): ViewModel() {
     // FIXME: preserve order
     val items = mutableStateMapOf<String, Item>()
     var additionalTaxAmount by mutableStateOf<Double?>(null)
@@ -157,39 +164,32 @@ fun RowScope.ItemsField(
         )
     }
 
-    PlainToolTipBox("Add or view items") {
-        val addIcon = @Composable {
-            Icon(painterResource(R.drawable.add_24px), null)
-        }
-        val shape = halfRoundedCornerShape(Corner.Right)
-
-        // Collapse button if there are items (like tags button).
-        if (viewModel.items.isEmpty()) {
+    // Collapse button if there are items (like tags button).
+    if (viewModel.items.isEmpty()) {
+        PlainToolTipBox("Add items") {
             FilledTextIconButton(
-                icon = addIcon,
+                icon = { Icon(painterResource(R.drawable.add_24px), null) },
                 text = { Text("Add items") },
-                shape = shape,
+                shape = halfRoundedCornerShape(Corner.Right),
                 colors = ButtonDefaults.filledTonalButtonColors(),
                 onClick = onClickAdd,
             )
-        } else {
-            // FIXME: Remove small padding around icon button
-            FilledIconButton(
-                content = addIcon,
-                shape = shape,
-                onClick = onClickAdd,
-            )
         }
-    }
-
-    // TODO: should this be available when there already are items?
-    PlainToolTipBox("Scan a receipt") {
-        FilledIconButton(
-            shape = halfRoundedCornerShape(Corner.Left),
-            onClick = onClickOcr,
-        ) {
-            Icon(painterResource(R.drawable.document_scanner_24px),  null,
-                modifier = Modifier.padding(start = 6.dp, end = 10.dp),
+        PlainToolTipBox("Scan a receipt") {
+            FilledIconButton(
+                shape = halfRoundedCornerShape(Corner.Left),
+                onClick = onClickOcr,
+            ) {
+                Icon(painterResource(R.drawable.document_scanner_24px),  null,
+                    modifier = Modifier.padding(start = 6.dp, end = 10.dp),
+                )
+            }
+        }
+    } else {
+        PlainToolTipBox("View items") {
+            FilledTonalIconButton (
+                content = { Icon(painterResource(R.drawable.receipt_long_24px), null) },
+                onClick = onClickAdd,
             )
         }
     }
@@ -299,7 +299,45 @@ private fun ItemsViewDialog(
                             Text("Cancel")
                         }
                     }
-                    else -> { Box { } }
+                    else -> if (viewModel.items.isNotEmpty()) {
+                        var showConfirmationDialog by remember { mutableStateOf(false) }
+
+                        FilledTextIconButton(
+                            icon = { Icon(painterResource(R.drawable.delete_forever), null) },
+                            text = { Text("Clear") },
+                            modifier = Modifier.border(ButtonDefaults.outlinedButtonBorder().width,MaterialTheme.colorScheme.error, ButtonDefaults.shape),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                            onClick = { showConfirmationDialog = true },
+                        )
+
+                        if (showConfirmationDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showConfirmationDialog = false },
+                                title = { Text("Discard items") },
+                                text = { Text("Do you want to delete all the items from the list?") },
+                                confirmButton = { FilledTextIconButton(
+                                    modifier = Modifier.semantics { contentDescription = "confirm" },
+                                    icon = { Icon(painterResource(R.drawable.delete_forever), null) },
+                                    text = { Text("Clear") },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError,
+                                    ),
+                                    onClick = {
+                                        showConfirmationDialog = false
+                                        viewModel.items.clear()
+                                    },
+                                ) },
+                                dismissButton = {
+                                    TextButton(onClick = { showConfirmationDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                },
+                            )
+                        }
+                    } else { Box { } }
                 }
             }
 
@@ -382,12 +420,11 @@ private fun ItemsViewDialog(
                 LocalTextStyle provides columnLabelTextStyle,
             ) {
                 Text("Name", Modifier.weight(nameColumnWeight))
-                // TODO: display used currency symbol
-                Text("Price ($)", Modifier.weight(priceColumnWeight))
+                Text("Price (${viewModel.currency.symbol})", Modifier.weight(priceColumnWeight))
                 Text("Amount", Modifier.weight(amountColumnWeight))
             } }
 
-            ListColumn() {
+            ListColumn {
                 this.items(
                     items = viewModel.items.values.toList(),
                     key = { it.name },
@@ -497,6 +534,7 @@ private fun ItemsViewDialog(
                                     },
                                     isError = editItemNameError is Result.Err,
                                 )
+                                // TODO: create a mini price field like in the parent form
                                 ItemColumnField(0,
                                     staticValue = item.unitPrice.toString(),
                                     editingValue = editingItemPrice,
@@ -530,73 +568,80 @@ private fun ItemsViewDialog(
                             ItemActionsMenu(
                                 expanded = showMenu,
                                 onDismiss = { showMenu = false },
-                                onEditClick = {
-                                    onStateChange(ItemsDialogState.Edit(item))
-                                },
+                                onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
                                 onDeleteClick = { viewModel.items.remove(item.name) },
                             )
                         }
                     }
                 }
             }
+
+            newItemCollapseTransition.AnimatedVisibility(visible = { state ->
+                state is ItemsDialogState.View
+            }) { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val currencyIcon = getCurrencyIcon(viewModel.currency)
+                
+                Column(Modifier.weight(0.5f)) {
+                    Text("Tax amount (optional)",
+                        style = columnLabelTextStyle,
+                        modifier = Modifier.padding(top = dividerPaddingSize, start = 10.dp)
+                    )
+
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        currencyIcon?.let {
+                            Icon(currencyIcon, null)
+                        }
+                        Box(Modifier
+                            .clip(rowShape)
+                            .background(ListItemDefaults.containerColor)
+                            .padding(itemColumnFieldPadding)
+                            .fillMaxWidth()
+                        ) {
+                            // TODO: create a mini price field like in the parent form
+                            SmallBasicTextField(
+                                value = taxAmount,
+                                onValueChange = {
+                                    taxAmount = it
+                                    val result = viewModel.parsePrice(it)
+                                    taxAmountResult = result
+                                    if (result is Result.Ok) {
+                                        viewModel.additionalTaxAmount = result.value
+                                    }
+                                },
+                                isError = taxAmountResult is Result.Err,
+                            )
+                        }
+                    }
+                }
+                Column(Modifier.weight(0.5f)) {
+                    Text("Total price",
+                        style = columnLabelTextStyle,
+                        modifier = Modifier.padding(top = dividerPaddingSize, start = 24.dp)
+                    )
+
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        currencyIcon?.let {
+                            Icon(currencyIcon, null)
+                        }
+                        Box(Modifier
+                            .clip(rowShape)
+                            .background(ListItemDefaults.containerColor)
+                            .padding(itemColumnFieldPadding)
+                            .fillMaxWidth()
+                        ) {
+                            Text("${viewModel.totalPrice()}")
+                        }
+                    }
+                }
+            } }
         }
-
-        newItemCollapseTransition.AnimatedVisibility(visible = { state ->
-            state is ItemsDialogState.View
-        }) { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(0.5f)) {
-                Text("Tax amount (optional)",
-                    style = columnLabelTextStyle,
-                    modifier = Modifier.padding(top = dividerPaddingSize, start = 10.dp)
-                )
-
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    // TODO: display used currency symbol
-                    Icon(painterResource(R.drawable.currency_dollar_24px), null)
-                    Box(Modifier
-                        .clip(rowShape)
-                        .background(ListItemDefaults.containerColor)
-                        .padding(itemColumnFieldPadding)
-                        .fillMaxWidth()
-                    ) {
-                        SmallBasicTextField(
-                            value = taxAmount,
-                            onValueChange = {
-                                taxAmount = it
-                                TODO("parse")
-                            },
-                            isError = taxAmountResult is Result.Err,
-                        )
-                    }
-                }
-            }
-            Column(Modifier.weight(0.5f)) {
-                Text("Total price",
-                    style = columnLabelTextStyle,
-                    modifier = Modifier.padding(top = dividerPaddingSize, start = 24.dp)
-                )
-
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    // TODO: display used currency symbol
-                    Icon(painterResource(R.drawable.currency_dollar_24px), null)
-                    Box(Modifier
-                        .clip(rowShape)
-                        .background(ListItemDefaults.containerColor)
-                        .padding(itemColumnFieldPadding)
-                        .fillMaxWidth()
-                    ) {
-                        Text("${viewModel.totalPrice()}")
-                    }
-                }
-            }
-        } }
 
         // New Item button ...
         Row(modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            newItemCollapseTransition.AnimatedContent() { state ->
+            newItemCollapseTransition.AnimatedContent { state ->
                 when (state) {
                     is ItemsDialogState.View -> {
                         FilledTextIconButton(
