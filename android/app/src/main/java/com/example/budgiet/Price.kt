@@ -137,3 +137,15 @@ fun Currency.parsePrice(price: String, locale: Locale): Result<Double> {
         Result.Err(e)
     }
 }
+
+// TODO: move this function to rust.
+//   The function should take full next text value, input key, input position;
+//   and should return the transformed field value, and whether there should be a delay before applying it.
+fun Currency.validateFieldInput(fieldValue: String, locale: Locale): Result<Double> {
+    return if (fieldValue.isNotEmpty()) {
+        val price = fieldValue.filter { c -> c != DecimalFormatSymbols.getInstance(locale).groupingSeparator }
+        this.parsePrice(price, locale)
+    } else {
+        Result.Ok(0.0)
+    }
+}
