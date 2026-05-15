@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.BottomSheetDefaults
@@ -36,7 +34,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,16 +42,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -70,17 +63,17 @@ import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
-import com.example.budgiet.parsePrice
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import com.example.budgiet.ui.utils.MoneyFieldWrapper
+import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.TextIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.DecimalFormatSymbols
 import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
@@ -96,11 +89,15 @@ val FIELD_MAX_WIDTH = 275.dp
 // How much time (in ms) should pass after an input on a field for its input to be validated.
 const val FIELD_TIMEOUT = 500L
 
-class NewTransactionViewModel: ViewModel() {
+class NewTransactionViewModel(
+    // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
+    locale: Locale = Locale.getDefault(),
+    initialCurrency: Currency = Currency.getInstance(locale),
+): ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location = LocationViewModel()
-    var currency by mutableStateOf<Currency>(Currency.getInstance(Locale.getDefault()))
-    val items = ItemsViewModel(this.currency)
+    var currency by mutableStateOf(initialCurrency)
+    val items = ItemsViewModel()
     var totalPrice by mutableDoubleStateOf(0.0)
     val tags = TagsViewModel()
     var description by mutableStateOf("")
@@ -135,6 +132,7 @@ private sealed class DialogState {
 fun NewTransactionForm(
     modifier: Modifier = Modifier,
     viewModel: NewTransactionViewModel,
+    userLocale: Locale,
     onDismiss: () -> Unit,
 ) {
     var dialogState by remember { mutableStateOf<DialogState>(DialogState.None) }
@@ -167,6 +165,7 @@ fun NewTransactionForm(
             PriceField(
                 selectedPrice = viewModel.totalPrice,
                 onPriceChange = { viewModel.totalPrice = it },
+                locale = userLocale,
                 selectedCurrency = viewModel.currency,
                 onCurrencyChange = { viewModel.currency = it },
             )
@@ -227,6 +226,8 @@ fun NewTransactionForm(
         )
         is DialogState.Items -> ItemsDialog(
             viewModel = viewModel.items,
+            locale = userLocale,
+            currency = viewModel.currency,
             state = dialogState.state,
             onStateChange = { dialogState.state = it },
             onDismiss = dialogDismiss,
@@ -297,84 +298,55 @@ private fun FormField(
 }
 
 @Composable
-fun PriceField(
+private fun PriceField(
     modifier: Modifier = Modifier,
     selectedPrice: Double,
     onPriceChange: (Double) -> Unit,
-    locale: Locale = Locale.getDefault(),
-    selectedCurrency: Currency = remember(locale) { Currency.getInstance(locale) },
+    locale: Locale,
+    selectedCurrency: Currency,
     onCurrencyChange: (Currency) -> Unit,
 ) {
-    var fieldValue by remember { mutableStateOf(if (selectedPrice == 0.0) "" else {
-        selectedCurrency.formatPrice(selectedPrice, locale)
-    }) }
-    var currencyMenuOpen by remember { mutableStateOf(false) }
-    var parseError by remember { mutableStateOf<String?>(null) }
-    val focusManager = LocalFocusManager.current
+    MoneyFieldWrapper(
+        state = remember { RealNumberFieldState.moneyFieldState(selectedPrice, selectedCurrency, locale) },
+        onPriceChange = onPriceChange,
+        locale = locale,
+        currency = selectedCurrency,
+    ) { state ->
+        var currencyMenuOpen by remember { mutableStateOf(false) }
 
-    // TODO: move this function to rust.
-    //   The function should take full next text value, input key, input position;
-    //   and should return the transformed field value, and whether there should be a delay before applying it.
-    fun validateInput() {
-        if (fieldValue.isNotEmpty()) {
-            val price = fieldValue.filter { c -> c != DecimalFormatSymbols.getInstance(locale).groupingSeparator }
-            when (val result = selectedCurrency.parsePrice(price, locale)) {
-                is Result.Ok -> {
-                    onPriceChange(result.value)
-                    fieldValue = selectedCurrency.formatPrice(result.value, locale)
-                    parseError = null
-                }
-                is Result.Err -> parseError = result.error.message
-            }
-        }
+        OutlinedTextField(
+            modifier = modifier
+                // FIXME: TextField does not grow with the input text's width
+                .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
+                .width(IntrinsicSize.Min),
+            value = state.fieldText.value,
+            onValueChange = { state.fieldText.value = it },
+            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
+            shape = MaterialTheme.shapes.medium,
+            keyboardOptions = state.keyboardOptions,
+            singleLine = true,
+            leadingIcon = {
+                CurrencySelectorButton(
+                    showCurrencyMenu = currencyMenuOpen,
+                    onMenuStateChange = { currencyMenuOpen = it },
+                    locale = locale,
+                    selectedCurrency = selectedCurrency,
+                    onCurrencyChange = onCurrencyChange,
+                )
+            },
+            placeholder = {
+                Text(selectedCurrency.formatPrice(0.0, locale),
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            },
+            isError = state.parseResult.value is Result.Err,
+            supportingText = state.parseResult.value.let { if (it is Result.Err) {{
+                Text("Error: ${it.error.message}")
+            }} else null },
+        )
     }
-
-    // Set a timer to run validateInput() on timeout.
-    LaunchedEffect(fieldValue) {
-        delay(FIELD_TIMEOUT)
-        validateInput()
-    }
-
-    OutlinedTextField(
-        modifier = modifier
-            // FIXME: TextField does not grow with the input text's width
-            .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
-            .width(IntrinsicSize.Min)
-            // If another UI element is focused before the timeout, validate the input here and cancel the timer.
-            .onFocusChanged { _ -> validateInput() },
-        value = fieldValue,
-        onValueChange = { fieldValue = it },
-        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
-        shape = MaterialTheme.shapes.medium,
-        keyboardOptions = KeyboardOptions.Default.copy(
-            keyboardType = KeyboardType.Number,
-            imeAction = ImeAction.Done
-        ),
-        singleLine = true,
-        keyboardActions = KeyboardActions(
-            onDone = { focusManager.clearFocus() }
-        ),
-        leadingIcon = {
-            CurrencySelectorButton(
-                showCurrencyMenu = currencyMenuOpen,
-                onMenuStateChange = { currencyMenuOpen = it },
-                selectedCurrency = selectedCurrency,
-                onCurrencyChange = onCurrencyChange,
-            )
-        },
-        placeholder = {
-            Text(
-                selectedCurrency.formatPrice(0.0, locale),
-                textAlign = TextAlign.End,
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.outline,
-            )
-        },
-        isError = parseError != null,
-        supportingText = parseError?.let { parseError -> {
-            Text(parseError)
-        } },
-    )
 }
 
 /** Display a [Button][TextButton] that gives the user the option of choosing the [Currency] for the value of the [PriceField].
@@ -395,11 +367,10 @@ fun CurrencySelectorButton(
     hideDefaultCurrencyCode: Boolean = true,
     showCurrencyMenu: Boolean,
     onMenuStateChange: (Boolean) -> Unit,
-    locale: Locale = Locale.getDefault(),
-    selectedCurrency: Currency = remember(locale) { Currency.getInstance(locale) },
+    locale: Locale,
+    selectedCurrency: Currency,
     onCurrencyChange: (Currency) -> Unit,
 ) {
-    // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
     val localeCurrency = remember(locale) { Currency.getInstance(locale) }
 
     PlainToolTipBox("Select currency") {
@@ -653,6 +624,7 @@ private fun NewTransactionPreview() {
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },
+                userLocale = remember { Locale.getDefault() },
                 onDismiss = { }
             )
         }
@@ -662,6 +634,8 @@ private fun NewTransactionPreview() {
 @Preview(showBackground = true, widthDp = 150, heightDp = 400)
 @Composable
 fun CurrenciesDropDownPreview() {
+    val locale = remember { Locale.getDefault() }
+
     BudgietTheme {
         CurrencySelectorButton(
             modifier = Modifier
@@ -673,6 +647,8 @@ fun CurrenciesDropDownPreview() {
             hideDefaultCurrencyCode = false,
             showCurrencyMenu = true,
             onMenuStateChange = { },
+            locale = locale,
+            selectedCurrency = remember(locale) { Currency.getInstance(locale) },
             onCurrencyChange = { },
         )
     }

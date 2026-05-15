@@ -24,6 +24,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -42,6 +43,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val newTransactionViewModel by this.viewModels<NewTransactionViewModel>()
@@ -105,6 +107,7 @@ fun MainPage(modifier: Modifier = Modifier, newTransactionViewModel: NewTransact
             NewTransactionForm(
                 viewModel = newTransactionViewModel,
                 onDismiss = dismissBottomSheet,
+                userLocale = remember { Locale.getDefault() }
             )
         }
     }
