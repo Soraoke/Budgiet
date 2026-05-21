@@ -173,6 +173,8 @@ fun NewTransactionForm(
         FormField("Items") {
             ItemsField(
                 viewModel = viewModel.items,
+                locale = userLocale,
+                currency = viewModel.currency,
                 onClickAdd = { dialogState = DialogState.Items(ItemsDialogState.View) },
                 onClickOcr = { dialogState = DialogState.Items(ItemsDialogState.Ocr) },
             )
@@ -619,7 +621,7 @@ private fun NewTransactionPreview() {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
                     location.selectedLocation = DbEntry(0u, FAKE_LOCATIONS[0u]!!)
-                    items.items.putAll(FAKE_ITEMS)
+                    items.items.addAll(FAKE_ITEMS)
                     items.additionalTaxAmount = 2.5
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
