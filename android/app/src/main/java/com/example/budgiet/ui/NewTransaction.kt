@@ -300,7 +300,7 @@ private fun FormField(
 }
 
 @Composable
-private fun PriceField(
+fun PriceField(
     modifier: Modifier = Modifier,
     selectedPrice: Double,
     onPriceChange: (Double) -> Unit,
