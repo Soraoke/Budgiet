@@ -30,10 +30,10 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import com.example.budgiet.DbEntry
 import com.example.budgiet.assert
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
-import com.example.budgiet.ui.DbEntry
 import com.example.budgiet.ui.FAKE_LOCATIONS
 import com.example.budgiet.ui.Location
 import com.example.budgiet.ui.LocationField
