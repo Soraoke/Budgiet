@@ -1,7 +1,5 @@
 package com.example.budgiet.transactionTests
 
-import android.util.Log
-import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -11,17 +9,13 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.hasContentDescriptionExactly
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.pressKey
-import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.text.TextRange
 import com.example.budgiet.assert
 import com.example.budgiet.assertEquals
@@ -67,6 +61,7 @@ class PriceFieldTests {
                     modifier = Modifier.testTag(PRICE_FIELD_TEST_TAG),
                     selectedPrice = selectedPrice,
                     onPriceChange = { selectedPrice = it },
+                    locale = remember { Locale.US },
                     selectedCurrency = selectedCurrency,
                     onCurrencyChange = { selectedCurrency = it },
                 )
