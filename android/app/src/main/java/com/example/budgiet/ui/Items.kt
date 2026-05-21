@@ -39,7 +39,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -68,6 +69,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.formatPrice
 import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.into
 import com.example.budgiet.parsePrice
@@ -85,12 +87,12 @@ import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import java.util.Currency
 import java.util.Locale
 
-val FAKE_ITEMS = mapOf(
-    "Ham" to Item("Ham", 1.0, 5.99),
-    "Cheese" to Item("Cheese", 4.0, 2.59),
-    "Bread" to Item("Bread", 2.0, 4.19),
-    "Crackers" to Item("Crackers", 2.0, 1.89),
-    "Chicken" to Item("Chicken", 3.5, 4.99),
+val FAKE_ITEMS = listOf(
+    Item("Ham", 5.99, 1.0),
+    Item("Cheese", 2.59, 4.0),
+    Item("Bread", 4.19, 2.0),
+    Item("Crackers", 1.89, 2.0),
+    Item("Chicken", 4.99, 3.5),
 )
 
 data class Item(
@@ -102,31 +104,42 @@ data class Item(
 )
 
 class ItemsViewModel: ViewModel() {
-    // FIXME: preserve order
-    val items = mutableStateMapOf<String, Item>()
-    var additionalTaxAmount by mutableStateOf<Double?>(null)
+    val items = mutableStateListOf<Item>()
+    var additionalTaxAmount by mutableDoubleStateOf(0.0)
 
-    fun totalPrice() = this.items.values.sumOf { it.amount * it.unitPrice } + (additionalTaxAmount ?: 0.0)
+    val totalPrice get() = this.items.sumOf { it.amount * it.unitPrice } + this.additionalTaxAmount
 
     // TODO: doc
-    fun displayFieldSummary(): String {
-        val currencySymbol = "$" // TODO: use currency in money struct, all items must have the same currency, or thats a DB error
-        val itemsCount = this.items.values
+    fun displayFieldSummary(currency: Currency, locale: Locale): String {
+        val itemsCount = this.items
             .sumOf { it.amount } // FIXME: count items with a measure other than unit as a single item
             .toInt()
-        val itemsPrice = this.items.values
-            .sumOf { it.amount * it.unitPrice }
-        val displayTax = this.additionalTaxAmount?.let { tax -> " + $currencySymbol$tax tax" }
+        val itemsPrice = currency.formatPrice(
+            this.items.sumOf { it.amount * it.unitPrice },
+            locale = locale,
+        )
+        val displayTax = if (this.additionalTaxAmount != 0.0 && this.items.isNotEmpty()) {
+            " + ${currency.symbol}${this.additionalTaxAmount} tax"
+        } else ""
 
         val itemsWord = if (itemsCount == 1) "item" else "items"
 
-        return "$itemsCount $itemsWord ($currencySymbol$itemsPrice) ${displayTax ?: "" }"
+        return "$itemsCount $itemsWord (${currency.symbol}$itemsPrice)$displayTax"
+    }
+
+    fun removeItem(name: String) {
+        val idx = this.items.indexOfFirst { it.name == name }
+        this.items.removeAt(idx)
+    }
+    fun reset() {
+        this.items.clear()
+        this.additionalTaxAmount = 0.0
     }
 
     fun validateName(name: String, isNew: Boolean = true): Result<Unit> {
         val msg = if (name.isEmpty()) {
             "Name must not be empty"
-        } else if (isNew && this.items.contains(name)) {
+        } else if (isNew && this.items.find { it.name == name } != null) {
             "An item with this name already exists. Edit the price/amount of that item instead."
         } else {
             null
@@ -151,11 +164,13 @@ class ItemsViewModel: ViewModel() {
 @Composable
 fun RowScope.ItemsField(
     viewModel: ItemsViewModel,
+    locale: Locale,
+    currency: Currency,
     onClickAdd: () -> Unit,
     onClickOcr: () -> Unit,
 ) {
     if (viewModel.items.isNotEmpty()) {
-        Text(viewModel.displayFieldSummary(),
+        Text(viewModel.displayFieldSummary(currency, locale),
             modifier = Modifier
                 .weight(1f)
                 .align(Alignment.CenterVertically),
@@ -258,15 +273,18 @@ private fun ItemsViewDialog(
         else -> ""
     }) }
     var editItemNameError by remember(state) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    // Don't use the currency or locale as keys here; the field value should only be reset when state changes.
     val editItemPriceState = remember(state) { RealNumberFieldState(initialFieldValue = when (state) {
-        is ItemsDialogState.Edit -> state.value.unitPrice.toString()
+        is ItemsDialogState.Edit -> currency.formatPrice(state.value.unitPrice, locale)
         else -> ""
     }) }
     val editItemAmountState = remember(state) { RealNumberFieldState(initialFieldValue = when (state) {
         is ItemsDialogState.Edit -> state.value.amount.toString()
         else -> ""
     }) }
-    val taxAmountState = remember { RealNumberFieldState.moneyFieldState(viewModel.additionalTaxAmount ?: 0.0, currency, locale) }
+    val taxAmountState = viewModel.additionalTaxAmount.let { tax ->
+        remember(tax) { RealNumberFieldState.moneyFieldState(tax, currency, locale) }
+    }
 
     val columnSpacing = 2.dp
     val nameColumnWeight = 0.6f
@@ -286,7 +304,11 @@ private fun ItemsViewDialog(
         title = { Text("Transaction items",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = ActionDialogPadding.Default.dialogEdges.calculateStartPadding(layoutDirection)),
+                .padding(
+                    start = ActionDialogPadding.Default.dialogEdges.calculateStartPadding(
+                        layoutDirection
+                    )
+                ),
             style = MaterialTheme.typography.headlineSmall,
         ) },
         actions = {
@@ -326,9 +348,8 @@ private fun ItemsViewDialog(
                                     ),
                                     onClick = {
                                         showConfirmationDialog = false
-                                        viewModel.items.clear()
+                                        viewModel.reset()
                                         taxAmountState.fieldText.value = ""
-                                        viewModel.additionalTaxAmount = null
                                     },
                                 ) },
                                 dismissButton = {
@@ -346,30 +367,32 @@ private fun ItemsViewDialog(
             //   If it is, the button adds the new item to the list.
             //   Otherwise, the button applies changes made to the item list and closes the dialog.
             newItemCollapseTransition.AnimatedContent { state ->
-                val canSubmit = when (state) {
-                    is ItemsDialogState.View -> {{ taxAmountState.parseResult.value is Result.Ok }}
-                    is ItemsDialogState.New -> {{
+                val canSubmit = { when (state) {
+                    is ItemsDialogState.View -> { taxAmountState.parseResult.value is Result.Ok }
+                    is ItemsDialogState.New -> {
                         editItemNameError is Result.Ok
                         && editItemPriceState.parseResult.value is Result.Ok
                         && editItemAmountState.parseResult.value is Result.Ok
-                    }}
-                    is ItemsDialogState.Edit -> {{
-                        editItemName.isNotEmpty()
-                        && editItemPriceState.fieldText.value.isNotEmpty()
-                        && editItemAmountState.fieldText.value.isEmpty()
-                        && editItemNameError is Result.Ok
+                    }
+                    is ItemsDialogState.Edit -> {
+                        val item = state.value
+
+                        (editItemName != item.name
+                        || editItemPriceState.fieldText.value != currency.formatPrice(item.unitPrice, locale)
+                        || editItemAmountState.fieldText.value != item.amount.toString()
+                        ) && editItemNameError is Result.Ok
                         && editItemPriceState.parseResult.value is Result.Ok
                         && editItemAmountState.parseResult.value is Result.Ok
-                    }}
-                    else -> {{ true }}
-                }
+                    }
+                    else -> { true }
+                } }
                 val submit = {
-                    editItemNameError = viewModel.validateName(editItemName, isNew = true)
+                    editItemNameError = viewModel.validateName(editItemName, isNew = state !is ItemsDialogState.Edit)
                     editItemPriceState.parseResult.value = currency.parsePrice(editItemPriceState.fieldText.value, locale)
                     editItemAmountState.parseResult.value = viewModel.parseAmount(editItemAmountState.fieldText.value)
 
                     if (canSubmit()) {
-                        viewModel.items[editItemName] = Item(editItemName, editItemPriceState.parseResult.value.unwrap(), editItemAmountState.parseResult.value.unwrap())
+                        viewModel.items.add(Item(editItemName, editItemPriceState.parseResult.value.unwrap(), editItemAmountState.parseResult.value.unwrap()))
                         onStateChange(ItemsDialogState.View)
                     }
                 }
@@ -435,7 +458,7 @@ private fun ItemsViewDialog(
 
             ListColumn {
                 this.items(
-                    items = viewModel.items.values.toList(),
+                    items = viewModel.items,
                     key = { it.name },
                 ) { item ->
                     Column {
@@ -499,11 +522,13 @@ private fun ItemsViewDialog(
                                         focusedField = side
                                     },
                                 )
-                                .background(if (isSelected) {
-                                    MaterialTheme.colorScheme.surfaceContainerLowest
-                                } else {
-                                    ListItemDefaults.containerColor
-                                })
+                                .background(
+                                    if (isSelected) {
+                                        MaterialTheme.colorScheme.surfaceContainerLowest
+                                    } else {
+                                        ListItemDefaults.containerColor
+                                    }
+                                )
                                 .padding(itemColumnFieldPadding)
                                 .then(modifier)
                             ) {
@@ -524,7 +549,8 @@ private fun ItemsViewDialog(
                         newItemCollapseTransition.AnimatedVisibility(visible = { isEditing }) {
                             Text("Edit item",
                                 style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.align(Alignment.Start)
+                                modifier = Modifier
+                                    .align(Alignment.Start)
                                     .padding(start = columnSpacing * 4)
                             )
                         }
@@ -551,7 +577,7 @@ private fun ItemsViewDialog(
                                     locale = locale,
                                 ) { state ->
                                     ItemColumnField(0,
-                                        staticValue = item.unitPrice.toString(),
+                                        staticValue = currency.formatPrice(item.unitPrice, locale),
                                         editingValue = state.fieldText.value,
                                         onEditingValueChange = { state.fieldText.value = it },
                                         isError = state.parseResult.value is Result.Err,
@@ -585,7 +611,7 @@ private fun ItemsViewDialog(
                                 expanded = showMenu,
                                 onDismiss = { showMenu = false },
                                 onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
-                                onDeleteClick = { viewModel.items.remove(item.name) },
+                                onDeleteClick = { viewModel.removeItem(item.name) },
                             )
                         }
                     }
@@ -623,6 +649,7 @@ private fun ItemsViewDialog(
                                     value = state.fieldText.value,
                                     onValueChange = { state.fieldText.value = it },
                                     isError = state.parseResult.value is Result.Err,
+                                    placeholderText = currency.formatPrice(0.0, locale),
                                     keyboardOptions = state.keyboardOptions,
                                 )
                             }
@@ -645,7 +672,7 @@ private fun ItemsViewDialog(
                             .padding(itemColumnFieldPadding)
                             .fillMaxWidth()
                         ) {
-                            Text("${viewModel.totalPrice()}")
+                            Text(currency.formatPrice(viewModel.totalPrice, locale))
                         }
                     }
                 }
@@ -778,6 +805,7 @@ private fun SmallBasicTextField(
     value: String,
     onValueChange: (String) -> Unit,
     isError: Boolean,
+    placeholderText: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val lineColor = if (isError) {
@@ -790,36 +818,40 @@ private fun SmallBasicTextField(
         value.isEmpty() -> TextRange.Zero
         else -> TextRange(value.length, value.length)
     }) }
-    @Suppress("AssignedValueIsNeverRead")
-    BasicTextField(
-        modifier = modifier
-            .drawBehind {
-                val lineStroke = 2.dp.toPx()
-                val lineNegativePadding = 3.dp.toPx()
-                val y = this.size.height - lineStroke + lineNegativePadding
-                this.drawLine(
-                    color = lineColor,
-                    start = Offset(-lineNegativePadding, y),
-                    end = Offset(this.size.width + lineNegativePadding, y),
-                    strokeWidth = lineStroke,
-                    cap = StrokeCap.Round,
-                )
+    Box {
+        if (value.isEmpty() && placeholderText != null) {
+            Text(placeholderText, color = MaterialTheme.colorScheme.outline)
+        }
+        BasicTextField(
+            modifier = modifier
+                .drawBehind {
+                    val lineStroke = 2.dp.toPx()
+                    val lineNegativePadding = 3.dp.toPx()
+                    val y = this.size.height - lineStroke + lineNegativePadding
+                    this.drawLine(
+                        color = lineColor,
+                        start = Offset(-lineNegativePadding, y),
+                        end = Offset(this.size.width + lineNegativePadding, y),
+                        strokeWidth = lineStroke,
+                        cap = StrokeCap.Round,
+                    )
+                },
+            value = TextFieldValue(
+                text = value,
+                selection = cursorState,
+            ),
+            onValueChange = { newState ->
+                cursorState = newState.selection
+                if (newState.text != value) {
+                    onValueChange(newState.text)
+                }
             },
-        value = TextFieldValue(
-            text = value,
-            selection = cursorState,
-        ),
-        onValueChange = { newState ->
-            cursorState = newState.selection
-            if (newState.text != value) {
-                onValueChange(newState.text)
-            }
-        },
-        textStyle = LocalTextStyle.current,
-        keyboardOptions = keyboardOptions,
-        singleLine = true,
-        maxLines = 1,
-    )
+            textStyle = LocalTextStyle.current,
+            keyboardOptions = keyboardOptions,
+            singleLine = true,
+            maxLines = 1,
+        )
+    }
 }
 
 /** Shows a [Dialog][ActionDialog] to allow the user to ***scan*** a picture of a *digital or paper receipt*
@@ -848,9 +880,13 @@ private fun ItemsOcrDialog(
 @Preview(showBackground = true)
 @Composable
 fun ItemsFieldPreview() {
+    val locale = remember { Locale.getDefault() }
+
     BudgietTheme { Row {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>(),
+            locale = locale,
+            currency = remember(locale) { Currency.getInstance(locale) },
             onClickAdd = { },
             onClickOcr = { },
         )
@@ -860,11 +896,16 @@ fun ItemsFieldPreview() {
 @Preview(showBackground = true)
 @Composable
 fun ItemsFieldFilledPreview() {
+    val locale = remember { Locale.getDefault() }
+
     BudgietTheme { Row {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>().apply {
-                items.putAll(FAKE_ITEMS)
+                items.addAll(FAKE_ITEMS)
+                additionalTaxAmount = 2.1
             },
+            locale = locale,
+            currency = remember(locale) { Currency.getInstance(locale) },
             onClickAdd = { },
             onClickOcr = { },
         )
@@ -879,7 +920,7 @@ fun ItemsDialogPreview() {
     BudgietTheme {
         ItemsDialog(
             viewModel = viewModel<ItemsViewModel>().apply {
-                items.putAll(FAKE_ITEMS)
+                items.addAll(FAKE_ITEMS)
             },
             locale = locale,
             currency = remember(locale) { Currency.getInstance(locale) },
@@ -915,11 +956,11 @@ fun ItemsDialogEditItemPreview() {
     BudgietTheme {
         ItemsDialog(
             viewModel = viewModel<ItemsViewModel>().apply {
-                items[FAKE_ITEMS.values.first().name] = FAKE_ITEMS.values.first()
+                items.add(FAKE_ITEMS.first())
             },
             locale = locale,
             currency = remember(locale) { Currency.getInstance(locale) },
-            state = ItemsDialogState.Edit(FAKE_ITEMS.values.first()),
+            state = ItemsDialogState.Edit(FAKE_ITEMS.first()),
             onStateChange = { },
             onDismiss = { },
         )
