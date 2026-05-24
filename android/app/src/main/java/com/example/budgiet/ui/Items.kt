@@ -106,6 +106,7 @@ data class Item(
 )
 
 class ItemsViewModel: ViewModel() {
+    // TODO: Have a database table of item names the user has used, and have a different screen to show aggregate data of each item across transactions.
     val items = mutableStateListOf<Item>()
     var additionalTaxAmount by mutableDoubleStateOf(0.0)
 
