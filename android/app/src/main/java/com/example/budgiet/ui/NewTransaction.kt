@@ -2,6 +2,12 @@
 package com.example.budgiet.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +39,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -67,9 +76,9 @@ import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
+import com.example.budgiet.ui.utils.MoneyFieldWrapper
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
-import com.example.budgiet.ui.utils.MoneyFieldWrapper
 import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.TextIconButton
 import kotlinx.coroutines.delay
@@ -97,8 +106,8 @@ class NewTransactionViewModel(
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var location = LocationViewModel()
     var currency by mutableStateOf(initialCurrency)
+    var customPrice by mutableDoubleStateOf(0.0)
     val items = ItemsViewModel()
-    var totalPrice by mutableDoubleStateOf(0.0)
     val tags = TagsViewModel()
     var description by mutableStateOf("")
 
@@ -111,7 +120,8 @@ class NewTransactionViewModel(
         this.location.selectedLocation = null
         // Currency should persist even after a cancel
         // this.currency = Currency.getInstance(Locale.getDefault())
-        this.totalPrice = 0.0
+        this.customPrice = 0.0
+        this.items.reset()
         this.tags.selectedTags.clear()
         this.description = ""
     }
@@ -163,11 +173,8 @@ fun NewTransactionForm(
         }
         FormField("Price") {
             PriceField(
-                selectedPrice = viewModel.totalPrice,
-                onPriceChange = { viewModel.totalPrice = it },
+                viewModel = viewModel,
                 locale = userLocale,
-                selectedCurrency = viewModel.currency,
-                onCurrencyChange = { viewModel.currency = it },
             )
         }
         FormField("Items") {
@@ -198,6 +205,7 @@ fun NewTransactionForm(
             TextIconButton(
                 onClick = {
                     onDismiss()
+                    // TODO: show alert dialog before deleting data
                     viewModel.cancel()
                 },
                 icon = { Icon(painterResource(R.drawable.close_24px), "Cancel") },
@@ -302,52 +310,93 @@ private fun FormField(
 @Composable
 fun PriceField(
     modifier: Modifier = Modifier,
-    selectedPrice: Double,
-    onPriceChange: (Double) -> Unit,
+    viewModel: NewTransactionViewModel,
     locale: Locale,
-    selectedCurrency: Currency,
-    onCurrencyChange: (Currency) -> Unit,
 ) {
-    MoneyFieldWrapper(
-        state = remember { RealNumberFieldState.moneyFieldState(selectedPrice, selectedCurrency, locale) },
-        onPriceChange = onPriceChange,
-        locale = locale,
-        currency = selectedCurrency,
-    ) { state ->
-        var currencyMenuOpen by remember { mutableStateOf(false) }
+    // TextField must be **disabled** when [items list][ItemsViewModel] is populated.
+    val enabled = viewModel.items.items.isEmpty()
+    val currency = viewModel.currency
 
-        OutlinedTextField(
-            modifier = modifier
-                // FIXME: TextField does not grow with the input text's width
-                .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
-                .width(IntrinsicSize.Min),
-            value = state.fieldText.value,
-            onValueChange = { state.fieldText.value = it },
-            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
-            shape = MaterialTheme.shapes.medium,
-            keyboardOptions = state.keyboardOptions,
-            singleLine = true,
-            leadingIcon = {
-                CurrencySelectorButton(
-                    showCurrencyMenu = currencyMenuOpen,
-                    onMenuStateChange = { currencyMenuOpen = it },
-                    locale = locale,
-                    selectedCurrency = selectedCurrency,
-                    onCurrencyChange = onCurrencyChange,
-                )
-            },
-            placeholder = {
-                Text(selectedCurrency.formatPrice(0.0, locale),
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.outline,
-                )
-            },
-            isError = state.parseResult.value is Result.Err,
-            supportingText = state.parseResult.value.let { if (it is Result.Err) {{
-                Text("Error: ${it.error.message}")
-            }} else null },
-        )
+    MoneyFieldWrapper(
+        state = remember { RealNumberFieldState.moneyFieldState(viewModel.customPrice, viewModel.currency, locale) },
+        onPriceChange = { viewModel.customPrice = it },
+        locale = locale,
+        currency = currency,
+    ) { state ->
+        // Will show tooltip on any interaction if disabled.
+        val interactionSource = remember { MutableInteractionSource() }
+        val isFocused by interactionSource.collectIsFocusedAsState()
+        val isHovered by interactionSource.collectIsHoveredAsState()
+        val tooltipState = rememberTooltipState()
+
+        val textField = @Composable {
+            val scope = rememberCoroutineScope()
+            var currencyMenuOpen by remember { mutableStateOf(false) }
+            val shape = MaterialTheme.shapes.medium
+            val fieldText = if (enabled) {
+                state.fieldText.value
+            } else {
+                currency.formatPrice(viewModel.items.totalPrice, locale)
+            }
+
+            OutlinedTextField(
+                modifier = modifier
+                    // FIXME: TextField does not grow with the input text's width
+                    .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
+                    .width(IntrinsicSize.Min)
+                    .run { if (!enabled) { this
+                        .clip(shape)
+                        .hoverable(interactionSource)
+                        .focusable(interactionSource = interactionSource)
+                        .clickable(interactionSource = interactionSource) { scope.launch { tooltipState.show() } }
+                    } else this },
+                interactionSource = interactionSource,
+                value = fieldText,
+                onValueChange = { state.fieldText.value = it },
+                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
+                shape = shape,
+                keyboardOptions = RealNumberFieldState.keyboardOptions,
+                singleLine = true,
+                enabled = enabled,
+                readOnly = !enabled,
+                leadingIcon = {
+                    CurrencySelectorButton(
+                        showCurrencyMenu = currencyMenuOpen,
+                        onMenuStateChange = { currencyMenuOpen = it },
+                        locale = locale,
+                        selectedCurrency = currency,
+                        onCurrencyChange = { viewModel.currency = it },
+                    )
+                },
+                placeholder = {
+                    Text(viewModel.currency.formatPrice(0.0, locale),
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                },
+                isError = enabled && state.parseResult.value is Result.Err,
+                supportingText = state.parseResult.value.let { if (enabled && it is Result.Err) {{
+                    Text("Error: ${it.error.message}")
+                }} else null },
+            )
+        }
+
+        if (enabled) {
+            textField()
+        } else {
+            LaunchedEffect(isFocused, isHovered) {
+                if (isFocused || isHovered) {
+                    tooltipState.show()
+                }
+            }
+            PlainToolTipBox(
+                text = "Can't set price when items exist.\nClear items to set custom price.",
+                state = tooltipState,
+                content = textField,
+            )
+        }
+
     }
 }
 

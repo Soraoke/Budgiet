@@ -49,6 +49,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.TooltipState
 import androidx.compose.material3.getSelectedDate
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
@@ -238,6 +239,7 @@ fun TextIconButton(
 fun PlainToolTipBox(
     text: String,
     modifier: Modifier = Modifier,
+    state: TooltipState = rememberTooltipState(),
     positioning: TooltipAnchorPosition = TooltipAnchorPosition.Above,
     spacing: Dp = TOOLTIP_ANCHOR_SPACING,
     setContentDescription: Boolean = true,
@@ -260,7 +262,7 @@ fun PlainToolTipBox(
                 spacing = spacing
             )
         },
-        state = rememberTooltipState(),
+        state = state,
         tooltip = {
             PlainTooltip { Text(text) }
         },
