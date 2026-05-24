@@ -1,14 +1,12 @@
 package com.example.budgiet.transactionTests
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -19,8 +17,11 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextRange
 import com.example.budgiet.assert
 import com.example.budgiet.assertEquals
+import com.example.budgiet.formatPrice
 import com.example.budgiet.getSemanticsProperty
+import com.example.budgiet.ui.FAKE_ITEMS
 import com.example.budgiet.ui.FIELD_TIMEOUT
+import com.example.budgiet.ui.NewTransactionViewModel
 import com.example.budgiet.ui.PriceField
 import org.junit.Rule
 import org.junit.Test
@@ -35,35 +36,35 @@ class PriceFieldTests {
         initialPrice: Double = 0.0,
         initialCurrency: Currency = Currency.getInstance("USD"),
     ) {
-        val priceInputNode
+        val textField
             get() = this.rule.onNodeWithTag(PRICE_FIELD_TEST_TAG)
 
         val errorMessage: String?
-            get() = this.priceInputNode
+            get() = this.textField
                 .getSemanticsProperty(SemanticsProperties.Text)
                 .map { list -> list.last().text }
                 .getOrNull()
 
         fun inputPrice(price: String) {
-            this.priceInputNode
+            this.textField
                 .performTextInput(price)
 
             // Wait for the check delay. Add arbitrary timeout padding just in case.
             runCatching { this.rule.waitUntil(FIELD_TIMEOUT + 10) { false } }
         }
 
+        val viewModel = NewTransactionViewModel().apply {
+            this.customPrice = initialPrice
+            this.currency = initialCurrency
+        }
+        val locale: Locale = Locale.US
+
         init {
             this.rule.setContent {
-                var selectedPrice by remember { mutableStateOf(initialPrice) }
-                var selectedCurrency by remember { mutableStateOf(initialCurrency) }
-
                 PriceField(
                     modifier = Modifier.testTag(PRICE_FIELD_TEST_TAG),
-                    selectedPrice = selectedPrice,
-                    onPriceChange = { selectedPrice = it },
-                    locale = remember { Locale.US },
-                    selectedCurrency = selectedCurrency,
-                    onCurrencyChange = { selectedCurrency = it },
+                    viewModel = this.viewModel,
+                    locale = locale,
                 )
             }
         }
@@ -77,14 +78,14 @@ class PriceFieldTests {
         val state = TestState(this.composeTestRule, initialPrice = 0.0)
 
         // Text field should start empty.
-        state.priceInputNode
+        state.textField
             .getSemanticsProperty(SemanticsProperties.EditableText)
             .map { it.text }
             .getOrThrow()
             .assertEquals("")
 
         // Placeholder text should be visible when input is empty.
-        state.priceInputNode
+        state.textField
             .getSemanticsProperty(SemanticsProperties.Text)
             .map { list -> list.map { s -> s.text } }
             .getOrThrow()
@@ -98,7 +99,7 @@ class PriceFieldTests {
         state.inputPrice("42")
 
         // Check that the cents value was appended automatically.
-        state.priceInputNode
+        state.textField
             .getSemanticsProperty(SemanticsProperties.EditableText)
             .map { it.text }
             .getOrThrow()
@@ -120,12 +121,12 @@ class PriceFieldTests {
         state.inputPrice("123")
 
         // Insert text after the decimal point.
-        val editableTextLength = state.priceInputNode
+        val editableTextLength = state.textField
             .getSemanticsProperty(SemanticsProperties.EditableText)
             .getOrThrow().text
             .length
         // Remove the automatic decimal place values.
-        state.priceInputNode
+        state.textField
             .apply { performTextInputSelection(TextRange(editableTextLength), relativeToOriginalText = false) }
             .performKeyInput {
                 repeat(2) { this.pressKey(Key.Backspace) }
@@ -133,7 +134,7 @@ class PriceFieldTests {
         state.inputPrice("21")
 
         // Check final field text.
-        state.priceInputNode
+        state.textField
             .getSemanticsProperty(SemanticsProperties.EditableText)
             .getOrThrow().text
             .assertEquals("432,123.21")
@@ -145,7 +146,7 @@ class PriceFieldTests {
 
         state.inputPrice("bad")
 
-        state.priceInputNode
+        state.textField
             .apply { this
                 .getSemanticsProperty(SemanticsProperties.Error)
                 .getOrThrow()
@@ -156,5 +157,37 @@ class PriceFieldTests {
                 .joinToString { it }
                 .assert({ it.contains("Invalid character") }) { "Price field did not have an error message" }
             }
+    }
+
+    /** Test that the price field is not editable when the transaction form has items. */
+    @Test
+    fun disabledWithItems() {
+        val state = TestState(this.composeTestRule, initialPrice = 0.0)
+        val customPrice = "12.00"
+
+        state.inputPrice(customPrice)
+
+        // Add items, price field will display the total price of those items.
+        state.viewModel.items.items.addAll(FAKE_ITEMS)
+        val totalPrice = state.viewModel.currency.formatPrice(state.viewModel.items.totalPrice, state.locale)
+
+        state.textField
+            .assertIsNotEnabled()
+        state.textField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text
+            .assertEquals(totalPrice)
+
+        // Remove items, price field should revert to previous customPrice.
+        state.viewModel.items.items.clear()
+
+        state.textField
+            .assertIsEnabled()
+        state.textField
+            .getSemanticsProperty(SemanticsProperties.EditableText)
+            .getOrThrow()
+            .text
+            .assertEquals(customPrice)
     }
 }
