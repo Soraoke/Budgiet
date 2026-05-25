@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -106,23 +107,46 @@ data class Item(
 )
 
 class ItemsViewModel: ViewModel() {
+    sealed class TaxType {
+        // TODO: use Money type later for this
+        object CurrencyAmount: TaxType()
+        object Percentage: TaxType()
+
+        override fun toString() = when (this) {
+            is CurrencyAmount -> "currency amount"
+            is Percentage -> "percentage"
+        }
+    }
+
     // TODO: Have a database table of item names the user has used, and have a different screen to show aggregate data of each item across transactions.
     val items = mutableStateListOf<Item>()
-    var additionalTaxAmount by mutableDoubleStateOf(0.0)
+    var taxType by mutableStateOf<TaxType>(TaxType.CurrencyAmount)
+    var taxValue by mutableDoubleStateOf(0.0)
 
-    val totalPrice get() = this.items.sumOf { it.amount * it.unitPrice } + this.additionalTaxAmount
+    val totalPrice: Double get() {
+        val itemsSum = this.items.sumOf { it.amount * it.unitPrice }
+        val taxAmount = when (this.taxType) {
+            is TaxType.CurrencyAmount -> this.taxValue
+            is TaxType.Percentage -> itemsSum * this.taxValue * 0.01
+        }
+        return itemsSum + taxAmount
+    }
 
-    // TODO: doc
+    /** Produces a message to display in the [NewTransactionForm] [ItemsField].
+     * Includes the number of items,  */
     fun displayFieldSummary(currency: Currency, locale: Locale): String {
         val itemsCount = this.items
-            .sumOf { it.amount } // FIXME: count items with a measure other than unit as a single item
+            .sumOf { it.amount } // FIXME: count items with a measure other than unit as a single item, if its units count each unit, otherwise count as 1
             .toInt()
         val itemsPrice = currency.formatPrice(
             this.items.sumOf { it.amount * it.unitPrice },
             locale = locale,
         )
-        val displayTax = if (this.additionalTaxAmount != 0.0 && this.items.isNotEmpty()) {
-            " + ${currency.symbol}${currency.formatPrice(this.additionalTaxAmount, locale)} tax"
+        val displayTax = if (this.taxValue != 0.0 && this.items.isNotEmpty()) {
+            when (this.taxType) {
+                is TaxType.CurrencyAmount -> " + ${currency.symbol}${currency.formatPrice(this.taxValue, locale)} tax"
+                is TaxType.Percentage -> " + ${this.taxValue}% tax"
+            }
         } else ""
 
         val itemsWord = if (itemsCount == 1) "item" else "items"
@@ -136,7 +160,7 @@ class ItemsViewModel: ViewModel() {
     }
     fun reset() {
         this.items.clear()
-        this.additionalTaxAmount = 0.0
+        this.taxValue = 0.0
     }
 
     fun validateName(name: String, isNew: Boolean = true): Result<Unit> {
@@ -285,9 +309,10 @@ private fun ItemsViewDialog(
         is ItemsDialogState.Edit -> state.value.amount.toString()
         else -> ""
     }) }
-    val taxAmountState = viewModel.additionalTaxAmount.let { tax ->
-        remember(tax) { RealNumberFieldState.moneyFieldState(tax, currency, locale) }
-    }
+    val taxAmountState = remember { when (viewModel.taxType) {
+        is ItemsViewModel.TaxType.CurrencyAmount -> RealNumberFieldState.moneyFieldState(viewModel.taxValue, currency, locale)
+        is ItemsViewModel.TaxType.Percentage -> RealNumberFieldState(viewModel.taxValue)
+    } }
 
     val columnSpacing = 2.dp
     val nameColumnWeight = 0.6f
@@ -635,40 +660,93 @@ private fun ItemsViewDialog(
 
             newItemCollapseTransition.AnimatedVisibility(visible = { state ->
                 state is ItemsDialogState.View
-            }) { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                val currencyIcon = getCurrencyIcon(currency)
+            }) { Row {
+                val currencyIcon = getCurrencyIcon(currency) ?: painterResource(R.drawable.currency_dollar_24px)
                 
-                Column(Modifier.weight(0.5f)) {
-                    Text("Tax amount (optional)",
+                Column(Modifier.weight(0.6f)) {
+                    Text("Tax value (optional)",
                         style = columnLabelTextStyle,
                         modifier = Modifier.padding(top = dividerPaddingSize, start = 10.dp)
                     )
 
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        currencyIcon?.let {
-                            Icon(currencyIcon, null)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(columnSpacing * 2),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlainToolTipBox("Switch tax type") {
+                            TextButton(
+                                modifier = Modifier.semantics { stateDescription = viewModel.taxType.toString() },
+                                onClick = {
+                                    viewModel.taxType = when (viewModel.taxType) {
+                                        is ItemsViewModel.TaxType.CurrencyAmount -> ItemsViewModel.TaxType.Percentage
+                                        is ItemsViewModel.TaxType.Percentage -> ItemsViewModel.TaxType.CurrencyAmount
+                                    }
+                                },
+                                contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)
+                            ) {
+                                Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Icon(when (viewModel.taxType) {
+                                    is ItemsViewModel.TaxType.CurrencyAmount -> currencyIcon
+                                    is ItemsViewModel.TaxType.Percentage -> painterResource(R.drawable.percent_24px)
+                                }, null)
+                            }
                         }
+
                         Box(Modifier
                             .clip(rowShape)
                             .background(ListItemDefaults.containerColor)
                             .padding(itemFieldPadding)
                             .fillMaxWidth()
                         ) {
-                            MoneyFieldWrapper(
-                                state = taxAmountState,
-                                onPriceChange = { viewModel.additionalTaxAmount = it },
-                                currency = currency,
-                                locale = locale,
-                            ) { state ->
-                                SmallBasicTextField(
-                                    modifier = Modifier.semantics { contentDescription = "Tax price amount" },
-                                    value = state.fieldText.value,
-                                    onValueChange = { state.fieldText.value = it },
-                                    isError = state.parseResult.value is Result.Err,
-                                    placeholderText = currency.formatPrice(0.0, locale),
-                                    keyboardOptions = state.keyboardOptions,
-                                )
+                            when (viewModel.taxType) {
+                                is ItemsViewModel.TaxType.CurrencyAmount -> {
+                                    MoneyFieldWrapper(
+                                        state = taxAmountState,
+                                        onPriceChange = { viewModel.taxValue = it },
+                                        currency = currency,
+                                        locale = locale,
+                                    ) { state ->
+                                        SmallBasicTextField(
+                                            modifier = Modifier.semantics { contentDescription = "Tax value" },
+                                            value = state.fieldText.value,
+                                            onValueChange = { state.fieldText.value = it },
+                                            isError = state.parseResult.value is Result.Err,
+                                            placeholderText = currency.formatPrice(0.0, locale),
+                                            keyboardOptions = state.keyboardOptions,
+                                        )
+                                    }
+                                }
+                                is ItemsViewModel.TaxType.Percentage -> {
+                                    fun parse(value: String) {
+                                        val parseResult = runCatching {
+                                            if (value.isEmpty()) { 0.0 } else { value.toDouble() }
+                                        }.into()
+                                        taxAmountState.parseResult.value = parseResult
+                                        if (parseResult is Result.Ok) {
+                                            viewModel.taxValue = parseResult.value
+                                        }
+                                    }
+
+                                    // Reset error value on first compose.
+                                    LaunchedEffect(Unit) { parse(taxAmountState.fieldText.value) }
+
+                                    SmallBasicTextField(
+                                        modifier = Modifier.semantics { contentDescription = "Tax value" },
+                                        value = taxAmountState.fieldText.value,
+                                        onValueChange = {
+                                            taxAmountState.fieldText.value = it
+                                            parse(it)
+                                        },
+                                        isError = taxAmountState.parseResult.value is Result.Err,
+                                        placeholderText = "0.0",
+                                        keyboardOptions = RealNumberFieldState.keyboardOptions,
+                                    )
+                                }
                             }
+
                         }
                     }
                 }
@@ -679,9 +757,8 @@ private fun ItemsViewDialog(
                     )
 
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        currencyIcon?.let {
-                            Icon(currencyIcon, null)
-                        }
+                        Icon(currencyIcon, null)
+
                         Box(Modifier
                             .clip(rowShape)
                             .background(ListItemDefaults.containerColor)
@@ -922,7 +999,8 @@ fun ItemsFieldFilledPreview() {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>().apply {
                 items.addAll(FAKE_ITEMS)
-                additionalTaxAmount = 2.1
+                taxType = ItemsViewModel.TaxType.CurrencyAmount
+                taxValue = 4.08
             },
             locale = locale,
             currency = remember(locale) { Currency.getInstance(locale) },
@@ -932,6 +1010,7 @@ fun ItemsFieldFilledPreview() {
     } }
 }
 
+// FIXME: Fix previews from here down not showing.
 @Preview(showBackground = true)
 @Composable
 fun ItemsDialogPreview() {
