@@ -34,7 +34,6 @@ import com.example.budgiet.assertEquals
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
 import com.example.budgiet.ui.FAKE_ITEMS
-import com.example.budgiet.ui.FIELD_TIMEOUT
 import com.example.budgiet.ui.Item
 import com.example.budgiet.ui.ItemsDialog
 import com.example.budgiet.ui.ItemsDialogState
@@ -45,7 +44,6 @@ import org.junit.Rule
 import org.junit.Test
 import java.util.Currency
 import java.util.Locale
-import kotlin.math.nextUp
 
 const val ITEMS_FIELD_TEST_TAG = "itemsField"
 const val ITEMS_DIALOG_TEST_TAG = "itemsDialog"
@@ -107,7 +105,7 @@ class ItemsTests {
         private var dialogState by mutableStateOf<ItemsDialogState?>(null)
         val viewModel = ItemsViewModel().apply {
             this.items.addAll(items)
-            this.additionalTaxAmount = tax
+            this.taxValue = tax
         }
 
         init {
@@ -255,6 +253,13 @@ class ItemsTests {
     fun tax() {
         val state = TestState(this.rule)
 
+        val taxTypeButton = state.itemsDialog
+            .onDescendants(this.rule)
+            .filterToOne(hasContentDescriptionExactly("Switch tax type"))
+        val taxField = state.itemsDialog
+            .onDescendants(this.rule)
+            .filterToOne(hasContentDescriptionExactly("Tax value"))
+
         fun getTotal(): Double
             = state.itemsDialog
                 .onDescendants(this.rule)
@@ -264,20 +269,42 @@ class ItemsTests {
                 .joinToString(separator = "") { s -> s.text }
                 .toDouble()
 
+        // -- Test tax as percentage of items price. --
+        val taxPercentage = "8.875"
+
+        // Switch to using Percentage for tax.
+        taxTypeButton
+            .apply { performClick() }
+            .onChild()
+            .getSemanticsProperty(SemanticsProperties.StateDescription)
+            .getOrThrow()
+            .assertEquals("percentage")
+
+        // Input tax value
+        taxField
+            .apply { performTextInput(taxPercentage) }
+            .assertTextEquals(taxPercentage)
+        // Check total amount.
+        getTotal().assertEquals(50.06)
+
+        // -- Test tax as dollar amount. --
         val taxAmount = "42.00"
-        val startingTotal = getTotal()
 
-        state.itemsDialog
-            .onDescendants(this.rule)
-            .filterToOne(hasContentDescriptionExactly("Tax price amount"))
+        // Switch to using CurrencyAmount for tax.
+        taxTypeButton
+            .apply { performClick() }
+            .onChild()
+            .getSemanticsProperty(SemanticsProperties.StateDescription)
+            .getOrThrow()
+            .assertEquals("currency amount")
+
+        // Input tax value
+        taxField
+            .apply { performTextClearance() }
             .apply { performTextInput(taxAmount) }
-            .also {
-                // Wait for the check delay. Add arbitrary timeout padding just in case.
-                runCatching { this.rule.waitUntil(FIELD_TIMEOUT + 10) { false } }
-            }
             .assertTextEquals(taxAmount)
-
-        getTotal().assertEquals((startingTotal + taxAmount.toDouble()).nextUp())
+        // Check total amount.
+        getTotal().assertEquals(87.98)
     }
 
     @Test
@@ -350,7 +377,7 @@ class ItemsTests {
             .assertExists()
 
         // Test field with items and tax.
-        state.viewModel.additionalTaxAmount = 2.10
+        state.viewModel.taxValue = 2.10
 
         state.getFormFieldText()
             .assertEquals("12 items ($45.98) + $2.10 tax")

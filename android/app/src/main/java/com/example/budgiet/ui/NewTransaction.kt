@@ -671,7 +671,8 @@ private fun NewTransactionPreview() {
                 viewModel = viewModel<NewTransactionViewModel>().apply {
                     location.selectedLocation = DbEntry(0u, FAKE_LOCATIONS[0u]!!)
                     items.items.addAll(FAKE_ITEMS)
-                    items.additionalTaxAmount = 2.5
+                    items.taxType = ItemsViewModel.TaxType.Percentage
+                    items.taxValue = 2.5
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },

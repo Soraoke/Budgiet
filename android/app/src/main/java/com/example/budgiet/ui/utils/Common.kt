@@ -571,6 +571,11 @@ internal class RealNumberFieldState(
     val parseResult = mutableStateOf(initialResult)
     val keyboardOptions = RealNumberFieldState.keyboardOptions
 
+    constructor(initialValue: Double): this(
+        initialFieldValue = if (initialValue == 0.0) { "" } else { initialValue.toString() },
+        initialResult = Result.Ok(initialValue)
+    )
+
     companion object {
         val keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Number,
@@ -610,25 +615,25 @@ internal fun MoneyFieldWrapper(
     @Suppress("VariableNeverRead")
     var timerJob by remember { mutableStateOf<Job?>(null) }
 
-    fun validateInput() {
-        val fieldValue = state.fieldText.value
-        val result = currency.validateFieldInput(fieldValue, locale)
-        state.parseResult.value = result
-
-        if (result is Result.Ok) {
-            onPriceChange(result.value)
-            if (fieldValue.isNotEmpty()) {
-                state.fieldText.value = currency.formatPrice(result.value, locale)
-            }
-        }
-    }
-
-    // Set a timer to run validateInput() on timeout.
     LaunchedEffect(state.fieldText.value) {
         @Suppress("AssignedValueIsNeverRead")
         timerJob = launch {
-            delay(FIELD_TIMEOUT)
-            validateInput()
+            // Set value parse result.
+            val fieldValue = state.fieldText.value
+            val parseResult = currency.validateFieldInput(fieldValue, locale)
+            state.parseResult.value = parseResult
+
+            // Propagate the Ok result to other composables.
+            if (parseResult is Result.Ok) {
+                onPriceChange(parseResult.value)
+                if (fieldValue.isNotEmpty()) {
+                    // Set a timer to run formatPrice() after some time
+                    delay(FIELD_TIMEOUT)
+                    state.fieldText.value = currency.formatPrice(parseResult.value, locale)
+                }
+            }
+
+            timerJob = null
         }
     }
 
