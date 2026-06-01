@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -53,8 +55,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -62,6 +66,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +75,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.window.core.layout.WindowSizeClass
 import com.example.budgiet.R
 import com.example.budgiet.Result
 import com.example.budgiet.formatPrice
@@ -89,6 +95,7 @@ import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import java.util.Currency
 import java.util.Locale
+import kotlin.math.roundToInt
 
 val FAKE_ITEMS = listOf(
     Item("Ham", 5.99, 1.0),
@@ -318,6 +325,7 @@ private fun ItemsViewDialog(
     val nameColumnWeight = 0.6f
     val priceColumnWeight = 0.3f
     val amountColumnWeight = 0.3f
+    val totalColumnWeight = 0.3f
     val columnLabelTextStyle = MaterialTheme.typography.labelMedium
     val rowShape = MaterialTheme.shapes.medium
     val dividerPaddingSize = ActionDialogPadding.TightlyPacked.actionsSpacerHeight * 2
@@ -483,12 +491,19 @@ private fun ItemsViewDialog(
                 Text("Press \"New item\" to create an entry", textAlign = TextAlign.Center)
             }
         } else {
+            val showTotalColumn = currentWindowAdaptiveInfo(supportLargeAndXLargeWidth = true)
+                .windowSizeClass
+                .isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
+
             Row { CompositionLocalProvider(
                 LocalTextStyle provides columnLabelTextStyle,
             ) {
                 Text("Name", Modifier.weight(nameColumnWeight))
                 Text("Price (${currency.symbol})", Modifier.weight(priceColumnWeight))
                 Text("Amount", Modifier.weight(amountColumnWeight))
+                if (showTotalColumn) {
+                    Text("Total (${currency.symbol})", Modifier.weight(totalColumnWeight))
+                }
             } }
 
             ListColumn {
@@ -499,63 +514,35 @@ private fun ItemsViewDialog(
                     Column {
                         var showMenu by remember { mutableStateOf(false) }
                         val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
-                        var focusedField by remember { mutableStateOf<Int?>(null) }
+                        val isSelected = showMenu || isEditing
+                        var focusedField by remember { mutableStateOf<FocusRequester?>(null) }
 
-                        val sharpColumnShape = MaterialTheme.shapes.extraSmall
+                        val middleColumnShape = MaterialTheme.shapes.extraSmall
+                        val startColumnShape = halfRoundedCornerShape(
+                            Corner.Right,
+                            sharpSize = middleColumnShape.bottomEnd,
+                            roundSize = rowShape.bottomStart,
+                        )
+                        val endColumnShape = halfRoundedCornerShape(
+                            Corner.Left,
+                            sharpSize = middleColumnShape.bottomStart,
+                            roundSize = rowShape.bottomEnd,
+                        )
 
                         @Composable
-                        fun RowScope.ItemColumnField(
-                            side: Int,
+                        fun RowScope.ItemColumn(
                             modifier: Modifier = Modifier,
-                            staticValue: String,
-                            editingValue: String,
-                            onEditingValueChange: (String) -> Unit,
-                            isError: Boolean,
-                            keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-                        ) {
-                            val isSelected = showMenu || isEditing
-                            val focusRequester = remember { FocusRequester() }
-
-                            LaunchedEffect(side, focusedField, isEditing) {
-                                if (isEditing && focusedField == side) {
-                                    focusRequester.requestFocus()
-                                }
-                            }
-
-                            Box(Modifier
-                                .weight(
-                                    when (side) {
-                                        -1 -> nameColumnWeight
-                                        0 -> priceColumnWeight
-                                        1 -> amountColumnWeight
-                                        else -> throw Exception("Unreachable")
-                                    }
-                                )
-                                .clip(run {
-                                    val startShape = halfRoundedCornerShape(
-                                        Corner.Right,
-                                        sharpSize = sharpColumnShape.bottomEnd,
-                                        roundSize = rowShape.bottomStart,
-                                    )
-                                    val endShape = halfRoundedCornerShape(
-                                        Corner.Left,
-                                        sharpSize = sharpColumnShape.bottomStart,
-                                        roundSize = rowShape.bottomEnd,
-                                    )
-
-                                    when (side) {
-                                        -1 -> startShape
-                                        0 -> sharpColumnShape
-                                        1 -> endShape
-                                        else -> throw Exception("Unreachable")
-                                    }
-                                })
+                            weight: Float,
+                            shape: Shape = middleColumnShape,
+                            onLongClick: () -> Unit,
+                            content: @Composable BoxScope.() -> Unit,
+                        ) { Box(
+                            modifier = modifier
+                                .weight(weight)
+                                .clip(shape)
                                 .combinedClickable(
                                     onClick = { },
-                                    onLongClick = {
-                                        showMenu = true
-                                        focusedField = side
-                                    },
+                                    onLongClick = onLongClick,
                                 )
                                 .background(if (isSelected) {
                                     MaterialTheme.colorScheme.surfaceContainerLowest
@@ -563,23 +550,46 @@ private fun ItemsViewDialog(
                                     ListItemDefaults.containerColor
                                 })
                                 .then(modifier)
-                                .padding(itemColumnFieldPadding)
+                                .padding(itemColumnFieldPadding),
+                            content = content,
+                        ) }
+
+                        @Composable
+                        fun RowScope.ItemColumnField(
+                            modifier: Modifier = Modifier,
+                            weight: Float,
+                            shape: Shape = middleColumnShape,
+                            staticValue: String,
+                            editingValue: String,
+                            onEditingValueChange: (String) -> Unit,
+                            isError: Boolean,
+                            keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+                        ) {
+                            val focusRequester = remember { FocusRequester() }
+
+                            ItemColumn(
+                                modifier = modifier,
+                                weight = weight,
+                                shape = shape,
+                                onLongClick = {
+                                    showMenu = true
+                                    focusedField = focusRequester
+                                },
                             ) {
                                 if (isEditing) {
                                     SmallBasicTextField(
-                                        modifier = Modifier.focusRequester(focusRequester),
+                                        modifier = Modifier.focusRequester(focusRequester.apply {
+                                            if (focusedField === this) {
+                                                focusRequester.requestFocus()
+                                            }
+                                        }),
                                         value = editingValue,
                                         onValueChange = onEditingValueChange,
                                         isError = isError,
                                         keyboardOptions = keyboardOptions,
                                     )
                                 } else {
-                                    Text(staticValue,
-                                        autoSize = TextAutoSize.StepBased(maxFontSize = LocalTextStyle.current.fontSize),
-                                        overflow = TextOverflow.Clip,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                    )
+                                    TextAutoSized(staticValue)
                                 }
                             }
                         }
@@ -593,14 +603,17 @@ private fun ItemsViewDialog(
                             )
                         }
 
-                        Box(contentAlignment = Alignment.CenterEnd) {
-                            var amountColumnWidth by remember(density, LocalTextStyle) { mutableStateOf<Int?>(null) }
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            var amountColumnOffset by remember(density, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
+                            var totalColumnOffset by remember(density, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
 
                             Row(
                                 modifier = Modifier.applyHeightToList(),
                                 horizontalArrangement = Arrangement.spacedBy(columnSpacing),
                             ) {
-                                ItemColumnField(-1,
+                                ItemColumnField(
+                                    weight = nameColumnWeight,
+                                    shape = startColumnShape,
                                     staticValue = item.name,
                                     editingValue = editItemName,
                                     onEditingValueChange = {
@@ -614,7 +627,8 @@ private fun ItemsViewDialog(
                                     currency = currency,
                                     locale = locale,
                                 ) { state ->
-                                    ItemColumnField(0,
+                                    ItemColumnField(
+                                        weight = priceColumnWeight,
                                         staticValue = currency.formatPrice(item.unitPrice, locale),
                                         editingValue = state.fieldText.value,
                                         onEditingValueChange = { state.fieldText.value = it },
@@ -622,12 +636,14 @@ private fun ItemsViewDialog(
                                         keyboardOptions = state.keyboardOptions,
                                     )
                                 }
-                                ItemColumnField(1,
+                                ItemColumnField(
                                     modifier = Modifier.onGloballyPositioned { coords ->
-                                        if (amountColumnWidth == null) {
-                                            amountColumnWidth = coords.size.width
+                                        if (amountColumnOffset == null) {
+                                            amountColumnOffset = coords.positionInParent().x
                                         }
                                     },
+                                    weight = amountColumnWeight,
+                                    shape = if (showTotalColumn) { middleColumnShape } else { endColumnShape },
                                     staticValue = item.amount.toString(),
                                     editingValue = editItemAmountState.fieldText.value,
                                     onEditingValueChange = {
@@ -637,15 +653,40 @@ private fun ItemsViewDialog(
                                     isError = editItemAmountState.parseResult.value is Result.Err,
                                     keyboardOptions = RealNumberFieldState.keyboardOptions,
                                 )
-                                // TODO: add column with total (=) for this specific item on wider screens
+                                // Column with total (=) for this specific item (only on wider screens).
+                                if (showTotalColumn) {
+                                    ItemColumn(
+                                        modifier = Modifier.onGloballyPositioned { coords ->
+                                            if (totalColumnOffset == null) {
+                                                totalColumnOffset = coords.positionInParent().x
+                                            }
+                                        },
+                                        weight = totalColumnWeight,
+                                        shape = endColumnShape,
+                                        onLongClick = { showMenu = true },
+                                    ) {
+                                        TextAutoSized(currency.formatPrice(item.unitPrice * item.amount, locale))
+                                    }
+                                }
                             }
 
-                            // Multiply icon.
                             val iconSize = 18.dp
+                            // Multiply icon.
                             Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
                                 .size(iconSize)
-                                .offset { IntOffset(amountColumnWidth?.let { it * -1 + (iconSize - columnSpacing).roundToPx() / 2 } ?: 0,0) },
+                                .offset { IntOffset(x = amountColumnOffset?.roundToInt()?.let {
+                                    it - (iconSize + columnSpacing).roundToPx() / 2
+                                } ?: 0, y = 0) },
                             )
+                            // Equal icon.
+                            if (showTotalColumn) {
+                                Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
+                                    .size(iconSize)
+                                    .offset { IntOffset(x = totalColumnOffset?.roundToInt()?.let {
+                                        it - (iconSize + columnSpacing).roundToPx() / 2
+                                    } ?: 0, y = 0) },
+                                )
+                            }
 
                             ItemActionsMenu(
                                 expanded = showMenu,
@@ -802,12 +843,7 @@ private fun ItemsViewDialog(
                     ) {
                         OutlinedTextField(
                             modifier = modifier,
-                            label = { Text(label,
-                                autoSize = TextAutoSize.StepBased(maxFontSize = LocalTextStyle.current.fontSize),
-                                overflow = TextOverflow.Visible,
-                                maxLines = 1,
-                                softWrap = false,
-                            ) },
+                            label = { TextAutoSized(label) },
                             value = value,
                             onValueChange = onValueChange,
                             shape = MaterialTheme.shapes.medium,
@@ -950,6 +986,23 @@ private fun SmallBasicTextField(
         )
     }
 }
+
+@Composable
+fun TextAutoSized(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null,
+    style: TextStyle = LocalTextStyle.current,
+) { Text(
+    text = text,
+    modifier = modifier,
+    textAlign = textAlign,
+    style = style,
+    autoSize = TextAutoSize.StepBased(maxFontSize = style.fontSize),
+    overflow = TextOverflow.Clip,
+    maxLines = 1,
+    softWrap = false,
+) }
 
 /** Shows a [Dialog][ActionDialog] to allow the user to ***scan*** a picture of a *digital or paper receipt*
  * either directly by taking a picture, or selecting an existing image on their device.
