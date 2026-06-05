@@ -76,7 +76,6 @@ import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.DatePickerDialog
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.LazyDropdownMenu
-import com.example.budgiet.ui.utils.MoneyFieldWrapper
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.RealNumberFieldState
@@ -86,7 +85,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Currency
 import java.util.Locale
-
+import kotlin.time.Duration.Companion.milliseconds
 
 /** The maximum number of characters (graphemes) allowed in the Description field.
  * This value should not be changed as the database enforces the value. */
@@ -96,7 +95,7 @@ val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
 val FIELD_MAX_WIDTH = 275.dp
 // How much time (in ms) should pass after an input on a field for its input to be validated.
-const val FIELD_TIMEOUT = 500L
+val FIELD_TIMEOUT = 500.milliseconds
 
 class NewTransactionViewModel(
     // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
@@ -316,87 +315,80 @@ fun PriceField(
     // TextField must be **disabled** when [items list][ItemsViewModel] is populated.
     val enabled = viewModel.items.items.isEmpty()
     val currency = viewModel.currency
+    val state = RealNumberFieldState.rememberMoneyFieldState(viewModel.customPrice, viewModel.currency, locale)
 
-    MoneyFieldWrapper(
-        state = remember { RealNumberFieldState.moneyFieldState(viewModel.customPrice, viewModel.currency, locale) },
-        onPriceChange = { viewModel.customPrice = it },
-        locale = locale,
-        currency = currency,
-    ) { state ->
-        // Will show tooltip on any interaction if disabled.
-        val interactionSource = remember { MutableInteractionSource() }
-        val isFocused by interactionSource.collectIsFocusedAsState()
-        val isHovered by interactionSource.collectIsHoveredAsState()
-        val tooltipState = rememberTooltipState()
+    // Will show tooltip on any interaction if disabled.
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val tooltipState = rememberTooltipState()
 
-        val textField = @Composable {
-            val scope = rememberCoroutineScope()
-            var currencyMenuOpen by remember { mutableStateOf(false) }
-            val shape = MaterialTheme.shapes.medium
-            val fieldText = if (enabled) {
-                state.fieldText.value
-            } else {
-                currency.formatPrice(viewModel.items.totalPrice, locale)
-            }
-
-            OutlinedTextField(
-                modifier = modifier
-                    // FIXME: TextField does not grow with the input text's width
-                    .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
-                    .width(IntrinsicSize.Min)
-                    .run { if (!enabled) { this
-                        .clip(shape)
-                        .hoverable(interactionSource)
-                        .focusable(interactionSource = interactionSource)
-                        .clickable(interactionSource = interactionSource) { scope.launch { tooltipState.show() } }
-                    } else this },
-                interactionSource = interactionSource,
-                value = fieldText,
-                onValueChange = { state.fieldText.value = it },
-                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
-                shape = shape,
-                keyboardOptions = RealNumberFieldState.keyboardOptions,
-                singleLine = true,
-                enabled = enabled,
-                readOnly = !enabled,
-                leadingIcon = {
-                    CurrencySelectorButton(
-                        showCurrencyMenu = currencyMenuOpen,
-                        onMenuStateChange = { currencyMenuOpen = it },
-                        locale = locale,
-                        selectedCurrency = currency,
-                        onCurrencyChange = { viewModel.currency = it },
-                    )
-                },
-                placeholder = {
-                    Text(viewModel.currency.formatPrice(0.0, locale),
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                },
-                isError = enabled && state.parseResult.value is Result.Err,
-                supportingText = state.parseResult.value.let { if (enabled && it is Result.Err) {{
-                    Text("Error: ${it.error.message}")
-                }} else null },
-            )
-        }
-
-        if (enabled) {
-            textField()
+    val textField = @Composable {
+        val scope = rememberCoroutineScope()
+        var currencyMenuOpen by remember { mutableStateOf(false) }
+        val shape = MaterialTheme.shapes.medium
+        val fieldText = if (enabled) {
+            state.fieldText
         } else {
-            LaunchedEffect(isFocused, isHovered) {
-                if (isFocused || isHovered) {
-                    tooltipState.show()
-                }
-            }
-            PlainToolTipBox(
-                text = "Can't set price when items exist.\nClear items to set custom price.",
-                state = tooltipState,
-                content = textField,
-            )
+            currency.formatPrice(viewModel.items.totalPrice, locale)
         }
 
+        OutlinedTextField(
+            modifier = modifier
+                // FIXME: TextField does not grow with the input text's width
+                .widthIn(min = 50.dp, max = FIELD_MAX_WIDTH)
+                .width(IntrinsicSize.Min)
+                .run { if (!enabled) { this
+                    .clip(shape)
+                    .hoverable(interactionSource = interactionSource)
+                    .focusable(interactionSource = interactionSource)
+                    .clickable(interactionSource = interactionSource) { scope.launch { tooltipState.show() } }
+                } else this },
+            interactionSource = interactionSource,
+            value = fieldText,
+            onValueChange = { state.fieldText = it },
+            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
+            shape = shape,
+            keyboardOptions = RealNumberFieldState.keyboardOptions,
+            singleLine = true,
+            enabled = enabled,
+            readOnly = !enabled,
+            leadingIcon = {
+                CurrencySelectorButton(
+                    showCurrencyMenu = currencyMenuOpen,
+                    onMenuStateChange = { currencyMenuOpen = it },
+                    locale = locale,
+                    selectedCurrency = currency,
+                    onCurrencyChange = { viewModel.currency = it },
+                )
+            },
+            placeholder = {
+                Text(viewModel.currency.formatPrice(0.0, locale),
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            },
+            isError = enabled && state.isError,
+            supportingText = state.parseResult.let { if (enabled && it is Result.Err) {{
+                Text("Error: ${it.error.message}")
+            }} else null },
+        )
+    }
+
+    if (enabled) {
+        textField()
+    } else {
+        LaunchedEffect(isFocused, isHovered) {
+            if (isFocused || isHovered) {
+                tooltipState.show()
+            }
+        }
+        PlainToolTipBox(
+            text = "Can't set price when items exist.\nClear items to set custom price.",
+            state = tooltipState,
+            content = textField,
+        )
     }
 }
 
@@ -488,7 +480,7 @@ fun CurrencySelectorButton(
     val context = LocalContext.current
     fun scrollToTop() {
         coroutineScope.launch {
-            delay(500)
+            delay(FIELD_TIMEOUT)
             currencyListState.scrollToItem(0)
         }
     }
@@ -626,7 +618,6 @@ fun DescriptionField(
             // Get the String length, but in units of graphemes.
             val length = graphemeStringLength(newDescription)
 
-            @Suppress("AssignedValueIsNeverRead")
             pasteOverflow = length > DESCRIPTION_MAX_LENGTH
 
             // Implement character limit with a cutoff,
