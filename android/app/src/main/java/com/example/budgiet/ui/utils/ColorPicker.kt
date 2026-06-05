@@ -249,7 +249,6 @@ fun ColorPickerButton(
     }
 
     if (showColorPickerDialog) {
-        @Suppress("AssignedValueIsNeverRead")
         ColorPickerDialog(
             allowAlpha = false,
             initialColor = color,
