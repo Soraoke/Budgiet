@@ -63,10 +63,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
@@ -254,7 +256,7 @@ fun PlainToolTipBox(
     )
 }
 
-/** Obtained from [this stackoverflow response](https://stackoverflow.com/a/78968130).  */
+/** Obtained from [this StackOverflow response](https://stackoverflow.com/a/78968130).  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun rememberTooltipWithinPopupPositionProvider(
@@ -552,6 +554,17 @@ fun Modifier.hideDropdownMenuPadding(): Modifier = this.layout { measurable, con
         placeable.height - (verticalCrop * 2).toPxInt()
     ) {
         placeable.placeRelative(0, -verticalCrop.toPx().toInt())
+    }
+}
+
+fun Modifier.onMeasureCoords(
+    needsMeasure: Boolean,
+    onMeasure: (LayoutCoordinates) -> Unit,
+): Modifier {
+    return if (needsMeasure) {
+        this.onGloballyPositioned(onMeasure)
+    } else {
+        this
     }
 }
 

@@ -71,7 +71,12 @@ class StringTextFieldState @RememberInComposition constructor(
     override var autoValidateTimings: AutoValidateTimings? = null,
 ): FieldState<String> {
     private var _fieldText by mutableStateOf(initialValue)
-    private var _parseResult by mutableStateOf(this.validateValue(initialValue))
+    // Only validate initialValue if autoValidation is enabled.
+    private var _parseResult by mutableStateOf(if (autoValidateTimings == null) {
+        Result.Ok(Unit)
+    } else {
+        this.validateValue(initialValue)
+    })
 
     private var autoValidateJob: Job? = null
 
@@ -96,6 +101,9 @@ class StringTextFieldState @RememberInComposition constructor(
                         autoValidateJob = null
                     }
                 }
+            } ?: run {
+                // If autoValidate is disabled, still reset the parseResult so that the new value can be validated later.
+                this._parseResult = Result.Ok(Unit)
             }
         }
     override val parseResult: Result<String> get() = this._parseResult.map { this.fieldText }
@@ -119,7 +127,7 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     initialFieldValue: String,
     initialResult: Result<T>,
     private val parser: (String) -> Result<T>,
-    private val formatter: (T) -> String,
+    private val formatter: ((T) -> String)? = null,
     override var autoValidateTimings: AutoValidateTimings? = null,
 ): FieldState<T> {
     private var _fieldText by mutableStateOf(initialFieldValue)
@@ -130,6 +138,7 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     constructor(
         initialValue: T,
         parser: (String) -> Result<T>,
+        // formatter must not be null if value is T so that the textField can be populated.
         formatter: (T) -> String,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
@@ -142,7 +151,7 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     constructor(
         initialValue: String,
         parser: (String) -> Result<T>,
-        formatter: (T) -> String,
+        formatter: ((T) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = initialValue,
@@ -164,32 +173,38 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
             }
             this.autoValidateTimings?.let { timings ->
                 val parse = { this._parseResult = this.parser(this.fieldText) }
-                val format = { this._parseResult.let { parseResult ->
-                    if (parseResult is Result.Ok) {
-                        this._fieldText = this.formatter(parseResult.value)
+                val format = this.formatter?.let { formatter -> {
+                    this._parseResult.let { parseResult ->
+                        if (parseResult is Result.Ok) {
+                            this._fieldText = formatter(parseResult.value)
+                        }
                     }
                 } }
 
                 // Skip launching coroutine if there is no delay
                 if (timings.parseDelay == Duration.ZERO) {
                     parse()
-                    if (timings.formatDelay == Duration.ZERO) {
-                        format()
-                    } else {
-                        this.autoValidateJob = timings.coroutineScope.launch {
-                            delay(timings.formatDelay)
+                    if (format != null) {
+                        if (timings.formatDelay == Duration.ZERO) {
                             format()
-                            autoValidateJob = null
+                        } else {
+                            this.autoValidateJob = timings.coroutineScope.launch {
+                                delay(timings.formatDelay)
+                                format()
+                                autoValidateJob = null
+                            }
                         }
                     }
                 } else {
                     this.autoValidateJob = timings.coroutineScope.launch {
                         delay(timings.parseDelay)
                         parse()
-                        if (timings.formatDelay != Duration.ZERO) {
-                            delay(timings.formatDelay)
+                        if (format != null) {
+                            if (timings.formatDelay != Duration.ZERO) {
+                                delay(timings.formatDelay)
+                            }
+                            format()
                         }
-                        format()
                         autoValidateJob = null
                     }
                 }
@@ -200,7 +215,7 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     override fun doValidate() {
         val parseResult = this.parser(this.fieldText)
         this._parseResult = parseResult
-        if (parseResult is Result.Ok) {
+        if (this.formatter != null && parseResult is Result.Ok) {
             this._fieldText = this.formatter(parseResult.value)
         }
     }
@@ -213,17 +228,17 @@ class RealNumberFieldState @RememberInComposition private constructor(
     initialFieldValue: String,
     initialResult: Result<Double>,
     parser: (String) -> Result<Double>,
-    formatter: (Double) -> String,
+    formatter: ((Double) -> String)?,
     autoValidateTimings: AutoValidateTimings? = null,
 ): TextFieldState<Double>(initialFieldValue, initialResult, parser, formatter, autoValidateTimings) {
     @RememberInComposition
     constructor(
         initialValue: Double,
         parser: (String) -> Result<Double> = defaultParser,
-        formatter: (Double) -> String = defaultFormatter,
+        formatter: ((Double) -> String)? = defaultFormatter,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
-        initialFieldValue = formatter(initialValue),
+        initialFieldValue = initialValue.toString(),
         initialResult = Result.Ok(initialValue),
         parser, formatter, autoValidateTimings
     )
@@ -231,7 +246,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
     constructor(
         initialValue: String,
         parser: (String) -> Result<Double> = defaultParser,
-        formatter: (Double) -> String = defaultFormatter,
+        formatter: ((Double) -> String)? = defaultFormatter,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = initialValue,
@@ -241,7 +256,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
 
     companion object {
         private val defaultParser: (String) -> Result<Double> = { Unit.runCatching { it.toDouble() }.into() }
-        private val defaultFormatter: (Double) -> String = { it.toString() }
+        private val defaultFormatter: ((Double) -> String)? = null
         val keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done

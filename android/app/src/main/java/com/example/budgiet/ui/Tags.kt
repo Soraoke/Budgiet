@@ -95,6 +95,7 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
 import com.example.budgiet.ui.utils.correctContentContrast
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
+import com.example.budgiet.ui.utils.onMeasureCoords
 import com.example.budgiet.ui.utils.parentDialogOffset
 
 val TAG_GRID_MAX_HEIGHT = 250.dp
@@ -272,7 +273,6 @@ fun TagsPickerDialog(
     }
 
     if (showTagCreator) {
-        @Suppress("AssignedValueIsNeverRead")
         TagEditorDialog(
             modifier = modifier,
             tag = null,
@@ -358,7 +358,6 @@ fun TagsPickerDialog(
                 icon = { Icon(painterResource(R.drawable.add_24px), "New tag") },
                 text = { Text("New tag") },
                 onClick = {
-                    @Suppress("AssignedValueIsNeverRead")
                     showTagCreator = true
                 },
             )
@@ -405,7 +404,6 @@ fun TagEditorDialog(
     val itemBackgroundOpacity = 0.87f
 
     if (showIconPickerDialog) {
-        @Suppress("AssignedValueIsNeverRead")
         IconPickerDialog(
             modifier = modifier,
             initiallySelectedIcon = icon,
@@ -475,7 +473,6 @@ fun TagEditorDialog(
                         )
                         .size(circleContainerSize)
 
-                @Suppress("AssignedValueIsNeverRead")
                 PlainToolTipBox("Select tag icon") {
                     IconButton(
                         modifier = Modifier.semantics { contentDescription = "Select tag icon" }
@@ -644,7 +641,6 @@ fun TagFrame(
         }
     }
 
-    @Suppress("AssignedValueIsNeverRead")
     if (showTagEditor) {
         TagEditorDialog(
             tag = tag,
@@ -729,11 +725,9 @@ fun IconPickerDialog(
                             .run { if (selectedIcon == icon.first) {
                                 shadow(5.dp, shape = CircleShape)
                             } else this }
-                            .onGloballyPositioned { with(density) {
-                                if (itemSize == null) {
-                                    itemSize = it.size.width.toDp()
-                                }
-                            } },
+                            .onMeasureCoords(itemSize == null) { coords ->
+                                itemSize = with(density) { coords.size.width.toDp() }
+                            },
                         colors = IconButtonDefaults.iconButtonColors().let { colors ->
                             if (selectedIcon == icon.first) colors.copy(
                                 containerColor = MaterialTheme.colorScheme.tertiary,
