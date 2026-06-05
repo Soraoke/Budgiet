@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -54,11 +53,7 @@ import androidx.compose.material3.getSelectedDate
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,8 +75,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -94,17 +87,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.example.budgiet.R
-import com.example.budgiet.Result
-import com.example.budgiet.formatPrice
 import com.example.budgiet.localDateFromUtcMillis
-import com.example.budgiet.ui.FIELD_TIMEOUT
-import com.example.budgiet.validateFieldInput
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.util.Currency
-import java.util.Locale
 import kotlin.experimental.and
 import kotlin.experimental.or
 
@@ -555,89 +539,6 @@ fun DatePickerDialog(
             showModeToggle = true,
         )
     }
-}
-
-/** State object for [TextField][androidx.compose.material3.TextField]s whose value is a *real number* (aka [Double]).
- *
- * All the fields in the object ***MUST*** be used by the `TextField` Composable.
- * * Read and write the **`fieldText`** value to display the field's value string.
- * * Read and write the **`parseResult`** value to display the error status.
- * * Pass **`keyboardOptions`** to make the on-screen keyboard show only numbers (like a calculator). */
-internal class RealNumberFieldState(
-    initialFieldValue: String = "",
-    initialResult: Result<Double> = Result.Ok(0.0),
-) {
-    val fieldText = mutableStateOf(initialFieldValue)
-    val parseResult = mutableStateOf(initialResult)
-    val keyboardOptions = RealNumberFieldState.keyboardOptions
-
-    constructor(initialValue: Double): this(
-        initialFieldValue = if (initialValue == 0.0) { "" } else { initialValue.toString() },
-        initialResult = Result.Ok(initialValue)
-    )
-
-    companion object {
-        val keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Number,
-            imeAction = ImeAction.Done
-        )
-
-        /** Constructs a [RealNumberFieldState] specifically to be used with *money* amounts.
-         * Used to create the state object for [MoneyFieldWrapper]. */
-        fun moneyFieldState(
-            initialAmount: Double = 0.0,
-            currency: Currency,
-            locale: Locale
-        ) = RealNumberFieldState(
-            initialFieldValue = if (initialAmount == 0.0) "" else {
-                currency.formatPrice(initialAmount, locale)
-            },
-            initialResult = Result.Ok(initialAmount),
-        )
-    }
-}
-
-/** A *functional wrapper* for [TextField][androidx.compose.material3.TextField]s whose value is a *money amount*.
- *
- * This Composable  is in charge of **parsing** and **formatting** the user's text input into a *money amount*
- * and setting the *text* and *error* values in the **`state`** object.
- * Then, the **`field`** Composable is in charge of **displaying** the current **`state`**.
- *
- * See [RealNumberFieldState] to see how to use the state object's fields. */
-@Composable
-internal fun MoneyFieldWrapper(
-    state: RealNumberFieldState = remember { RealNumberFieldState() },
-    onPriceChange: (Double) -> Unit = { },
-    locale: Locale = Locale.getDefault(),
-    currency: Currency = remember(locale) { Currency.getInstance(locale) },
-    field: @Composable (RealNumberFieldState) -> Unit,
-) {
-    @Suppress("VariableNeverRead")
-    var timerJob by remember { mutableStateOf<Job?>(null) }
-
-    LaunchedEffect(state.fieldText.value) {
-        @Suppress("AssignedValueIsNeverRead")
-        timerJob = launch {
-            // Set value parse result.
-            val fieldValue = state.fieldText.value
-            val parseResult = currency.validateFieldInput(fieldValue, locale)
-            state.parseResult.value = parseResult
-
-            // Propagate the Ok result to other composables.
-            if (parseResult is Result.Ok) {
-                onPriceChange(parseResult.value)
-                if (fieldValue.isNotEmpty()) {
-                    // Set a timer to run formatPrice() after some time
-                    delay(FIELD_TIMEOUT)
-                    state.fieldText.value = currency.formatPrice(parseResult.value, locale)
-                }
-            }
-
-            timerJob = null
-        }
-    }
-
-    field(state)
 }
 
 /** DropdownMenu has a *hardcoded* vertical padding of `8.dp`, which should be so that the caller can apply their own padding. */
