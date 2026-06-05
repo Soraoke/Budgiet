@@ -4,7 +4,13 @@ package com.example.budgiet.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -15,12 +21,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
@@ -35,13 +45,12 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -52,8 +61,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
@@ -81,37 +88,73 @@ import com.example.budgiet.Result
 import com.example.budgiet.formatPrice
 import com.example.budgiet.getCurrencyIcon
 import com.example.budgiet.into
-import com.example.budgiet.parsePrice
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
+import com.example.budgiet.ui.utils.AutoValidateTimings
 import com.example.budgiet.ui.utils.Corner
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.ListColumn
-import com.example.budgiet.ui.utils.MoneyFieldWrapper
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.RealNumberFieldState
+import com.example.budgiet.ui.utils.StringTextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import java.util.Currency
 import java.util.Locale
 import kotlin.math.roundToInt
 
+private val COLUMN_SPACING = 2.dp
+private val ITEM_LIST_ROW_PADDING = PaddingValues(vertical = 14.dp, horizontal = 8.dp)
+private val ITEM_ROW_SHAPE @Composable get() = MaterialTheme.shapes.medium
+private const val NAME_COLUMN_WEIGHT = 0.6f
+private const val PRICE_COLUMN_WEIGHT = 0.3f
+private const val AMOUNT_COLUMN_WEIGHT = 0.3f
+private const val TOTAL_COLUMN_WEIGHT = 0.3f
+
 val FAKE_ITEMS = listOf(
-    Item("Ham", 5.99, 1.0),
-    Item("Cheese", 2.59, 4.0),
-    Item("Bread", 4.19, 2.0),
-    Item("Crackers", 1.89, 2.0),
-    Item("Chicken", 4.99, 3.5),
+    Item("Ham", 5.99, Amount.Units(1u)),
+    Item("Cheese", 2.59, Amount.Measured(1.0, "lbs")),
+    Item("Bread", 4.19, Amount.Units(2u)),
+    Item("Crackers", 1.89, Amount.Units(1u)),
+    Item("Chicken", 4.99, Amount.Measured(3.5, "lbs")),
 )
 
 data class Item(
     val name: String,
-    // val classification: ???
     val unitPrice: Double, // TODO: use money struct
-    val amount: Double,
-    // TODO: val unitType: Pounds, liters, unit, etc.
-)
+    val amount: Amount,
+) {
+    // TODO: format to 3 decimal places max
+    val totalPrice get() = when (this.amount) {
+        is Amount.Measured -> this.unitPrice * this.amount.value
+        is Amount.Units -> this.unitPrice * this.amount.value.toInt()
+    }
+}
+
+sealed class Amount {
+    class Measured(val value: Double, val label: String): Amount()
+    class Units(val value: UInt): Amount()
+
+    val textValue get() = when (this) {
+        is Measured -> this.value.toString()
+        is Units -> this.value.toString()
+    }
+
+    companion object {
+        private const val LABEL_CHAR_LIMIT = 7
+
+        fun validateLabel(label: String): Result<Unit> {
+            return if (label.isEmpty()) {
+                Result.Err(Exception("label must not be empty."))
+            } else if (label.length > this.LABEL_CHAR_LIMIT) {
+                Result.Err(Exception("The length of the label for an Amount must not exceed ${this.LABEL_CHAR_LIMIT} characters."))
+            } else {
+                Result.Ok(Unit)
+            }
+        }
+    }
+}
 
 class ItemsViewModel: ViewModel() {
     sealed class TaxType {
@@ -131,7 +174,7 @@ class ItemsViewModel: ViewModel() {
     var taxValue by mutableDoubleStateOf(0.0)
 
     val totalPrice: Double get() {
-        val itemsSum = this.items.sumOf { it.amount * it.unitPrice }
+        val itemsSum = this.items.sumOf { it.totalPrice }
         val taxAmount = when (this.taxType) {
             is TaxType.CurrencyAmount -> this.taxValue
             is TaxType.Percentage -> itemsSum * this.taxValue * 0.01
@@ -143,10 +186,12 @@ class ItemsViewModel: ViewModel() {
      * Includes the number of items,  */
     fun displayFieldSummary(currency: Currency, locale: Locale): String {
         val itemsCount = this.items
-            .sumOf { it.amount } // FIXME: count items with a measure other than unit as a single item, if its units count each unit, otherwise count as 1
-            .toInt()
+            .sumOf { when (it.amount) {
+                is Amount.Measured -> 1
+                is Amount.Units -> it.amount.value.toInt()
+            } }
         val itemsPrice = currency.formatPrice(
-            this.items.sumOf { it.amount * it.unitPrice },
+            this.items.sumOf { it.totalPrice },
             locale = locale,
         )
         val displayTax = if (this.taxValue != 0.0 && this.items.isNotEmpty()) {
@@ -181,10 +226,6 @@ class ItemsViewModel: ViewModel() {
 
         return msg?.let { Result.Err(Exception(msg)) }
             ?: Result.Ok(Unit)
-    }
-    fun parseAmount(value: String): Result<Double> {
-        return runCatching { value.toDouble() }.into()
-        // TODO: real impl
     }
 }
 
@@ -301,37 +342,53 @@ private fun ItemsViewDialog(
     onDismiss: () -> Unit,
 ) {
     val newItemCollapseTransition = updateTransition(state, "NewItemCollapseButton")
+    val autoValidateTimings = AutoValidateTimings.rememberScope()
 
-    var editItemName by remember(state) { mutableStateOf(when (state) {
-        is ItemsDialogState.Edit -> state.value.name
-        else -> ""
-    }) }
-    var editItemNameError by remember(state) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
     // Don't use the currency or locale as keys here; the field value should only be reset when state changes.
-    val editItemPriceState = remember(state) { RealNumberFieldState(initialFieldValue = when (state) {
-        is ItemsDialogState.Edit -> currency.formatPrice(state.value.unitPrice, locale)
-        else -> ""
-    }) }
-    val editItemAmountState = remember(state) { RealNumberFieldState(initialFieldValue = when (state) {
-        is ItemsDialogState.Edit -> state.value.amount.toString()
-        else -> ""
-    }) }
+    val editItemState = remember(state) {
+        val preData = when (state) {
+            is ItemsDialogState.Edit -> state.value
+            else -> null
+        }
+        object {
+            val name = StringTextFieldState(preData?.name ?: "",
+                validator = { viewModel.validateName(it, isNew = state !is ItemsDialogState.Edit) },
+                autoValidateTimings = null,
+            )
+            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice, currency, locale, autoValidateTimings)
+            val amount = object {
+                // false indicates Amount.Unit
+                // Defaults to Amount.Unit when creating a new Item.
+                var hasLabel by mutableStateOf(preData?.let { it.amount is Amount.Measured } ?: false)
+                val value = run {
+                    val parser = { s: String ->
+                        Result.Ok(if (hasLabel) { s.toDouble() } else { s.toInt().toDouble() })
+                    }
+                    preData?.let {
+                        RealNumberFieldState(it.amount.textValue, parser = parser, autoValidateTimings = null)
+                    } ?: RealNumberFieldState("", parser = parser, autoValidateTimings = null)
+                }
+                val label = StringTextFieldState(
+                    initialValue = when (val amount = preData?.amount) {
+                        is Amount.Measured -> amount.label
+                        is Amount.Units, null -> ""
+                    },
+                    validator = { Amount.validateLabel(it) },
+                    autoValidateTimings = null,
+                )
+            }
+        }
+    }
     val taxAmountState = remember { when (viewModel.taxType) {
-        is ItemsViewModel.TaxType.CurrencyAmount -> RealNumberFieldState.moneyFieldState(viewModel.taxValue, currency, locale)
-        is ItemsViewModel.TaxType.Percentage -> RealNumberFieldState(viewModel.taxValue)
+        is ItemsViewModel.TaxType.CurrencyAmount -> RealNumberFieldState.moneyFieldState(viewModel.taxValue, currency, locale, autoValidateTimings)
+        is ItemsViewModel.TaxType.Percentage -> RealNumberFieldState(viewModel.taxValue,
+            parser = { runCatching { if (it.isEmpty()) { 0.0 } else { it.toDouble() } }.into() },
+        )
     } }
 
-    val columnSpacing = 2.dp
-    val nameColumnWeight = 0.6f
-    val priceColumnWeight = 0.3f
-    val amountColumnWeight = 0.3f
-    val totalColumnWeight = 0.3f
     val columnLabelTextStyle = MaterialTheme.typography.labelMedium
-    val rowShape = MaterialTheme.shapes.medium
     val dividerPaddingSize = ActionDialogPadding.TightlyPacked.actionsSpacerHeight * 2
-    val itemColumnFieldPadding = PaddingValues(vertical = 14.dp, horizontal = 8.dp)
     val itemFieldPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp)
-    val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
 
     ActionDialog(
@@ -382,7 +439,7 @@ private fun ItemsViewDialog(
                                     onClick = {
                                         showConfirmationDialog = false
                                         viewModel.reset()
-                                        taxAmountState.fieldText.value = ""
+                                        taxAmountState.fieldText = ""
                                     },
                                 ) },
                                 dismissButton = {
@@ -400,32 +457,48 @@ private fun ItemsViewDialog(
             //   If it is, the button adds the new item to the list.
             //   Otherwise, the button applies changes made to the item list and closes the dialog.
             newItemCollapseTransition.AnimatedContent { state ->
-                val canSubmit = { when (state) {
-                    is ItemsDialogState.View -> { taxAmountState.parseResult.value is Result.Ok }
-                    is ItemsDialogState.New -> {
-                        editItemNameError is Result.Ok
-                        && editItemPriceState.parseResult.value is Result.Ok
-                        && editItemAmountState.parseResult.value is Result.Ok
-                    }
-                    is ItemsDialogState.Edit -> {
-                        val item = state.value
+                val canSubmit = {
+                    val containsNoErrors =
+                        !editItemState.name.isError
+                        && !editItemState.unitPrice.isError
+                        && !editItemState.amount.value.isError
+                        && (!editItemState.amount.hasLabel || !editItemState.amount.label.isError)
 
-                        (editItemName != item.name
-                        || editItemPriceState.fieldText.value != currency.formatPrice(item.unitPrice, locale)
-                        || editItemAmountState.fieldText.value != item.amount.toString()
-                        ) && editItemNameError is Result.Ok
-                        && editItemPriceState.parseResult.value is Result.Ok
-                        && editItemAmountState.parseResult.value is Result.Ok
+                    when (state) {
+                        is ItemsDialogState.View -> { !taxAmountState.isError }
+                        is ItemsDialogState.New -> containsNoErrors
+                        is ItemsDialogState.Edit -> run {
+                            val item = state.value
+                            // Allow submitting only if any field was modified.
+                            editItemState.name.fieldText != item.name
+                            || editItemState.unitPrice.fieldText != currency.formatPrice(item.unitPrice, locale)
+                            || editItemState.amount.value.fieldText != item.amount.textValue
+                            || when (item.amount) {
+                                is Amount.Measured -> if (editItemState.amount.hasLabel) { editItemState.amount.label.fieldText != item.amount.label } else { true }
+                                is Amount.Units -> editItemState.amount.hasLabel
+                            }
+                        } && containsNoErrors
+                        else -> { true }
                     }
-                    else -> { true }
-                } }
+                }
                 val submit = {
-                    editItemNameError = viewModel.validateName(editItemName, isNew = state !is ItemsDialogState.Edit)
-                    editItemPriceState.parseResult.value = currency.parsePrice(editItemPriceState.fieldText.value, locale)
-                    editItemAmountState.parseResult.value = viewModel.parseAmount(editItemAmountState.fieldText.value)
+                    editItemState.name.doValidate()
+                    editItemState.unitPrice.doValidate()
+                    editItemState.amount.value.doValidate()
+                    if (editItemState.amount.hasLabel) {
+                        editItemState.amount.label.doValidate()
+                    }
 
                     if (canSubmit()) {
-                        val newData = Item(editItemName, editItemPriceState.parseResult.value.unwrap(), editItemAmountState.parseResult.value.unwrap())
+                        val newData = Item(
+                            name = editItemState.name.fieldText,
+                            unitPrice = editItemState.unitPrice.parseResult.unwrap(),
+                            amount = if (editItemState.amount.hasLabel) {
+                                Amount.Measured(editItemState.amount.value.parseResult.unwrap(), editItemState.amount.label.fieldText)
+                            } else {
+                                Amount.Units(editItemState.amount.value.parseResult.unwrap().toUInt())
+                            }
+                        )
                         when (state) {
                             is ItemsDialogState.Edit -> {
                                 val idx = viewModel.items.indexOfFirst { it.name == state.value.name }
@@ -498,204 +571,63 @@ private fun ItemsViewDialog(
             Row { CompositionLocalProvider(
                 LocalTextStyle provides columnLabelTextStyle,
             ) {
-                Text("Name", Modifier.weight(nameColumnWeight))
-                Text("Price (${currency.symbol})", Modifier.weight(priceColumnWeight))
-                Text("Amount", Modifier.weight(amountColumnWeight))
+                Text("Name", Modifier.weight(NAME_COLUMN_WEIGHT))
+                Text("Price (${currency.symbol})", Modifier.weight(PRICE_COLUMN_WEIGHT))
+                Text("Amount", Modifier.weight(AMOUNT_COLUMN_WEIGHT))
                 if (showTotalColumn) {
-                    Text("Total (${currency.symbol})", Modifier.weight(totalColumnWeight))
+                    Text("Total (${currency.symbol})", Modifier.weight(TOTAL_COLUMN_WEIGHT))
                 }
             } }
 
+            var focusedField by remember { mutableStateOf<UInt?>(null) }
+            val amountColumnOffset = remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
+            val totalColumnOffset = remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
+
+            // TODO: When Editing, scroll to half a row above the Editing Box.
             ListColumn {
                 this.items(
                     items = viewModel.items,
                     key = { it.name },
                 ) { item ->
-                    Column {
-                        var showMenu by remember { mutableStateOf(false) }
+                    var showMenu by remember { mutableStateOf(false) }
+
+                    newItemCollapseTransition.AnimatedContent { state ->
                         val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
-                        val isSelected = showMenu || isEditing
-                        var focusedField by remember { mutableStateOf<FocusRequester?>(null) }
 
-                        val middleColumnShape = MaterialTheme.shapes.extraSmall
-                        val startColumnShape = halfRoundedCornerShape(
-                            Corner.Right,
-                            sharpSize = middleColumnShape.bottomEnd,
-                            roundSize = rowShape.bottomStart,
-                        )
-                        val endColumnShape = halfRoundedCornerShape(
-                            Corner.Left,
-                            sharpSize = middleColumnShape.bottomStart,
-                            roundSize = rowShape.bottomEnd,
-                        )
-
-                        @Composable
-                        fun RowScope.ItemColumn(
-                            modifier: Modifier = Modifier,
-                            weight: Float,
-                            shape: Shape = middleColumnShape,
-                            onLongClick: () -> Unit,
-                            content: @Composable BoxScope.() -> Unit,
-                        ) { Box(
-                            modifier = modifier
-                                .weight(weight)
-                                .clip(shape)
-                                .combinedClickable(
-                                    onClick = { },
-                                    onLongClick = onLongClick,
-                                )
-                                .background(if (isSelected) {
-                                    MaterialTheme.colorScheme.surfaceContainerLowest
-                                } else {
-                                    ListItemDefaults.containerColor
-                                })
-                                .then(modifier)
-                                .padding(itemColumnFieldPadding),
-                            content = content,
-                        ) }
-
-                        @Composable
-                        fun RowScope.ItemColumnField(
-                            modifier: Modifier = Modifier,
-                            weight: Float,
-                            shape: Shape = middleColumnShape,
-                            staticValue: String,
-                            editingValue: String,
-                            onEditingValueChange: (String) -> Unit,
-                            isError: Boolean,
-                            keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-                        ) {
-                            val focusRequester = remember { FocusRequester() }
-
-                            ItemColumn(
-                                modifier = modifier,
-                                weight = weight,
-                                shape = shape,
+                        if (isEditing) {
+                            EditingItemListBox(
+                                currency = currency,
+                                focusedField = focusedField,
+                                nameState = editItemState.name,
+                                priceState = editItemState.unitPrice,
+                                amountValueState = editItemState.amount.value,
+                                amountLabelState = editItemState.amount.label,
+                                hasLabel = editItemState.amount.hasLabel,
+                                onHasLabelChange = { editItemState.amount.hasLabel = it }
+                            )
+                        } else {
+                            StaticItemListRow(
+                                currency = currency,
+                                locale = locale,
+                                showTotalColumn = showTotalColumn,
+                                isSelected = showMenu,
+                                amountColumnOffset = amountColumnOffset,
+                                totalColumnOffset = totalColumnOffset,
                                 onLongClick = {
                                     showMenu = true
-                                    focusedField = focusRequester
+                                    focusedField = it
                                 },
-                            ) {
-                                if (isEditing) {
-                                    SmallBasicTextField(
-                                        modifier = Modifier.focusRequester(focusRequester.apply {
-                                            if (focusedField === this) {
-                                                focusRequester.requestFocus()
-                                            }
-                                        }),
-                                        value = editingValue,
-                                        onValueChange = onEditingValueChange,
-                                        isError = isError,
-                                        keyboardOptions = keyboardOptions,
-                                    )
-                                } else {
-                                    TextAutoSized(staticValue)
-                                }
-                            }
-                        }
-
-                        newItemCollapseTransition.AnimatedVisibility(visible = { isEditing }) {
-                            Text("Edit item",
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier
-                                    .align(Alignment.Start)
-                                    .padding(start = columnSpacing * 4)
-                            )
-                        }
-
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            var amountColumnOffset by remember(density, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
-                            var totalColumnOffset by remember(density, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
-
-                            Row(
-                                modifier = Modifier.applyHeightToList(),
-                                horizontalArrangement = Arrangement.spacedBy(columnSpacing),
-                            ) {
-                                ItemColumnField(
-                                    weight = nameColumnWeight,
-                                    shape = startColumnShape,
-                                    staticValue = item.name,
-                                    editingValue = editItemName,
-                                    onEditingValueChange = {
-                                        editItemName = it
-                                        editItemNameError = viewModel.validateName(it, isNew = false)
-                                    },
-                                    isError = editItemNameError is Result.Err,
-                                )
-                                MoneyFieldWrapper(
-                                    state = editItemPriceState,
-                                    currency = currency,
-                                    locale = locale,
-                                ) { state ->
-                                    ItemColumnField(
-                                        weight = priceColumnWeight,
-                                        staticValue = currency.formatPrice(item.unitPrice, locale),
-                                        editingValue = state.fieldText.value,
-                                        onEditingValueChange = { state.fieldText.value = it },
-                                        isError = state.parseResult.value is Result.Err,
-                                        keyboardOptions = state.keyboardOptions,
-                                    )
-                                }
-                                ItemColumnField(
-                                    modifier = Modifier.onGloballyPositioned { coords ->
-                                        if (amountColumnOffset == null) {
-                                            amountColumnOffset = coords.positionInParent().x
-                                        }
-                                    },
-                                    weight = amountColumnWeight,
-                                    shape = if (showTotalColumn) { middleColumnShape } else { endColumnShape },
-                                    staticValue = item.amount.toString(),
-                                    editingValue = editItemAmountState.fieldText.value,
-                                    onEditingValueChange = {
-                                        editItemAmountState.fieldText.value = it
-                                        editItemAmountState.parseResult.value = viewModel.parseAmount(it)
-                                    },
-                                    isError = editItemAmountState.parseResult.value is Result.Err,
-                                    keyboardOptions = RealNumberFieldState.keyboardOptions,
-                                )
-                                // Column with total (=) for this specific item (only on wider screens).
-                                if (showTotalColumn) {
-                                    ItemColumn(
-                                        modifier = Modifier.onGloballyPositioned { coords ->
-                                            if (totalColumnOffset == null) {
-                                                totalColumnOffset = coords.positionInParent().x
-                                            }
-                                        },
-                                        weight = totalColumnWeight,
-                                        shape = endColumnShape,
-                                        onLongClick = { showMenu = true },
-                                    ) {
-                                        TextAutoSized(currency.formatPrice(item.unitPrice * item.amount, locale))
-                                    }
-                                }
-                            }
-
-                            val iconSize = 18.dp
-                            // Multiply icon.
-                            Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
-                                .size(iconSize)
-                                .offset { IntOffset(x = amountColumnOffset?.roundToInt()?.let {
-                                    it - (iconSize + columnSpacing).roundToPx() / 2
-                                } ?: 0, y = 0) },
-                            )
-                            // Equal icon.
-                            if (showTotalColumn) {
-                                Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
-                                    .size(iconSize)
-                                    .offset { IntOffset(x = totalColumnOffset?.roundToInt()?.let {
-                                        it - (iconSize + columnSpacing).roundToPx() / 2
-                                    } ?: 0, y = 0) },
-                                )
-                            }
-
-                            ItemActionsMenu(
-                                expanded = showMenu,
-                                onDismiss = { showMenu = false },
-                                onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
-                                onDeleteClick = { viewModel.removeItem(item.name) },
+                                data = item,
                             )
                         }
                     }
+
+                    ItemActionsMenu(
+                        expanded = showMenu,
+                        onDismiss = { showMenu = false },
+                        onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
+                        onDeleteClick = { viewModel.removeItem(item.name) },
+                    )
                 }
             }
 
@@ -712,7 +644,7 @@ private fun ItemsViewDialog(
 
                     Row(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(columnSpacing * 2),
+                        horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlainToolTipBox("Switch tax type") {
@@ -737,57 +669,33 @@ private fun ItemsViewDialog(
                         }
 
                         Box(Modifier
-                            .clip(rowShape)
+                            .clip(ITEM_ROW_SHAPE)
                             .background(ListItemDefaults.containerColor)
                             .padding(itemFieldPadding)
                             .fillMaxWidth()
                         ) {
                             when (viewModel.taxType) {
                                 is ItemsViewModel.TaxType.CurrencyAmount -> {
-                                    MoneyFieldWrapper(
-                                        state = taxAmountState,
-                                        onPriceChange = { viewModel.taxValue = it },
-                                        currency = currency,
-                                        locale = locale,
-                                    ) { state ->
-                                        SmallBasicTextField(
-                                            modifier = Modifier.semantics { contentDescription = "Tax value" },
-                                            value = state.fieldText.value,
-                                            onValueChange = { state.fieldText.value = it },
-                                            isError = state.parseResult.value is Result.Err,
-                                            placeholderText = currency.formatPrice(0.0, locale),
-                                            keyboardOptions = state.keyboardOptions,
-                                        )
-                                    }
-                                }
-                                is ItemsViewModel.TaxType.Percentage -> {
-                                    fun parse(value: String) {
-                                        val parseResult = runCatching {
-                                            if (value.isEmpty()) { 0.0 } else { value.toDouble() }
-                                        }.into()
-                                        taxAmountState.parseResult.value = parseResult
-                                        if (parseResult is Result.Ok) {
-                                            viewModel.taxValue = parseResult.value
-                                        }
-                                    }
-
-                                    // Reset error value on first compose.
-                                    LaunchedEffect(Unit) { parse(taxAmountState.fieldText.value) }
-
                                     SmallBasicTextField(
                                         modifier = Modifier.semantics { contentDescription = "Tax value" },
-                                        value = taxAmountState.fieldText.value,
-                                        onValueChange = {
-                                            taxAmountState.fieldText.value = it
-                                            parse(it)
-                                        },
-                                        isError = taxAmountState.parseResult.value is Result.Err,
+                                        value = taxAmountState.fieldText,
+                                        onValueChange = { taxAmountState.fieldText = it },
+                                        isError = taxAmountState.isError,
+                                        placeholderText = currency.formatPrice(0.0, locale),
+                                        keyboardOptions = RealNumberFieldState.keyboardOptions,
+                                    )
+                                }
+                                is ItemsViewModel.TaxType.Percentage -> {
+                                    SmallBasicTextField(
+                                        modifier = Modifier.semantics { contentDescription = "Tax value" },
+                                        value = taxAmountState.fieldText,
+                                        onValueChange = { taxAmountState.fieldText = it },
+                                        isError = taxAmountState.isError,
                                         placeholderText = "0.0",
                                         keyboardOptions = RealNumberFieldState.keyboardOptions,
                                     )
                                 }
                             }
-
                         }
                     }
                 }
@@ -801,7 +709,7 @@ private fun ItemsViewDialog(
                         Icon(currencyIcon, null)
 
                         Box(Modifier
-                            .clip(rowShape)
+                            .clip(ITEM_ROW_SHAPE)
                             .background(ListItemDefaults.containerColor)
                             .padding(itemFieldPadding)
                             .fillMaxWidth()
@@ -832,71 +740,18 @@ private fun ItemsViewDialog(
                     )
                 }
                 is ItemsDialogState.New -> Column {
-                    @Composable
-                    fun NewItemField(
-                        modifier: Modifier = Modifier,
-                        label: String,
-                        value: String,
-                        onValueChange: (String) -> Unit,
-                        keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-                        isError: Boolean,
-                    ) {
-                        OutlinedTextField(
-                            modifier = modifier,
-                            label = { TextAutoSized(label) },
-                            value = value,
-                            onValueChange = onValueChange,
-                            shape = MaterialTheme.shapes.medium,
-                            isError = isError,
-                            keyboardOptions = keyboardOptions,
-                            singleLine = true,
-                            maxLines = 1,
-                        )
-                    }
-
                     HorizontalDivider(Modifier.padding(vertical = dividerPaddingSize))
-                    Text("New Item", style = columnLabelTextStyle)
 
-                    Row(
-                        modifier = Modifier.semantics { contentDescription = "New item fields" },
-                        horizontalArrangement = Arrangement.spacedBy(columnSpacing),
-                    ) {
-                        NewItemField(
-                            modifier = Modifier.weight(nameColumnWeight),
-                            label = "Name",
-                            value = editItemName,
-                            onValueChange = {
-                                editItemName = it
-                                editItemNameError = viewModel.validateName(it, isNew = true)
-                            },
-                            isError = editItemNameError is Result.Err,
-                        )
-                        MoneyFieldWrapper(
-                            state = editItemPriceState,
-                            currency = currency,
-                            locale = locale,
-                        ) { state ->
-                            NewItemField(
-                                modifier = Modifier.weight(priceColumnWeight),
-                                label = "Price",
-                                value = state.fieldText.value,
-                                onValueChange = { state.fieldText.value = it },
-                                isError = state.parseResult.value is Result.Err,
-                                keyboardOptions = state.keyboardOptions,
-                            )
-                        }
-                        NewItemField(
-                            modifier = Modifier.weight(amountColumnWeight),
-                            label = "Amount",
-                            value = editItemAmountState.fieldText.value,
-                            onValueChange = {
-                                editItemAmountState.fieldText.value = it
-                                editItemAmountState.parseResult.value = viewModel.parseAmount(it)
-                            },
-                            isError = editItemAmountState.parseResult.value is Result.Err,
-                            keyboardOptions = RealNumberFieldState.keyboardOptions,
-                        )
-                    }
+                    EditingItemListBox(
+                        boxLabel = "New Item",
+                        currency = currency,
+                        nameState = editItemState.name,
+                        priceState = editItemState.unitPrice,
+                        amountValueState = editItemState.amount.value,
+                        amountLabelState = editItemState.amount.label,
+                        hasLabel = editItemState.amount.hasLabel,
+                        onHasLabelChange = { editItemState.amount.hasLabel = it }
+                    )
                 }
                 else -> { }
             }
@@ -908,20 +763,23 @@ private fun ItemsViewDialog(
             newItemCollapseTransition.AnimatedContent { state ->
                 when (state) {
                     is ItemsDialogState.View -> {
-                        if (taxAmountState.parseResult.value is Result.Err) {
-                            Text("Tax error: ${errorMsg(taxAmountState.parseResult.value.unwrapErr())}")
+                        if (taxAmountState.isError) {
+                            Text("Tax error: ${errorMsg(taxAmountState.parseResult.unwrapErr())}")
                         }
                     }
                     is ItemsDialogState.New,
                     is ItemsDialogState.Edit -> Column {
-                        if (editItemNameError is Result.Err) {
-                            Text("Name error: ${errorMsg(editItemNameError.unwrapErr())}")
+                        if (editItemState.name.isError) {
+                            Text("Name error: ${errorMsg(editItemState.name.parseResult.unwrapErr())}")
                         }
-                        if (editItemPriceState.parseResult.value is Result.Err) {
-                            Text("Price error: ${errorMsg(editItemPriceState.parseResult.value.unwrapErr())}")
+                        if (editItemState.unitPrice.isError) {
+                            Text("Price error: ${errorMsg(editItemState.unitPrice.parseResult.unwrapErr())}")
                         }
-                        if (editItemAmountState.parseResult.value is Result.Err) {
-                            Text("Amount error: ${errorMsg(editItemAmountState.parseResult.value.unwrapErr())}")
+                        if (editItemState.amount.value.isError) {
+                            Text("Amount Value error: ${errorMsg(editItemState.amount.value.parseResult.unwrapErr())}")
+                        }
+                        if (editItemState.amount.hasLabel && editItemState.amount.label.isError) {
+                            Text("Amount Label error: ${errorMsg(editItemState.amount.label.parseResult.unwrapErr())}")
                         }
                     }
                     is ItemsDialogState.Ocr -> throw Exception("Unreachable")
@@ -930,6 +788,313 @@ private fun ItemsViewDialog(
         }
     }
 }
+
+// TODO: doc, note total value only shows up on wide screens
+@Composable
+private fun StaticItemListRow(
+    modifier: Modifier = Modifier,
+    currency: Currency,
+    locale: Locale,
+    rowShape: CornerBasedShape = ITEM_ROW_SHAPE,
+    showTotalColumn: Boolean,
+    isSelected: Boolean,
+    amountColumnOffset: MutableState<Float?>,
+    totalColumnOffset: MutableState<Float?>,
+    onLongClick: (column: UInt?) -> Unit,
+    data: Item,
+) {
+    val columnShapes = ItemColumnsShapes(rowShape)
+
+    Column(modifier) {
+        Box(contentAlignment = Alignment.CenterStart) {
+            Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING)) {
+                ItemColumn(
+                    modifier = Modifier.weight(NAME_COLUMN_WEIGHT),
+                    shape = columnShapes.Start,
+                    isSelected = isSelected,
+                    onLongClick = { onLongClick(0u) },
+                    content = { TextAutoSized(data.name) },
+                )
+                ItemColumn(
+                    modifier = Modifier.weight(PRICE_COLUMN_WEIGHT),
+                    shape = columnShapes.Middle,
+                    isSelected = isSelected,
+                    onLongClick = { onLongClick(1u) },
+                    content = { TextAutoSized(currency.formatPrice(data.unitPrice, locale)) },
+                )
+                ItemColumn(
+                    modifier = Modifier.weight(AMOUNT_COLUMN_WEIGHT)
+                        .onGloballyPositioned { coords ->
+                            if (amountColumnOffset.value == null) {
+                                amountColumnOffset.value = coords.positionInParent().x
+                            }
+                        },
+                    shape = if (showTotalColumn) { columnShapes.Middle } else { columnShapes.End },
+                    isSelected = isSelected,
+                    onLongClick = { onLongClick(2u) },
+                    content = { TextAutoSized("${data.amount.textValue}${
+                        when (data.amount) {
+                            is Amount.Measured -> " ${data.amount.label}"
+                            is Amount.Units -> ""
+                        }
+                    }") },
+                )
+                if (showTotalColumn) {
+                    ItemColumn(
+                        modifier = Modifier.weight(TOTAL_COLUMN_WEIGHT)
+                            .onGloballyPositioned { coords ->
+                                if (totalColumnOffset.value == null) {
+                                    totalColumnOffset.value = coords.positionInParent().x
+                                }
+                            },
+                        shape = columnShapes.End,
+                        isSelected = isSelected,
+                        onLongClick = { onLongClick(null) },
+                        content = { TextAutoSized(currency.formatPrice(data.totalPrice, locale)) },
+                    )
+                }
+            }
+
+            val iconSize = 18.dp
+            // Multiply icon.
+            Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
+                .align(Alignment.CenterStart)
+                .size(iconSize)
+                .offset { IntOffset(x = amountColumnOffset.value?.roundToInt()?.let {
+                    it - (iconSize + COLUMN_SPACING).roundToPx() / 2
+                } ?: 0, y = 0) },
+            )
+            // Equal icon.
+            if (showTotalColumn) {
+                Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(iconSize)
+                    .offset { IntOffset(x = totalColumnOffset.value?.roundToInt()?.let {
+                        it - (iconSize + COLUMN_SPACING).roundToPx() / 2
+                    } ?: 0, y = 0) },
+                )
+            }
+        }
+    }
+}
+
+/** Displays the necessary [TextFields][SmallBasicTextField] to edit the data of an [Item].
+ *
+ * @param boxLabel The text that will be displayed above all the fields (whether the box is for *editing* or *creating* a new [Item]).
+ * @param rowShape The *rounder* (edges) [Shape] of a [TextField][SmallBasicTextField] in a row of other fields.
+ * @param focusedField The *index* of the field that should start with keyboard focus (or none if `null`).
+ *   Fields are laid out in the following order: **`0.`** Name, **`1.`** Unit Price, **`2.`** Amount Value, **`3.`** Amount Label.
+ * @param nameState The state object for the "Name" field.
+ * @param priceState The state object for the "Unit Price" field.
+ * @param amountValueState The state object for the "Amount Value" field.
+ * @param amountLabelState The state object for the "Amount Label" field.
+ * @param hasLabel The state of the *[Amount] type* toggle button, and whether the "Amount Label" field should be displayed.
+ * @param onHasLabelChange Updates the state object of the [hasLabel] state. */
+@Composable
+private fun EditingItemListBox(
+    modifier: Modifier = Modifier,
+    boxLabel: String = "Edit item",
+    currency: Currency,
+    rowShape: CornerBasedShape = ITEM_ROW_SHAPE,
+    focusedField: UInt? = null,
+    nameState: StringTextFieldState,
+    priceState: RealNumberFieldState,
+    amountValueState: RealNumberFieldState,
+    amountLabelState: StringTextFieldState,
+    hasLabel: Boolean,
+    onHasLabelChange: (Boolean) -> Unit,
+) {
+    val columnShapes = ItemColumnsShapes(rowShape)
+//    @Composable
+//    fun Modifier.fieldFocuser(columnNum: UInt)
+//        = this.focusRequester(remember { FocusRequester().apply {
+//            if (focusedField == columnNum) {
+//                this.requestFocus()
+//            }
+//        } })
+
+    @Composable
+    fun ItemColumnField(
+        modifier: Modifier = Modifier,
+        columnNum: UInt,
+        shape: Shape,
+        value: String,
+        onValueChange: (String) -> Unit,
+        isError: Boolean,
+        keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    ) {
+        ItemColumn(
+            modifier = modifier,
+            shape = shape,
+            padding = PaddingValues(
+                start = ITEM_LIST_ROW_PADDING.calculateStartPadding(LocalLayoutDirection.current) * 2,
+                end = ITEM_LIST_ROW_PADDING.calculateEndPadding(LocalLayoutDirection.current) * 2,
+                top = ITEM_LIST_ROW_PADDING.calculateTopPadding(),
+                bottom = ITEM_LIST_ROW_PADDING.calculateBottomPadding(),
+            ),
+            isSelected = true,
+        ) {
+            SmallBasicTextField(
+                modifier = Modifier //.fieldFocuser(columnNum) // FIXME: doesnt work
+                    .fillMaxWidth(),
+                value = value,
+                onValueChange = onValueChange,
+                isError = isError,
+                keyboardOptions = keyboardOptions,
+            )
+        }
+    }
+
+    @Composable
+    fun Label(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.labelMedium) {
+        Text(text, modifier, softWrap = false, maxLines = 1, style = style)
+    }
+
+    Column(modifier
+        .padding(vertical = COLUMN_SPACING)
+        .border(2.dp, MaterialTheme.colorScheme.outline, rowShape)
+        .padding(ITEM_LIST_ROW_PADDING),
+        verticalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2),
+    ) {
+        // TODO: overlay box label on top of border
+        Label(boxLabel,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .align(Alignment.Start)
+                .padding(start = COLUMN_SPACING * 4)
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2)) {
+            Column(Modifier.weight(NAME_COLUMN_WEIGHT)) {
+                Label("Name")
+                ItemColumnField(
+                    columnNum = 0u,
+                    shape = columnShapes.Start,
+                    value = nameState.fieldText,
+                    onValueChange = { nameState.fieldText = it },
+                    isError = nameState.isError,
+                )
+            }
+            Column(Modifier.weight(PRICE_COLUMN_WEIGHT)) {
+                Label("Price (${currency.symbol})")
+                ItemColumnField(
+                    columnNum = 1u,
+                    shape = columnShapes.End,
+                    value = priceState.fieldText,
+                    onValueChange = { priceState.fieldText = it },
+                    isError = priceState.isError,
+                    keyboardOptions = RealNumberFieldState.keyboardOptions,
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val amountType = if (hasLabel) { "Measurement" } else { "Units" }
+            val displayLabelTransition = updateTransition(hasLabel)
+
+            Column {
+                Label("Amount")
+                PlainToolTipBox("Change amount type") {
+                    TextButton(
+                        modifier = Modifier.semantics { stateDescription = amountType },
+                        onClick = { onHasLabelChange(!hasLabel) },
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
+                    ) {
+                        Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Icon(painterResource(if (hasLabel) {
+                            R.drawable.scale_24px
+                        } else {
+                            R.drawable.units_24px
+                        }), null)
+                    }
+                }
+            }
+            Spacer(Modifier.width(COLUMN_SPACING * 2))
+
+            Column(Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 1.0f } }.value)) {
+                displayLabelTransition.AnimatedContent { hasLabel ->
+                    if (hasLabel) { Label(amountType) } else { Label(amountType) }
+                }
+                ItemColumnField(
+                    columnNum = 2u,
+                    shape = if (hasLabel) { columnShapes.Start } else { rowShape },
+                    value = amountValueState.fieldText,
+                    onValueChange = { amountValueState.fieldText = it },
+                    isError = amountValueState.isError,
+                    keyboardOptions = RealNumberFieldState.keyboardOptions,
+                )
+            }
+            Spacer(Modifier.width(displayLabelTransition.animateDp { if (it) { COLUMN_SPACING * 2 } else { 0.dp } }.value))
+
+            displayLabelTransition.AnimatedVisibility({ it },
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally(),
+                modifier = Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 0.001f } }.value),
+            ) {
+                Column {
+                    Label("Label")
+                    ItemColumnField(
+                        columnNum = 3u,
+                        shape = columnShapes.End,
+                        value = amountLabelState.fieldText,
+                        onValueChange = { amountLabelState.fieldText = it },
+                        isError = amountLabelState.isError,
+                        keyboardOptions = RealNumberFieldState.keyboardOptions,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Suppress("PropertyName")
+private class ItemColumnsShapes(
+    private val rowShape: CornerBasedShape,
+) {
+    val Middle@Composable inline get() = ItemColumnsShapes.Middle
+    val Start @Composable get() = halfRoundedCornerShape(
+        Corner.Right,
+        sharpSize = ItemColumnsShapes.Middle.bottomEnd,
+        roundSize = rowShape.bottomStart,
+    )
+    val End @Composable get() = halfRoundedCornerShape(
+        Corner.Left,
+        sharpSize = ItemColumnsShapes.Middle.bottomStart,
+        roundSize = rowShape.bottomEnd,
+    )
+
+    companion object {
+        val Middle@Composable get() = MaterialTheme.shapes.extraSmall
+    }
+}
+
+@Composable
+private fun ItemColumn(
+    modifier: Modifier = Modifier,
+    shape: Shape = ItemColumnsShapes.Middle,
+    padding: PaddingValues = ITEM_LIST_ROW_PADDING,
+    isSelected: Boolean,
+    onLongClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit,
+) { Box(
+    modifier = modifier
+        .clip(shape)
+        .run { if (onLongClick != null) { this
+            .combinedClickable(
+                onClick = { },
+                onLongClick = onLongClick,
+            )
+        } else this }
+        .background(if (isSelected) {
+            MaterialTheme.colorScheme.surfaceContainerLowest
+        } else {
+            ListItemDefaults.containerColor
+        })
+        .then(modifier)
+        .padding(padding),
+    content = content,
+) }
 
 /** Small TextField that fits inside the small columns of the Items list. */
 @Composable
@@ -988,7 +1153,7 @@ private fun SmallBasicTextField(
 }
 
 @Composable
-fun TextAutoSized(
+private fun TextAutoSized(
     text: String,
     modifier: Modifier = Modifier,
     textAlign: TextAlign? = null,
