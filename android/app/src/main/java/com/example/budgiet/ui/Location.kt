@@ -92,6 +92,8 @@ import java.time.LocalTime
 import java.util.Objects
 import kotlin.math.ceil
 import kotlin.math.min
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
 
 val FAKE_LOCATIONS = mapOf(
     0u  to Location("Chipotle", "123 Main Street, Bronx NY"),
@@ -327,7 +329,6 @@ fun LocationPickerDialog(
 ) {
     var newLocationId by remember { mutableStateOf<UInt?>(null) }
 
-    @Suppress("AssignedValueIsNeverRead")
     when (state) {
         LocationPickerState.Search -> {
             LocationSearchDialog(
@@ -394,7 +395,7 @@ private fun LocationSearchDialog(
     onEditClick: (DbEntry<Location>) -> Unit,
 ) {
     val searchColumnSize = 3.5f
-    val newItemAnimationSpeed = 250 // In millis
+    val newItemAnimationSpeed = 250.milliseconds // In millis
     val newItemAnimationDuration = newItemAnimationSpeed * 5 // Repeat n times; In millis
     val scrimColor = MaterialTheme.colorScheme.secondaryContainer
     val pageSize = ceil(searchColumnSize).toUInt() * 3u
@@ -425,7 +426,7 @@ private fun LocationSearchDialog(
         val defaultContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
         val newItemAnimatedColor = if (isNew && animateNewItemScrim) {
             LaunchedEffect(Unit) {
-                delay(newItemAnimationDuration.toLong())
+                delay(newItemAnimationDuration)
                 animateNewItemScrim = false
             }
             rememberInfiniteTransition()
@@ -433,7 +434,7 @@ private fun LocationSearchDialog(
                     initialValue = defaultContainerColor,
                     targetValue = scrimColor,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(newItemAnimationSpeed),
+                        animation = tween(newItemAnimationSpeed.toInt(DurationUnit.MILLISECONDS)),
                         repeatMode = RepeatMode.Reverse,
                     ),
                 )
@@ -731,7 +732,6 @@ private fun LocationEditorDialog(
         set as Set<String>
     }
 
-    @Suppress("AssignedValueIsNeverRead")
     if (showNearbyDialog) {
         NearbyLocationsDialog(
             modifier = modifier,

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,7 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -64,7 +65,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -72,11 +72,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -100,9 +105,12 @@ import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.StringTextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
+import com.example.budgiet.ui.utils.onMeasureCoords
+import kotlinx.coroutines.delay
 import java.util.Currency
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.nanoseconds
 
 private val COLUMN_SPACING = 2.dp
 private val ITEM_LIST_ROW_PADDING = PaddingValues(vertical = 14.dp, horizontal = 8.dp)
@@ -353,7 +361,6 @@ private fun ItemsViewDialog(
         object {
             val name = StringTextFieldState(preData?.name ?: "",
                 validator = { viewModel.validateName(it, isNew = state !is ItemsDialogState.Edit) },
-                autoValidateTimings = null,
             )
             val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice, currency, locale, autoValidateTimings)
             val amount = object {
@@ -361,12 +368,12 @@ private fun ItemsViewDialog(
                 // Defaults to Amount.Unit when creating a new Item.
                 var hasLabel by mutableStateOf(preData?.let { it.amount is Amount.Measured } ?: false)
                 val value = run {
-                    val parser = { s: String ->
-                        Result.Ok(if (hasLabel) { s.toDouble() } else { s.toInt().toDouble() })
-                    }
+                    val parser = { s: String -> runCatching {
+                        if (hasLabel) { s.toDouble() } else { s.toInt().toDouble() }
+                    }.into() }
                     preData?.let {
-                        RealNumberFieldState(it.amount.textValue, parser = parser, autoValidateTimings = null)
-                    } ?: RealNumberFieldState("", parser = parser, autoValidateTimings = null)
+                        RealNumberFieldState(it.amount.textValue, parser = parser)
+                    } ?: RealNumberFieldState("", parser = parser)
                 }
                 val label = StringTextFieldState(
                     initialValue = when (val amount = preData?.amount) {
@@ -374,7 +381,6 @@ private fun ItemsViewDialog(
                         is Amount.Units, null -> ""
                     },
                     validator = { Amount.validateLabel(it) },
-                    autoValidateTimings = null,
                 )
             }
         }
@@ -462,7 +468,7 @@ private fun ItemsViewDialog(
                         !editItemState.name.isError
                         && !editItemState.unitPrice.isError
                         && !editItemState.amount.value.isError
-                        && (!editItemState.amount.hasLabel || !editItemState.amount.label.isError)
+                        && !(editItemState.amount.hasLabel && editItemState.amount.label.isError)
 
                     when (state) {
                         is ItemsDialogState.View -> { !taxAmountState.isError }
@@ -474,7 +480,7 @@ private fun ItemsViewDialog(
                             || editItemState.unitPrice.fieldText != currency.formatPrice(item.unitPrice, locale)
                             || editItemState.amount.value.fieldText != item.amount.textValue
                             || when (item.amount) {
-                                is Amount.Measured -> if (editItemState.amount.hasLabel) { editItemState.amount.label.fieldText != item.amount.label } else { true }
+                                is Amount.Measured -> !editItemState.amount.hasLabel || editItemState.amount.label.fieldText != item.amount.label
                                 is Amount.Units -> editItemState.amount.hasLabel
                             }
                         } && containsNoErrors
@@ -579,20 +585,21 @@ private fun ItemsViewDialog(
                 }
             } }
 
+            val listState = rememberLazyListState()
+            // Index of the row that the Menu is anchored to.
+            var menuPosition by remember { mutableStateOf<Int?>(null) }
             var focusedField by remember { mutableStateOf<UInt?>(null) }
-            val amountColumnOffset = remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
-            val totalColumnOffset = remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
 
-            // TODO: When Editing, scroll to half a row above the Editing Box.
-            ListColumn {
-                this.items(
+            ListColumn(state = listState) {
+                this.itemsIndexed(
                     items = viewModel.items,
-                    key = { it.name },
-                ) { item ->
-                    var showMenu by remember { mutableStateOf(false) }
+                    key = { _, item -> item.name },
+                ) { idx, item -> Box {
+                    val showMenu = menuPosition?.let { it == idx } ?: false
 
                     newItemCollapseTransition.AnimatedContent { state ->
                         val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
+                        val animationScope = this
 
                         if (isEditing) {
                             EditingItemListBox(
@@ -605,16 +612,18 @@ private fun ItemsViewDialog(
                                 hasLabel = editItemState.amount.hasLabel,
                                 onHasLabelChange = { editItemState.amount.hasLabel = it }
                             )
+                            LaunchedEffect(Unit) {
+                                delay(animationScope.transition.totalDurationNanos.nanoseconds)
+                                listState.animateScrollToItem(idx, -80)
+                            }
                         } else {
                             StaticItemListRow(
                                 currency = currency,
                                 locale = locale,
                                 showTotalColumn = showTotalColumn,
                                 isSelected = showMenu,
-                                amountColumnOffset = amountColumnOffset,
-                                totalColumnOffset = totalColumnOffset,
                                 onLongClick = {
-                                    showMenu = true
+                                    menuPosition = idx
                                     focusedField = it
                                 },
                                 data = item,
@@ -624,11 +633,11 @@ private fun ItemsViewDialog(
 
                     ItemActionsMenu(
                         expanded = showMenu,
-                        onDismiss = { showMenu = false },
+                        onDismiss = { menuPosition = null },
                         onEditClick = { onStateChange(ItemsDialogState.Edit(item)) },
                         onDeleteClick = { viewModel.removeItem(item.name) },
                     )
-                }
+                } }
             }
 
             newItemCollapseTransition.AnimatedVisibility(visible = { state ->
@@ -759,28 +768,32 @@ private fun ItemsViewDialog(
 
         // New/Edit item errors.
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.error) {
-            fun errorMsg(error: Throwable): String = error.message ?: error.javaClass.name
+            @Composable
+            fun ErrorText(prefix: String, result: Result<*>) {
+                if (result is Result.Err) {
+                    Text(buildAnnotatedString {
+                        withStyle(SpanStyle(
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = TextDecoration.Underline,
+                        )) {
+                            append("$prefix:")
+                        }
+                        append(" ${result.error.message ?: result.error.javaClass.name}")
+                    })
+                }
+            }
+
             newItemCollapseTransition.AnimatedContent { state ->
                 when (state) {
                     is ItemsDialogState.View -> {
-                        if (taxAmountState.isError) {
-                            Text("Tax error: ${errorMsg(taxAmountState.parseResult.unwrapErr())}")
-                        }
+                        ErrorText("Tax error", taxAmountState.parseResult)
                     }
                     is ItemsDialogState.New,
                     is ItemsDialogState.Edit -> Column {
-                        if (editItemState.name.isError) {
-                            Text("Name error: ${errorMsg(editItemState.name.parseResult.unwrapErr())}")
-                        }
-                        if (editItemState.unitPrice.isError) {
-                            Text("Price error: ${errorMsg(editItemState.unitPrice.parseResult.unwrapErr())}")
-                        }
-                        if (editItemState.amount.value.isError) {
-                            Text("Amount Value error: ${errorMsg(editItemState.amount.value.parseResult.unwrapErr())}")
-                        }
-                        if (editItemState.amount.hasLabel && editItemState.amount.label.isError) {
-                            Text("Amount Label error: ${errorMsg(editItemState.amount.label.parseResult.unwrapErr())}")
-                        }
+                        ErrorText("Name error", editItemState.name.parseResult)
+                        ErrorText("Price error", editItemState.unitPrice.parseResult)
+                        ErrorText("Amount Value error", editItemState.amount.value.parseResult)
+                        ErrorText("Amount Label error", editItemState.amount.label.parseResult)
                     }
                     is ItemsDialogState.Ocr -> throw Exception("Unreachable")
                 }
@@ -789,7 +802,15 @@ private fun ItemsViewDialog(
     }
 }
 
-// TODO: doc, note total value only shows up on wide screens
+/** Displays a single row of an [Item]'s data.
+ *
+ * @param rowShape The *rounder* (edges) [Shape] of the whole row (applied to each column as needed).
+ * @param showTotalColumn Whether the column with the "Total" value should be displayed.
+ *   This should only be true on wide screens.
+ * @param isSelected Whether the row is selected and should have a *highlighted* background color.
+ * @param onLongClick The action that is done when a column of the Row has a `LongClick` event.
+ *   The argument passed in this callback is the *index* of the column that corresponds to a field in [EditingItemListBox]
+ *   (or `null` if the column does not correspond to one of those fields). */
 @Composable
 private fun StaticItemListRow(
     modifier: Modifier = Modifier,
@@ -798,12 +819,12 @@ private fun StaticItemListRow(
     rowShape: CornerBasedShape = ITEM_ROW_SHAPE,
     showTotalColumn: Boolean,
     isSelected: Boolean,
-    amountColumnOffset: MutableState<Float?>,
-    totalColumnOffset: MutableState<Float?>,
     onLongClick: (column: UInt?) -> Unit,
     data: Item,
 ) {
     val columnShapes = ItemColumnsShapes(rowShape)
+    var amountColumnOffset by remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
+    var totalColumnOffset by remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
 
     Column(modifier) {
         Box(contentAlignment = Alignment.CenterStart) {
@@ -824,10 +845,8 @@ private fun StaticItemListRow(
                 )
                 ItemColumn(
                     modifier = Modifier.weight(AMOUNT_COLUMN_WEIGHT)
-                        .onGloballyPositioned { coords ->
-                            if (amountColumnOffset.value == null) {
-                                amountColumnOffset.value = coords.positionInParent().x
-                            }
+                        .onMeasureCoords(needsMeasure = amountColumnOffset == null) { coords ->
+                            amountColumnOffset = coords.positionInParent().x
                         },
                     shape = if (showTotalColumn) { columnShapes.Middle } else { columnShapes.End },
                     isSelected = isSelected,
@@ -842,10 +861,8 @@ private fun StaticItemListRow(
                 if (showTotalColumn) {
                     ItemColumn(
                         modifier = Modifier.weight(TOTAL_COLUMN_WEIGHT)
-                            .onGloballyPositioned { coords ->
-                                if (totalColumnOffset.value == null) {
-                                    totalColumnOffset.value = coords.positionInParent().x
-                                }
+                            .onMeasureCoords(needsMeasure = totalColumnOffset == null) { coords ->
+                                totalColumnOffset = coords.positionInParent().x
                             },
                         shape = columnShapes.End,
                         isSelected = isSelected,
@@ -860,7 +877,7 @@ private fun StaticItemListRow(
             Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
                 .align(Alignment.CenterStart)
                 .size(iconSize)
-                .offset { IntOffset(x = amountColumnOffset.value?.roundToInt()?.let {
+                .offset { IntOffset(x = amountColumnOffset?.roundToInt()?.let {
                     it - (iconSize + COLUMN_SPACING).roundToPx() / 2
                 } ?: 0, y = 0) },
             )
@@ -869,7 +886,7 @@ private fun StaticItemListRow(
                 Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
                     .align(Alignment.CenterStart)
                     .size(iconSize)
-                    .offset { IntOffset(x = totalColumnOffset.value?.roundToInt()?.let {
+                    .offset { IntOffset(x = totalColumnOffset?.roundToInt()?.let {
                         it - (iconSize + COLUMN_SPACING).roundToPx() / 2
                     } ?: 0, y = 0) },
                 )

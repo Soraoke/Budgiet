@@ -40,7 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
@@ -241,11 +240,8 @@ abstract class ListItemScope internal constructor(
             if (this._itemWidth != null) {
                 val density = LocalDensity.current
 
-                modifier = modifier.onGloballyPositioned { coords ->
-                    // Only set the height for the first rendered element
-                    if (this._itemWidth.value == null) {
-                        this._itemWidth.value = with(density) { coords.size.width.toDp() }
-                    }
+                modifier = modifier.onMeasureCoords(this._itemWidth.value == null) { coords ->
+                    this._itemWidth.value = with(density) { coords.size.width.toDp() }
                 }
             }
         }
@@ -265,11 +261,8 @@ abstract class ListItemScope internal constructor(
             if (this._itemHeight != null) {
                 val density = LocalDensity.current
 
-                modifier = modifier.onGloballyPositioned { coords ->
-                    // Only set the height for the first rendered element
-                    if (this._itemHeight.value == null) {
-                        this._itemHeight.value = with(density) { coords.size.height.toDp() }
-                    }
+                modifier = modifier.onMeasureCoords(this._itemHeight.value == null) { coords ->
+                    this._itemHeight.value = with(density) { coords.size.height.toDp() }
                 }
             }
         }
