@@ -103,7 +103,9 @@ class StringTextFieldState @RememberInComposition constructor(
                 }
             } ?: run {
                 // If autoValidate is disabled, still reset the parseResult so that the new value can be validated later.
-                this._parseResult = Result.Ok(Unit)
+                if (this._parseResult is Result.Err) {
+                    this._parseResult = Result.Ok(Unit)
+                }
             }
         }
     override val parseResult: Result<String> get() = this._parseResult.map { this.fieldText }
@@ -125,7 +127,7 @@ class StringTextFieldState @RememberInComposition constructor(
  * See [autoValidateTimings] to change this behavior. */
 abstract class TextFieldState<T> @RememberInComposition protected constructor(
     initialFieldValue: String,
-    initialResult: Result<T>,
+    private val initialResult: Result<T>,
     private val parser: (String) -> Result<T>,
     private val formatter: ((T) -> String)? = null,
     override var autoValidateTimings: AutoValidateTimings? = null,
@@ -208,6 +210,11 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
                         autoValidateJob = null
                     }
                 }
+            } ?: run {
+                // If autoValidate is disabled, still reset the parseResult so that the new value can be validated later.
+                if (this._parseResult is Result.Err) {
+                    this._parseResult = this.initialResult
+                }
             }
         }
     override val parseResult: Result<T> get() = this._parseResult
@@ -238,7 +245,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
         formatter: ((Double) -> String)? = defaultFormatter,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
-        initialFieldValue = initialValue.toString(),
+        initialFieldValue = formatter?.invoke(initialValue) ?: initialValue.toString(),
         initialResult = Result.Ok(initialValue),
         parser, formatter, autoValidateTimings
     )
@@ -250,7 +257,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = initialValue,
-        initialResult = parser(initialValue),
+        initialResult = if (initialValue.isEmpty()) { Result.Ok(0.0) } else { parser(initialValue) },
         parser, formatter, autoValidateTimings
     )
 

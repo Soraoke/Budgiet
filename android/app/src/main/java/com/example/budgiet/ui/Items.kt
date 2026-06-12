@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,9 +63,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -83,8 +95,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.window.core.layout.WindowSizeClass
@@ -107,6 +121,7 @@ import com.example.budgiet.ui.utils.StringTextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.onMeasureCoords
 import kotlinx.coroutines.delay
+import java.text.NumberFormat
 import java.util.Currency
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -133,7 +148,6 @@ data class Item(
     val unitPrice: Double, // TODO: use money struct
     val amount: Amount,
 ) {
-    // TODO: format to 3 decimal places max
     val totalPrice get() = when (this.amount) {
         is Amount.Measured -> this.unitPrice * this.amount.value
         is Amount.Units -> this.unitPrice * this.amount.value.toInt()
@@ -145,7 +159,13 @@ sealed class Amount {
     class Units(val value: UInt): Amount()
 
     val textValue get() = when (this) {
-        is Measured -> this.value.toString()
+        is Measured -> NumberFormat.getNumberInstance()
+            .apply {
+                minimumFractionDigits = 1
+                maximumFractionDigits = 3
+            }
+            .format(this.value)
+            .trim()
         is Units -> this.value.toString()
     }
 
@@ -386,7 +406,10 @@ private fun ItemsViewDialog(
         }
     }
     val taxAmountState = remember { when (viewModel.taxType) {
-        is ItemsViewModel.TaxType.CurrencyAmount -> RealNumberFieldState.moneyFieldState(viewModel.taxValue, currency, locale, autoValidateTimings)
+        is ItemsViewModel.TaxType.CurrencyAmount -> {
+            val initialAmount = if (viewModel.taxValue == 0.0) { null } else { viewModel.taxValue }
+            RealNumberFieldState.moneyFieldState(initialAmount, currency, locale, autoValidateTimings)
+        }
         is ItemsViewModel.TaxType.Percentage -> RealNumberFieldState(viewModel.taxValue,
             parser = { runCatching { if (it.isEmpty()) { 0.0 } else { it.toDouble() } }.into() },
         )
@@ -596,13 +619,16 @@ private fun ItemsViewDialog(
                     key = { _, item -> item.name },
                 ) { idx, item -> Box {
                     val showMenu = menuPosition?.let { it == idx } ?: false
+                    val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
 
-                    newItemCollapseTransition.AnimatedContent { state ->
-                        val isEditing = state is ItemsDialogState.Edit && state.value.name == item.name
+                    AnimatedContent(isEditing) { isEditing ->
                         val animationScope = this
+                        val density = LocalDensity.current
+                        val fontSize = with(density) { LocalTextStyle.current.fontSize.value.toDp() }
 
                         if (isEditing) {
                             EditingItemListBox(
+                                modifier = Modifier.padding(vertical = COLUMN_SPACING),
                                 currency = currency,
                                 focusedField = focusedField,
                                 nameState = editItemState.name,
@@ -614,7 +640,9 @@ private fun ItemsViewDialog(
                             )
                             LaunchedEffect(Unit) {
                                 delay(animationScope.transition.totalDurationNanos.nanoseconds)
-                                listState.animateScrollToItem(idx, -80)
+                                val rowHeight = fontSize + ITEM_LIST_ROW_PADDING.calculateTopPadding() + ITEM_LIST_ROW_PADDING.calculateBottomPadding()
+                                val offset = with(density) { (-rowHeight / 2).roundToPx() }
+                                listState.animateScrollToItem(idx, offset)
                             }
                         } else {
                             StaticItemListRow(
@@ -826,71 +854,69 @@ private fun StaticItemListRow(
     var amountColumnOffset by remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
     var totalColumnOffset by remember(LocalDensity.current, LocalTextStyle.current) { mutableStateOf<Float?>(null) }
 
-    Column(modifier) {
-        Box(contentAlignment = Alignment.CenterStart) {
-            Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING)) {
+    Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
+        Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING)) {
+            ItemColumn(
+                modifier = Modifier.weight(NAME_COLUMN_WEIGHT),
+                shape = columnShapes.Start,
+                isSelected = isSelected,
+                onLongClick = { onLongClick(0u) },
+                content = { TextAutoSized(data.name) },
+            )
+            ItemColumn(
+                modifier = Modifier.weight(PRICE_COLUMN_WEIGHT),
+                shape = columnShapes.Middle,
+                isSelected = isSelected,
+                onLongClick = { onLongClick(1u) },
+                content = { TextAutoSized(currency.formatPrice(data.unitPrice, locale)) },
+            )
+            ItemColumn(
+                modifier = Modifier.weight(AMOUNT_COLUMN_WEIGHT)
+                    .onMeasureCoords(needsMeasure = amountColumnOffset == null) { coords ->
+                        amountColumnOffset = coords.positionInParent().x
+                    },
+                shape = if (showTotalColumn) { columnShapes.Middle } else { columnShapes.End },
+                isSelected = isSelected,
+                onLongClick = { onLongClick(2u) },
+                content = { TextAutoSized("${data.amount.textValue}${
+                    when (data.amount) {
+                        is Amount.Measured -> " ${data.amount.label}"
+                        is Amount.Units -> ""
+                    }
+                }") },
+            )
+            if (showTotalColumn) {
                 ItemColumn(
-                    modifier = Modifier.weight(NAME_COLUMN_WEIGHT),
-                    shape = columnShapes.Start,
-                    isSelected = isSelected,
-                    onLongClick = { onLongClick(0u) },
-                    content = { TextAutoSized(data.name) },
-                )
-                ItemColumn(
-                    modifier = Modifier.weight(PRICE_COLUMN_WEIGHT),
-                    shape = columnShapes.Middle,
-                    isSelected = isSelected,
-                    onLongClick = { onLongClick(1u) },
-                    content = { TextAutoSized(currency.formatPrice(data.unitPrice, locale)) },
-                )
-                ItemColumn(
-                    modifier = Modifier.weight(AMOUNT_COLUMN_WEIGHT)
-                        .onMeasureCoords(needsMeasure = amountColumnOffset == null) { coords ->
-                            amountColumnOffset = coords.positionInParent().x
+                    modifier = Modifier.weight(TOTAL_COLUMN_WEIGHT)
+                        .onMeasureCoords(needsMeasure = totalColumnOffset == null) { coords ->
+                            totalColumnOffset = coords.positionInParent().x
                         },
-                    shape = if (showTotalColumn) { columnShapes.Middle } else { columnShapes.End },
+                    shape = columnShapes.End,
                     isSelected = isSelected,
-                    onLongClick = { onLongClick(2u) },
-                    content = { TextAutoSized("${data.amount.textValue}${
-                        when (data.amount) {
-                            is Amount.Measured -> " ${data.amount.label}"
-                            is Amount.Units -> ""
-                        }
-                    }") },
+                    onLongClick = { onLongClick(null) },
+                    content = { TextAutoSized(currency.formatPrice(data.totalPrice, locale)) },
                 )
-                if (showTotalColumn) {
-                    ItemColumn(
-                        modifier = Modifier.weight(TOTAL_COLUMN_WEIGHT)
-                            .onMeasureCoords(needsMeasure = totalColumnOffset == null) { coords ->
-                                totalColumnOffset = coords.positionInParent().x
-                            },
-                        shape = columnShapes.End,
-                        isSelected = isSelected,
-                        onLongClick = { onLongClick(null) },
-                        content = { TextAutoSized(currency.formatPrice(data.totalPrice, locale)) },
-                    )
-                }
             }
+        }
 
-            val iconSize = 18.dp
-            // Multiply icon.
-            Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
+        val iconSize = 18.dp
+        // Multiply icon.
+        Icon(painterResource(R.drawable.close_24px), contentDescription = null, modifier = Modifier
+            .align(Alignment.CenterStart)
+            .size(iconSize)
+            .offset { IntOffset(x = amountColumnOffset?.roundToInt()?.let {
+                it - (iconSize + COLUMN_SPACING).roundToPx() / 2
+            } ?: 0, y = 0) },
+        )
+        // Equal icon.
+        if (showTotalColumn) {
+            Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
                 .align(Alignment.CenterStart)
                 .size(iconSize)
-                .offset { IntOffset(x = amountColumnOffset?.roundToInt()?.let {
+                .offset { IntOffset(x = totalColumnOffset?.roundToInt()?.let {
                     it - (iconSize + COLUMN_SPACING).roundToPx() / 2
                 } ?: 0, y = 0) },
             )
-            // Equal icon.
-            if (showTotalColumn) {
-                Icon(painterResource(R.drawable.equal_24px), contentDescription = null, modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(iconSize)
-                    .offset { IntOffset(x = totalColumnOffset?.roundToInt()?.let {
-                        it - (iconSize + COLUMN_SPACING).roundToPx() / 2
-                    } ?: 0, y = 0) },
-                )
-            }
         }
     }
 }
@@ -922,13 +948,6 @@ private fun EditingItemListBox(
     onHasLabelChange: (Boolean) -> Unit,
 ) {
     val columnShapes = ItemColumnsShapes(rowShape)
-//    @Composable
-//    fun Modifier.fieldFocuser(columnNum: UInt)
-//        = this.focusRequester(remember { FocusRequester().apply {
-//            if (focusedField == columnNum) {
-//                this.requestFocus()
-//            }
-//        } })
 
     @Composable
     fun ItemColumnField(
@@ -940,6 +959,13 @@ private fun EditingItemListBox(
         isError: Boolean,
         keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     ) {
+        val focusRequester = remember { FocusRequester() }
+        LaunchedEffect(focusedField) {
+            if (focusedField == columnNum) {
+                focusRequester.requestFocus()
+            }
+        }
+
         ItemColumn(
             modifier = modifier,
             shape = shape,
@@ -952,7 +978,7 @@ private fun EditingItemListBox(
             isSelected = true,
         ) {
             SmallBasicTextField(
-                modifier = Modifier //.fieldFocuser(columnNum) // FIXME: doesnt work
+                modifier = Modifier.focusRequester(focusRequester)
                     .fillMaxWidth(),
                 value = value,
                 onValueChange = onValueChange,
@@ -967,98 +993,94 @@ private fun EditingItemListBox(
         Text(text, modifier, softWrap = false, maxLines = 1, style = style)
     }
 
-    Column(modifier
-        .padding(vertical = COLUMN_SPACING)
-        .border(2.dp, MaterialTheme.colorScheme.outline, rowShape)
-        .padding(ITEM_LIST_ROW_PADDING),
-        verticalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2),
+    LabeledBorderBox(
+        modifier = modifier,
+        borderWidth = 2.dp,
+        borderShape = rowShape,
+        label = { Label(boxLabel, style = MaterialTheme.typography.labelSmall) },
     ) {
-        // TODO: overlay box label on top of border
-        Label(boxLabel,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier
-                .align(Alignment.Start)
-                .padding(start = COLUMN_SPACING * 4)
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2)) {
-            Column(Modifier.weight(NAME_COLUMN_WEIGHT)) {
-                Label("Name")
-                ItemColumnField(
-                    columnNum = 0u,
-                    shape = columnShapes.Start,
-                    value = nameState.fieldText,
-                    onValueChange = { nameState.fieldText = it },
-                    isError = nameState.isError,
-                )
-            }
-            Column(Modifier.weight(PRICE_COLUMN_WEIGHT)) {
-                Label("Price (${currency.symbol})")
-                ItemColumnField(
-                    columnNum = 1u,
-                    shape = columnShapes.End,
-                    value = priceState.fieldText,
-                    onValueChange = { priceState.fieldText = it },
-                    isError = priceState.isError,
-                    keyboardOptions = RealNumberFieldState.keyboardOptions,
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val amountType = if (hasLabel) { "Measurement" } else { "Units" }
-            val displayLabelTransition = updateTransition(hasLabel)
-
-            Column {
-                Label("Amount")
-                PlainToolTipBox("Change amount type") {
-                    TextButton(
-                        modifier = Modifier.semantics { stateDescription = amountType },
-                        onClick = { onHasLabelChange(!hasLabel) },
-                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
-                    ) {
-                        Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Icon(painterResource(if (hasLabel) {
-                            R.drawable.scale_24px
-                        } else {
-                            R.drawable.units_24px
-                        }), null)
-                    }
-                }
-            }
-            Spacer(Modifier.width(COLUMN_SPACING * 2))
-
-            Column(Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 1.0f } }.value)) {
-                displayLabelTransition.AnimatedContent { hasLabel ->
-                    if (hasLabel) { Label(amountType) } else { Label(amountType) }
-                }
-                ItemColumnField(
-                    columnNum = 2u,
-                    shape = if (hasLabel) { columnShapes.Start } else { rowShape },
-                    value = amountValueState.fieldText,
-                    onValueChange = { amountValueState.fieldText = it },
-                    isError = amountValueState.isError,
-                    keyboardOptions = RealNumberFieldState.keyboardOptions,
-                )
-            }
-            Spacer(Modifier.width(displayLabelTransition.animateDp { if (it) { COLUMN_SPACING * 2 } else { 0.dp } }.value))
-
-            displayLabelTransition.AnimatedVisibility({ it },
-                enter = fadeIn() + expandHorizontally(),
-                exit = fadeOut() + shrinkHorizontally(),
-                modifier = Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 0.001f } }.value),
-            ) {
-                Column {
-                    Label("Label")
+        Column(Modifier.padding(ITEM_LIST_ROW_PADDING),
+            verticalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(COLUMN_SPACING * 2)) {
+                Column(Modifier.weight(NAME_COLUMN_WEIGHT)) {
+                    Label("Name")
                     ItemColumnField(
-                        columnNum = 3u,
+                        columnNum = 0u,
+                        shape = columnShapes.Start,
+                        value = nameState.fieldText,
+                        onValueChange = { nameState.fieldText = it },
+                        isError = nameState.isError,
+                    )
+                }
+                Column(Modifier.weight(PRICE_COLUMN_WEIGHT)) {
+                    Label("Price (${currency.symbol})")
+                    ItemColumnField(
+                        columnNum = 1u,
                         shape = columnShapes.End,
-                        value = amountLabelState.fieldText,
-                        onValueChange = { amountLabelState.fieldText = it },
-                        isError = amountLabelState.isError,
+                        value = priceState.fieldText,
+                        onValueChange = { priceState.fieldText = it },
+                        isError = priceState.isError,
                         keyboardOptions = RealNumberFieldState.keyboardOptions,
                     )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val amountType = if (hasLabel) { "Measurement" } else { "Units" }
+                val displayLabelTransition = updateTransition(hasLabel)
+
+                Column {
+                    Label("Amount")
+                    PlainToolTipBox("Change amount type") {
+                        TextButton(
+                            modifier = Modifier.semantics { stateDescription = amountType },
+                            onClick = { onHasLabelChange(!hasLabel) },
+                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
+                        ) {
+                            Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Icon(painterResource(if (hasLabel) {
+                                R.drawable.scale_24px
+                            } else {
+                                R.drawable.units_24px
+                            }), null)
+                        }
+                    }
+                }
+                Spacer(Modifier.width(COLUMN_SPACING * 2))
+
+                Column(Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 1.0f } }.value)) {
+                    displayLabelTransition.AnimatedContent { hasLabel ->
+                        if (hasLabel) { Label(amountType) } else { Label(amountType) }
+                    }
+                    ItemColumnField(
+                        columnNum = 2u,
+                        shape = if (hasLabel) { columnShapes.Start } else { rowShape },
+                        value = amountValueState.fieldText,
+                        onValueChange = { amountValueState.fieldText = it },
+                        isError = amountValueState.isError,
+                        keyboardOptions = RealNumberFieldState.keyboardOptions,
+                    )
+                }
+                Spacer(Modifier.width(displayLabelTransition.animateDp { if (it) { COLUMN_SPACING * 2 } else { 0.dp } }.value))
+
+                displayLabelTransition.AnimatedVisibility({ it },
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally(),
+                    modifier = Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 0.001f } }.value),
+                ) {
+                    Column {
+                        Label("Label")
+                        ItemColumnField(
+                            columnNum = 3u,
+                            shape = columnShapes.End,
+                            value = amountLabelState.fieldText,
+                            onValueChange = { amountLabelState.fieldText = it },
+                            isError = amountLabelState.isError,
+                            keyboardOptions = RealNumberFieldState.keyboardOptions,
+                        )
+                    }
                 }
             }
         }
@@ -1167,6 +1189,99 @@ private fun SmallBasicTextField(
             maxLines = 1,
         )
     }
+}
+
+@Composable
+private fun LabeledBorderBox(
+    modifier: Modifier = Modifier,
+    labelXOffset: Dp = 15.dp,
+    labelMaskPadding: Dp = 4.dp,
+    borderWidth: Dp,
+    borderColor: Color = MaterialTheme.colorScheme.outline,
+    borderShape: Shape = MaterialTheme.shapes.medium,
+    label: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    var labelHeight by remember { mutableStateOf(0.dp) }
+    var labelWidth by remember { mutableStateOf(0.dp) }
+    var contentWidth by remember { mutableStateOf(0.dp) }
+    var contentHeight by remember { mutableStateOf(0.dp) }
+
+    Box(Modifier
+        .padding(top = max(0.dp, (labelHeight / 2f) - 2.dp))
+        .then(modifier)
+    ) {
+        Box(Modifier
+            .width(contentWidth)
+            .height(contentHeight)
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawBehind {
+                val stroke = borderWidth.toPx()
+                val halfStroke = stroke / 2f
+
+                this.withTransform({ translate(left = halfStroke, top = halfStroke) }) {
+                    val outlineSize = Size(this.size.width - stroke, this.size.height - stroke)
+                    this.drawOutline(
+                        outline = borderShape.createOutline(outlineSize, this.layoutDirection, this),
+                        color = borderColor,
+                        style = Stroke(
+                            width = borderWidth.toPx(),
+                        )
+                    )
+                }
+                this.drawRect(
+                    topLeft = Offset(x = labelXOffset.toPx(), y = (-labelHeight / 2f).toPx()),
+                    size = Size((labelWidth + labelMaskPadding * 2f).toPx(), labelHeight.toPx()),
+                    color = Color.Transparent,
+                    blendMode = BlendMode.SrcOut,
+                )
+            }
+        )
+        Layout(listOf(label, content)) { (labelMeasurables, childMeasurables), constraints ->
+            var labelMaxWidth = 0
+            var labelMaxHeight = 0
+            var childrenMaxWidth = 0
+            var childrenMaxHeight = 0
+
+            val labelPlaceables = labelMeasurables.map {
+                it.measure(constraints).also { placeable ->
+                    if (placeable.width > labelMaxWidth) {
+                        labelMaxWidth = placeable.width
+                    }
+                    if (placeable.height > labelMaxHeight) {
+                        labelMaxHeight = placeable.height
+                    }
+                }
+            }
+
+            val placeables = childMeasurables.map {
+                it.measure(constraints).also { placeable ->
+                    if (placeable.width > childrenMaxWidth) {
+                        childrenMaxWidth = placeable.width
+                    }
+                    if (placeable.height > childrenMaxHeight) {
+                        childrenMaxHeight = placeable.height
+                    }
+                }
+            }
+
+            labelWidth = labelMaxWidth.toDp()
+            labelHeight = labelMaxHeight.toDp()
+            contentWidth = childrenMaxWidth.toDp()
+            contentHeight = childrenMaxHeight.toDp()
+
+            layout(childrenMaxWidth, childrenMaxHeight) {
+                placeables.forEach { it.placeRelative(0, 0) }
+                labelPlaceables.forEach {
+                    it.placeRelative(
+                        x = (labelXOffset + labelMaskPadding).roundToPx(),
+                        y = -labelMaxHeight / 2,
+                    )
+                }
+            }
+        }
+    }
+
 }
 
 @Composable

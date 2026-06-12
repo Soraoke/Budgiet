@@ -315,7 +315,8 @@ fun PriceField(
     // TextField must be **disabled** when [items list][ItemsViewModel] is populated.
     val enabled = viewModel.items.items.isEmpty()
     val currency = viewModel.currency
-    val state = RealNumberFieldState.rememberMoneyFieldState(viewModel.customPrice, viewModel.currency, locale)
+    val initialAmount = if (viewModel.customPrice == 0.0) { null } else { viewModel.customPrice }
+    val state = RealNumberFieldState.rememberMoneyFieldState(initialAmount, viewModel.currency, locale)
 
     // Will show tooltip on any interaction if disabled.
     val interactionSource = remember { MutableInteractionSource() }
