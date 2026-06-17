@@ -315,8 +315,7 @@ fun PriceField(
     // TextField must be **disabled** when [items list][ItemsViewModel] is populated.
     val enabled = viewModel.items.items.isEmpty()
     val currency = viewModel.currency
-    val initialAmount = if (viewModel.customPrice == 0.0) { null } else { viewModel.customPrice }
-    val state = RealNumberFieldState.rememberMoneyFieldState(initialAmount, viewModel.currency, locale)
+    val state = RealNumberFieldState.rememberMoneyFieldState(viewModel.customPrice, emptyInitialTextIfZero = true, viewModel.currency, locale)
 
     // Will show tooltip on any interaction if disabled.
     val interactionSource = remember { MutableInteractionSource() }
@@ -663,8 +662,7 @@ private fun NewTransactionPreview() {
                 viewModel = viewModel<NewTransactionViewModel>().apply {
                     location.selectedLocation = DbEntry(0u, FAKE_LOCATIONS[0u]!!)
                     items.items.addAll(FAKE_ITEMS)
-                    items.taxType = ItemsViewModel.TaxType.Percentage
-                    items.taxValue = 2.5
+                    items.tax = Tax.Percentage(2.5)
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },

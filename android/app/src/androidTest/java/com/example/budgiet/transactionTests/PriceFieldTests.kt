@@ -46,12 +46,15 @@ class PriceFieldTests {
                 .getOrNull()
 
         fun inputPrice(price: String) {
-            this.textField
-                .performTextInput(price)
-
-            // Wait for the check delay. Add arbitrary timeout padding just in case.
-            runCatching { this.rule.waitUntil(FIELD_TIMEOUT + 10) { false } }
+            this.textField.performTextInput(price)
+            this.waitUntilAutoValidation()
         }
+
+        /** Wait for the [auto-validation][com.example.budgiet.ui.utils.AutoValidateTimings] delays. */
+        // Add arbitrary timeout padding just in case.
+        private fun waitUntilAutoValidation() { runCatching {
+            this.rule.waitUntil(FIELD_TIMEOUT.inWholeMilliseconds + 10) { false }
+        } }
 
         val viewModel = NewTransactionViewModel().apply {
             this.customPrice = initialPrice
