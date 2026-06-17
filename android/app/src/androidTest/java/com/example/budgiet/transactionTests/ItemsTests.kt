@@ -8,7 +8,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextEquals
@@ -33,12 +32,15 @@ import com.example.budgiet.assert
 import com.example.budgiet.assertEquals
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
+import com.example.budgiet.ui.Amount
 import com.example.budgiet.ui.FAKE_ITEMS
+import com.example.budgiet.ui.FIELD_TIMEOUT
 import com.example.budgiet.ui.Item
 import com.example.budgiet.ui.ItemsDialog
 import com.example.budgiet.ui.ItemsDialogState
 import com.example.budgiet.ui.ItemsField
 import com.example.budgiet.ui.ItemsViewModel
+import com.example.budgiet.ui.Tax
 import com.example.budgiet.ui.theme.BudgietTheme
 import org.junit.Rule
 import org.junit.Test
@@ -47,13 +49,17 @@ import java.util.Locale
 
 const val ITEMS_FIELD_TEST_TAG = "itemsField"
 const val ITEMS_DIALOG_TEST_TAG = "itemsDialog"
-const val NUM_OF_COLS = 3u
+const val NAME_FIELD_DESC = "Name"
+const val PRICE_FIELD_DESC = "Price in $"
+const val AMOUNT_TYPE_BUTTON_DESC = "Change amount type"
+const val AMOUNT_VALUE_FIELD_DESC = "Amount value"
+const val AMOUNT_LABEL_FIELD_DESC = "Amount Measurement label"
 
 class ItemsTests {
     private class TestState(
         private val rule: ComposeContentTestRule,
         items: List<Item> = FAKE_ITEMS,
-        tax: Double = 0.0,
+        taxValue: Double = 0.0,
     ) {
         val itemsField get() = run {
             if (this.dialogState != null) {
@@ -67,45 +73,26 @@ class ItemsTests {
             }
             this.rule.onNodeWithTag(ITEMS_DIALOG_TEST_TAG)
         }
+        val itemsListColumn get()
+             = this.itemsDialog
+                .onDescendants(this.rule)
+                .filterToOne(hasScrollAction())
 
         fun getItemField(row: UInt, col: UInt)
-            = this.itemsDialog
-                .onDescendants(this.rule)
-                .filterToOne(hasScrollAction())
-                .onChildAt(this.fieldIdx(row, col))
+            = this.itemsListColumn
+                .onChildAt(row.toInt())
+                .onChildAt(col.toInt())
 
-        fun editItemField(row: UInt, col: UInt, edit: SemanticsNodeInteraction.() -> Unit) {
-            // Enter edit mode.
-            this.getItemField(row, col)
-                .performMouseInput { longClick() }
-            this.rule.onNode(hasContentDescriptionExactly("Edit"))
-                .performClick()
-
-            // Find element to edit.
-            this.itemsDialog
-                .onDescendants(this.rule)
-                .filterToOne(hasScrollAction())
-                .onChildAt(this.fieldIdx(row, col) + 1) // Columns get pushed by 1 when editing
-                .onChild()
-                .apply { edit() }
-
-            // Save edit.
-            this.itemsDialog
-                .onDescendants(this.rule)
-                .filterToOne(hasContentDescriptionExactly("Save changes"))
-                .onChild()
-                .assertHasClickAction()
-                .assertIsEnabled()
-                .performClick()
-        }
-
-        /** Gets the index of *Item Field Column* given a **`row`** and **`column`** in the list grid. */
-        private fun fieldIdx(row: UInt, col: UInt) = (row * NUM_OF_COLS + col % NUM_OF_COLS).toInt()
+        /** Wait for the [auto-validation][com.example.budgiet.ui.utils.AutoValidateTimings] delays. */
+        // Add arbitrary timeout padding just in case.
+        fun waitUntilAutoValidation() { runCatching {
+            this.rule.waitUntil(FIELD_TIMEOUT.inWholeMilliseconds + 10) { false }
+        } }
 
         private var dialogState by mutableStateOf<ItemsDialogState?>(null)
         val viewModel = ItemsViewModel().apply {
             this.items.addAll(items)
-            this.taxValue = tax
+            this.tax = Tax.CurrencyAmount(taxValue)
         }
 
         init {
@@ -147,28 +134,31 @@ class ItemsTests {
         val state = TestState(this.rule)
         val newItemName = "Amogus"
         val newItemPrice = "545.00"
-        val newItemAmount = "42.0"
+        val newItemAmount = Amount.Units(42u)
 
+        // Enter New Item mode.
         state.itemsDialog
             .onDescendants(this.rule)
             .filterToOne(hasTextExactly("New item"))
             .assertHasClickAction()
             .performClick()
 
-        state.itemsDialog
-            .onDescendants(this.rule)
-            .filterToOne(hasContentDescriptionExactly("New item fields"))
-            .onChildren()
-            .apply { this
-                .filterToOne(hasText("Name"))
-                .performTextInput(newItemName)
-            }.apply { this
-                .filterToOne(hasText("Price"))
-                .performTextInput(newItemPrice)
-            }.apply { this
-                .filterToOne(hasText("Amount"))
-                .performTextInput(newItemAmount)
-            }
+        fun itemField(fieldDesc: String) = run {
+            state.itemsDialog
+                .onDescendants(this.rule)
+                .filterToOne(hasContentDescriptionExactly(fieldDesc))
+                .onChild()
+        }
+
+        // Edit Fields.
+        itemField(NAME_FIELD_DESC).performTextInput(newItemName)
+        itemField(PRICE_FIELD_DESC).performTextInput(newItemPrice)
+        // Check that the Amount Type is Units
+        itemField(AMOUNT_TYPE_BUTTON_DESC)
+            .getSemanticsProperty(SemanticsProperties.StateDescription)
+            .getOrThrow()
+            .assertEquals(Amount.Type.Units.toString())
+        itemField(AMOUNT_VALUE_FIELD_DESC).performTextInput(newItemAmount.textValue)
 
         state.itemsDialog
             .onDescendants(this.rule)
@@ -180,44 +170,72 @@ class ItemsTests {
 
         // Check that the item was added at the end of the list.
         // Also check that the columns are in the correct order.
-        state.itemsDialog
-            .onDescendants(this.rule)
-            .filterToOne(hasScrollAction())
+        state.itemsListColumn
             .performScrollToIndex(state.viewModel.items.size - 1)
+            .run { onChildAt(fetchSemanticsNode().children.size - 1) }
             .apply {
-                // The index of the node that is in the first column.
-                val startIdx = this.fetchSemanticsNode().children.size - 3
-
-                onChildAt(startIdx)
-                    .assertTextEquals(newItemName)
-                onChildAt(startIdx + 1)
-                    .assertTextEquals(newItemPrice)
-                onChildAt(startIdx + 2)
-                    .assertTextEquals(newItemAmount)
+                onChildAt(0).assertTextEquals(newItemName)
+                onChildAt(1).assertTextEquals(newItemPrice)
+                onChildAt(2).assertTextEquals(newItemAmount.textValue)
             }
     }
 
     @Test
     fun editItem() {
         val state = TestState(this.rule)
-
-        fun editItemWith(col: UInt, newValue: String) {
-            // Edit item field.
-            state.editItemField(0u, col) { this
-                .apply { performTextClearance() }
-                .performTextInput(newValue)
-            }
-            // Check that the new value is reflected.
-            state.getItemField(0u, col)
-                .assertTextEquals(newValue)
-        }
+        val editRow = 0u
 
         val newName = "Susus Amogus"
         val newPrice = "545.00"
-        val newAmount = "42.0"
-        editItemWith(0u, newName)
-        editItemWith(1u, newPrice)
-        editItemWith(2u, newAmount)
+        val newAmount = Amount.Measured(42.0, "lbs")
+
+        // Enter edit mode.
+        state.getItemField(editRow, 0u)
+            .performMouseInput { longClick() }
+        this.rule.onNode(hasContentDescriptionExactly("Edit"))
+            .performClick()
+
+        fun itemField(fieldDesc: String) = run {
+            state.itemsListColumn
+                .onChildAt(editRow.toInt())
+                .onDescendants(this.rule)
+                .filterToOne(hasContentDescriptionExactly(fieldDesc))
+                .onChild()
+        }
+        fun editField(fieldDesc: String, newValue: String) {
+            itemField(fieldDesc)
+                .apply { performTextClearance() }
+                .performTextInput(newValue)
+        }
+
+        // Edit Fields.
+        editField(NAME_FIELD_DESC, newName)
+        editField(PRICE_FIELD_DESC, newPrice)
+        // Change Amount type
+        itemField(AMOUNT_TYPE_BUTTON_DESC)
+            .performClick()
+            .getSemanticsProperty(SemanticsProperties.StateDescription)
+            .getOrThrow()
+            .assertEquals(Amount.Type.Measured.toString())
+        editField(AMOUNT_VALUE_FIELD_DESC, newAmount.textValue)
+        editField(AMOUNT_LABEL_FIELD_DESC, newAmount.label)
+
+        // Save edit.
+        state.itemsDialog
+            .onDescendants(this.rule)
+            .filterToOne(hasContentDescriptionExactly("Save changes"))
+            .onChild()
+            .assertHasClickAction()
+            .assertIsEnabled()
+            .performClick()
+
+        // Check that the new values are reflected.
+        state.getItemField(editRow, 0u)
+            .assertTextEquals(newName)
+        state.getItemField(editRow, 1u)
+            .assertTextEquals(newPrice)
+        state.getItemField(editRow, 2u)
+            .assertTextEquals("${newAmount.textValue} ${newAmount.label}")
     }
 
     @Test
@@ -236,12 +254,11 @@ class ItemsTests {
             .performClick()
 
         // Check that item was deleted.
-        state.itemsDialog
-            .onDescendants(this.rule)
-            .filterToOne(hasScrollAction())
+        state.itemsListColumn
             .fetchSemanticsNode()
-            .children.forEach { child ->
-                child.config
+            .children.forEach { row ->
+                row.children[0]
+                    .config
                     .getOrNull(SemanticsProperties.Text)!!
                     .joinToString(separator = "") { s -> s.text }
                     .assert({ it != itemName }) { "Found item named \"$itemName\" when it should have been deleted" }
@@ -278,14 +295,15 @@ class ItemsTests {
             .onChild()
             .getSemanticsProperty(SemanticsProperties.StateDescription)
             .getOrThrow()
-            .assertEquals("percentage")
+            .assertEquals(Tax.Type.Percentage.toString())
 
         // Input tax value
         taxField
             .apply { performTextInput(taxPercentage) }
+            .also { state.waitUntilAutoValidation() }
             .assertTextEquals(taxPercentage)
         // Check total amount.
-        getTotal().assertEquals(50.06)
+        getTotal().assertEquals(39.54)
 
         // -- Test tax as dollar amount. --
         val taxAmount = "42.00"
@@ -296,15 +314,16 @@ class ItemsTests {
             .onChild()
             .getSemanticsProperty(SemanticsProperties.StateDescription)
             .getOrThrow()
-            .assertEquals("currency amount")
+            .assertEquals(Tax.Type.CurrencyAmount.toString())
 
         // Input tax value
         taxField
             .apply { performTextClearance() }
             .apply { performTextInput(taxAmount) }
+            .also { state.waitUntilAutoValidation() }
             .assertTextEquals(taxAmount)
         // Check total amount.
-        getTotal().assertEquals(87.98)
+        getTotal().assertEquals(78.32)
     }
 
     @Test
@@ -368,7 +387,7 @@ class ItemsTests {
         state.viewModel.items.addAll(FAKE_ITEMS)
 
         state.getFormFieldText()
-            .assertEquals("12 items ($45.98)")
+            .assertEquals("6 items ($36.32)")
         state.getElement("Add items")
             .assertDoesNotExist()
         state.getElement("Scan a receipt")
@@ -377,10 +396,10 @@ class ItemsTests {
             .assertExists()
 
         // Test field with items and tax.
-        state.viewModel.taxValue = 2.10
+        state.viewModel.tax = Tax.CurrencyAmount(2.10)
 
         state.getFormFieldText()
-            .assertEquals("12 items ($45.98) + $2.10 tax")
+            .assertEquals("6 items ($36.32) + $2.10 tax")
     }
 
     /** Test the receipt image scanning procedure. */
