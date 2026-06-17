@@ -30,19 +30,39 @@ interface FieldState<T> {
 
     val isError get() = this.parseResult is Result.Err
 
-    /** Delays imposed upon the *validation/parsing/formatting* callbacks when *auto validating* is enabled (or `null` if it is not enabled).
+    /** Enable *auto-validation* (or `null` if it is not enabled).
      *
-     * You can perform the *validation/parsing/formatting* manually at any time with [doValidate] (which does all 3). */
+     * See [AutoValidateTimings] for details. */
     var autoValidateTimings: AutoValidateTimings?
 
-    /** If **`autoValidate`** is *disabled*, this performs all 3 of the *validation/parsing/formatting* manually, without an [delay]s. */
+    /** Performs all 3 of the *validation/parsing/formatting* manually, without any [delay]s.
+     *
+     * Useful when **[auto-validation][autoValidateTimings]** is *disabled*. */
     fun doValidate()
+
+    /** Runs the provided **callback** only if the **[parseResult]** is [Ok][Result.Ok].
+     *
+     * In case that *[auto-validation][AutoValidateTimings]* is *enabled*,
+     * The validator will wait until the **[parseDelay][AutoValidateTimings.parseDelay]**
+     * (if any) is over and the **parsing** is completed.
+     * Otherwise, the **callback** is run immediately*/
+    fun ifParseOk(block: (T) -> Unit)
 }
 
-/** See [FieldState.autoValidateTimings] for details.
+/** A set of *delays* imposed upon the *validation/parsing/formatting* callbacks when *auto validating* is enabled (or `null` if it is not enabled).
  *
- * Call [rememberScope] to create a timings object in a [Composable]. */
-class AutoValidateTimings(
+ * You can perform the *validation/parsing/formatting* manually at any time with [FieldState.doValidate] (which does all 3).
+ *
+ * Note that the **[formatDelay]** "timer" (so to speak) starts directly after the **`parseDelay`** timer ends.
+ * This means the **`parser`** is called after **[parseDelay]** time has passed,
+ * but the **`formatter`** is called after **[parseDelay] + [formatDelay]** time has passed.
+ *
+ * Call [rememberScope] to create a timings object in a [Composable].
+ *
+ * @param parseDelay A delay that is applied before calling the **`parser`** callback.
+ *   Also acts as the delay for **[StringTextFieldState.validator]**.
+ * @param formatDelay A delay that is applied before calling the **`formatter`** callback. */
+class AutoValidateTimings @RememberInComposition constructor(
     internal val coroutineScope: CoroutineScope,
     val parseDelay: Duration = Duration.ZERO,
     val formatDelay: Duration = FIELD_TIMEOUT,
@@ -112,6 +132,14 @@ class StringTextFieldState @RememberInComposition constructor(
 
     override fun doValidate() { this._parseResult = this.validateValue(this.fieldText) }
 
+    override fun ifParseOk(block: (String) -> Unit) {
+        if (this.validator != null) {
+            ifParseOkImpl(block, this.autoValidateJob)
+        } else {
+            block(this.fieldText)
+        }
+    }
+
     private fun validateValue(value: String): Result<Unit>
         = this.validator?.invoke(value) ?: Result.Ok(Unit)
 }
@@ -151,15 +179,18 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     @Suppress("unused")
     @RememberInComposition
     constructor(
-        initialValue: String,
+        initialTextValue: String,
         parser: (String) -> Result<T>,
         formatter: ((T) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
-        initialFieldValue = initialValue,
-        initialResult = parser(initialValue),
+        initialFieldValue = initialTextValue,
+        initialResult = parser(initialTextValue),
         parser, formatter, autoValidateTimings
     )
+
+    /** Prevents calling the **[formatter]** callback when the [fieldText] value is an *empty* string. */
+    var skipEmptyTextFormat: Boolean = false
 
     private var autoValidateJob: Job? = null
 
@@ -177,7 +208,8 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
                 val parse = { this._parseResult = this.parser(this.fieldText) }
                 val format = this.formatter?.let { formatter -> {
                     this._parseResult.let { parseResult ->
-                        if (parseResult is Result.Ok) {
+                        if (parseResult is Result.Ok
+                        && (!this.skipEmptyTextFormat || this._fieldText.isNotEmpty())) {
                             this._fieldText = formatter(parseResult.value)
                         }
                     }
@@ -198,17 +230,15 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
                         }
                     }
                 } else {
-                    this.autoValidateJob = timings.coroutineScope.launch {
+                    this.autoValidateJob = timings.coroutineScope.launch { with(this@TextFieldState) {
                         delay(timings.parseDelay)
                         parse()
                         if (format != null) {
-                            if (timings.formatDelay != Duration.ZERO) {
-                                delay(timings.formatDelay)
-                            }
+                            delay(timings.formatDelay)
                             format()
                         }
                         autoValidateJob = null
-                    }
+                    } }
                 }
             } ?: run {
                 // If autoValidate is disabled, still reset the parseResult so that the new value can be validated later.
@@ -222,10 +252,15 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     override fun doValidate() {
         val parseResult = this.parser(this.fieldText)
         this._parseResult = parseResult
-        if (this.formatter != null && parseResult is Result.Ok) {
+
+        if (this.formatter != null
+        && parseResult is Result.Ok
+        && (!this.skipEmptyTextFormat || this._fieldText.isNotEmpty())) {
             this._fieldText = this.formatter(parseResult.value)
         }
     }
+
+    override fun ifParseOk(block: (T) -> Unit) = ifParseOkImpl(block, this.autoValidateJob)
 }
 
 /** A specific implementation of [TextFieldState] for a *real number* (aka [Double]).
@@ -238,32 +273,37 @@ class RealNumberFieldState @RememberInComposition private constructor(
     formatter: ((Double) -> String)?,
     autoValidateTimings: AutoValidateTimings? = null,
 ): TextFieldState<Double>(initialFieldValue, initialResult, parser, formatter, autoValidateTimings) {
+    @Suppress("unused")
     @RememberInComposition
     constructor(
         initialValue: Double,
+        /** Instantiates the state object with an *empty* [fieldText] value if the **`initialValue`** is `0.0`. */
+        emptyInitialTextIfZero: Boolean = false,
         parser: (String) -> Result<Double> = defaultParser,
-        formatter: ((Double) -> String)? = defaultFormatter,
+        formatter: ((Double) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
-        initialFieldValue = formatter?.invoke(initialValue) ?: initialValue.toString(),
+        initialFieldValue = if (emptyInitialTextIfZero) { "" } else {
+            formatter?.invoke(initialValue) ?: initialValue.toString()
+        },
         initialResult = Result.Ok(initialValue),
         parser, formatter, autoValidateTimings
     )
+    @Suppress("unused")
     @RememberInComposition
     constructor(
-        initialValue: String,
+        initialTextValue: String,
         parser: (String) -> Result<Double> = defaultParser,
-        formatter: ((Double) -> String)? = defaultFormatter,
+        formatter: ((Double) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
-        initialFieldValue = initialValue,
-        initialResult = if (initialValue.isEmpty()) { Result.Ok(0.0) } else { parser(initialValue) },
+        initialFieldValue = initialTextValue,
+        initialResult = if (initialTextValue.isEmpty()) { Result.Ok(0.0) } else { parser(initialTextValue) },
         parser, formatter, autoValidateTimings
     )
 
     companion object {
-        private val defaultParser: (String) -> Result<Double> = { Unit.runCatching { it.toDouble() }.into() }
-        private val defaultFormatter: ((Double) -> String)? = null
+        val defaultParser = { s: String -> Unit.runCatching { s.toDouble() }.into() }
         val keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done
@@ -272,35 +312,62 @@ class RealNumberFieldState @RememberInComposition private constructor(
         /** Constructs a [RealNumberFieldState] specifically to be used with *money* amounts,
          * which uses a specific custom *parser* and *formatter*.
          *
-         * When **`initialAmount`** is `null`, the [fieldText] starts out empty.
-         * Otherwise, if passed in a valid [Double], [fieldText] copies it verbatim, even if it is `0.0`. */
+         * @param emptyInitialTextIfZero Instantiates the state object with an *empty* [fieldText] value if the **`initialValue`** is `0.0`. */
         @RememberInComposition
         fun moneyFieldState(
-            initialAmount: Double? = null,
+            initialAmount: Double = 0.0,
+            emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,
-            autoValidateTimings: AutoValidateTimings
+            autoValidateTimings: AutoValidateTimings,
         ): RealNumberFieldState {
             val parser = { s: String -> currency.validateFieldInput(s, locale) }
-            // TODO: skip formatting if fieldText is empty, but only for moneyFieldState.
             val formatter = { n: Double -> currency.formatPrice(n, locale) }
-            return if (initialAmount == null) {
-                RealNumberFieldState("", parser, formatter, autoValidateTimings)
-            } else {
-                RealNumberFieldState(initialAmount, parser, formatter, autoValidateTimings)
+            return RealNumberFieldState(
+                initialValue = initialAmount,
+                emptyInitialTextIfZero,
+                parser,
+                formatter,
+                autoValidateTimings,
+            ).apply {
+                // Skip formatting if fieldText is empty, but only for moneyFieldState.
+                skipEmptyTextFormat = true
             }
         }
 
         /** Same as [moneyFieldState], but automatically sets the [autoValidateTimings]. */
         @Composable
         fun rememberMoneyFieldState(
-            initialAmount: Double? = null,
+            initialAmount: Double = 0.0,
+            emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,
         ): RealNumberFieldState {
             val autoValidateTimings = AutoValidateTimings.rememberScope()
             // Don't reset state when currency or locale change.
-            return remember { this.moneyFieldState(initialAmount, currency, locale, autoValidateTimings) }
+            return remember { this.moneyFieldState(initialAmount, emptyInitialTextIfZero, currency, locale, autoValidateTimings) }
         }
+    }
+}
+
+private fun <T> FieldState<T>.ifParseOkImpl(block: (T) -> Unit, autoValidateJob: Job?) {
+    val timings = this.autoValidateTimings
+    val block = { this.parseResult.let { parseResult ->
+        if (parseResult is Result.Ok) { block(parseResult.value) }
+    } }
+
+    if (timings != null) {
+        timings.coroutineScope.launch {
+            if (autoValidateJob != null) {
+                autoValidateJob.join()
+            } else {
+                // Auto-validation Job did not exist, try the delays again and check parseResult.
+                if (timings.parseDelay != Duration.ZERO) { delay(timings.parseDelay) }
+                if (timings.formatDelay != Duration.ZERO) { delay(timings.formatDelay) }
+            }
+            block()
+        }
+    } else {
+        block()
     }
 }

@@ -54,10 +54,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +81,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -96,6 +97,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
@@ -120,6 +122,7 @@ import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.StringTextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.onMeasureCoords
+import com.example.budgiet.validateFieldInput
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.util.Currency
@@ -158,6 +161,15 @@ sealed class Amount {
     class Measured(val value: Double, val label: String): Amount()
     class Units(val value: UInt): Amount()
 
+    enum class Type {
+        Measured, Units;
+
+        override fun toString() = when (this) {
+            Measured -> "Measured"
+            Units -> "Units"
+        }
+    }
+
     val textValue get() = when (this) {
         is Measured -> NumberFormat.getNumberInstance()
             .apply {
@@ -167,6 +179,10 @@ sealed class Amount {
             .format(this.value)
             .trim()
         is Units -> this.value.toString()
+    }
+    val type get() = when (this) {
+        is Measured -> Type.Measured
+        is Units -> Type.Units
     }
 
     companion object {
@@ -181,33 +197,72 @@ sealed class Amount {
                 Result.Ok(Unit)
             }
         }
+        fun parseValue(type: Type, value: String): Result<Double> {
+            return runCatching { when (type) {
+                // TODO: Use different parsers to emit better error messages
+                Type.Measured -> value.toDouble()
+                Type.Units -> value.toInt().toDouble()
+            } }.into()
+        }
+    }
+}
+
+sealed class Tax {
+    // TODO: use Money type later for this
+    class CurrencyAmount(val price: Double): Tax()
+    class Percentage(val v: Double): Tax()
+
+    enum class Type {
+        CurrencyAmount, Percentage;
+
+        override fun toString() = when (this) {
+            CurrencyAmount -> "Currency Amount"
+            Percentage -> "Percentage"
+        }
+    }
+
+    val value get() = when (this) {
+        is CurrencyAmount -> this.price
+        is Percentage -> this.v
+    }
+    val type get() = when (this) {
+        is CurrencyAmount -> Type.CurrencyAmount
+        is Percentage -> Type.Percentage
+    }
+
+    companion object {
+        fun new(type: Type, value: Double): Tax {
+            return when (type) {
+                Type.CurrencyAmount -> CurrencyAmount(value)
+                Type.Percentage -> Percentage(value)
+            }
+        }
+
+        fun parse(type: Type, value: String, currency: Currency, locale: Locale): Result<Tax> {
+            return when (type) {
+                Type.CurrencyAmount -> currency.validateFieldInput(value, locale).map { CurrencyAmount(it) }
+                Type.Percentage -> if (value.isEmpty()) {
+                    Result.Ok(Percentage(0.0))
+                } else {
+                    RealNumberFieldState.defaultParser(value).map { Percentage(it) }
+                }
+            }
+        }
     }
 }
 
 class ItemsViewModel: ViewModel() {
-    sealed class TaxType {
-        // TODO: use Money type later for this
-        object CurrencyAmount: TaxType()
-        object Percentage: TaxType()
-
-        override fun toString() = when (this) {
-            is CurrencyAmount -> "currency amount"
-            is Percentage -> "percentage"
-        }
-    }
-
     // TODO: Have a database table of item names the user has used, and have a different screen to show aggregate data of each item across transactions.
     val items = mutableStateListOf<Item>()
-    var taxType by mutableStateOf<TaxType>(TaxType.CurrencyAmount)
-    var taxValue by mutableDoubleStateOf(0.0)
+    var tax by mutableStateOf<Tax>(Tax.CurrencyAmount(0.0))
 
-    val totalPrice: Double get() {
+    val totalPrice: Double get() = run {
         val itemsSum = this.items.sumOf { it.totalPrice }
-        val taxAmount = when (this.taxType) {
-            is TaxType.CurrencyAmount -> this.taxValue
-            is TaxType.Percentage -> itemsSum * this.taxValue * 0.01
+        val taxAmount = when (val tax = this.tax) {
+            is Tax.CurrencyAmount -> tax.price
+            is Tax.Percentage -> itemsSum * tax.v * 0.01
         }
-        return itemsSum + taxAmount
+        itemsSum + taxAmount
     }
 
     /** Produces a message to display in the [NewTransactionForm] [ItemsField].
@@ -222,10 +277,11 @@ class ItemsViewModel: ViewModel() {
             this.items.sumOf { it.totalPrice },
             locale = locale,
         )
-        val displayTax = if (this.taxValue != 0.0 && this.items.isNotEmpty()) {
-            when (this.taxType) {
-                is TaxType.CurrencyAmount -> " + ${currency.symbol}${currency.formatPrice(this.taxValue, locale)} tax"
-                is TaxType.Percentage -> " + ${this.taxValue}% tax"
+        val tax = this.tax
+        val displayTax = if (tax.value != 0.0 && this.items.isNotEmpty()) {
+            when (tax) {
+                is Tax.CurrencyAmount -> " + ${currency.symbol}${currency.formatPrice(tax.price, locale)} tax"
+                is Tax.Percentage -> " + ${tax.v}% tax"
             }
         } else ""
 
@@ -240,7 +296,7 @@ class ItemsViewModel: ViewModel() {
     }
     fun reset() {
         this.items.clear()
-        this.taxValue = 0.0
+        this.tax = Tax.CurrencyAmount(0.0)
     }
 
     fun validateName(name: String, isNew: Boolean = true): Result<Unit> {
@@ -369,8 +425,9 @@ private fun ItemsViewDialog(
     onStateChange: (ItemsDialogState) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val newItemCollapseTransition = updateTransition(state, "NewItemCollapseButton")
-    val autoValidateTimings = AutoValidateTimings.rememberScope()
+    val autoValidateTimings = remember { AutoValidateTimings(coroutineScope) }
 
     // Don't use the currency or locale as keys here; the field value should only be reset when state changes.
     val editItemState = remember(state) {
@@ -382,15 +439,11 @@ private fun ItemsViewDialog(
             val name = StringTextFieldState(preData?.name ?: "",
                 validator = { viewModel.validateName(it, isNew = state !is ItemsDialogState.Edit) },
             )
-            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice, currency, locale, autoValidateTimings)
+            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice ?: 0.0, emptyInitialTextIfZero = true, currency, locale, autoValidateTimings)
             val amount = object {
-                // false indicates Amount.Unit
-                // Defaults to Amount.Unit when creating a new Item.
-                var hasLabel by mutableStateOf(preData?.let { it.amount is Amount.Measured } ?: false)
+                var type by mutableStateOf(preData?.amount?.type ?: Amount.Type.Units)
                 val value = run {
-                    val parser = { s: String -> runCatching {
-                        if (hasLabel) { s.toDouble() } else { s.toInt().toDouble() }
-                    }.into() }
+                    val parser = { s: String -> Amount.parseValue(type, s) }
                     preData?.let {
                         RealNumberFieldState(it.amount.textValue, parser = parser)
                     } ?: RealNumberFieldState("", parser = parser)
@@ -405,15 +458,16 @@ private fun ItemsViewDialog(
             }
         }
     }
-    val taxAmountState = remember { when (viewModel.taxType) {
-        is ItemsViewModel.TaxType.CurrencyAmount -> {
-            val initialAmount = if (viewModel.taxValue == 0.0) { null } else { viewModel.taxValue }
-            RealNumberFieldState.moneyFieldState(initialAmount, currency, locale, autoValidateTimings)
-        }
-        is ItemsViewModel.TaxType.Percentage -> RealNumberFieldState(viewModel.taxValue,
-            parser = { runCatching { if (it.isEmpty()) { 0.0 } else { it.toDouble() } }.into() },
-        )
-    } }
+    val taxAmountState = remember { RealNumberFieldState(
+        initialValue = viewModel.tax.value,
+        emptyInitialTextIfZero = true,
+        parser = { text -> Tax.parse(viewModel.tax.type, text, currency, locale).map { it.value } },
+        formatter = { v -> when (viewModel.tax.type) {
+            Tax.Type.CurrencyAmount -> currency.formatPrice(v, locale)
+            Tax.Type.Percentage -> v.toString()
+        } },
+        autoValidateTimings,
+    ).apply { skipEmptyTextFormat = true } }
 
     val columnLabelTextStyle = MaterialTheme.typography.labelMedium
     val dividerPaddingSize = ActionDialogPadding.TightlyPacked.actionsSpacerHeight * 2
@@ -491,7 +545,9 @@ private fun ItemsViewDialog(
                         !editItemState.name.isError
                         && !editItemState.unitPrice.isError
                         && !editItemState.amount.value.isError
-                        && !(editItemState.amount.hasLabel && editItemState.amount.label.isError)
+                        && !(editItemState.amount.type == Amount.Type.Measured
+                            && editItemState.amount.label.isError
+                        )
 
                     when (state) {
                         is ItemsDialogState.View -> { !taxAmountState.isError }
@@ -502,10 +558,10 @@ private fun ItemsViewDialog(
                             editItemState.name.fieldText != item.name
                             || editItemState.unitPrice.fieldText != currency.formatPrice(item.unitPrice, locale)
                             || editItemState.amount.value.fieldText != item.amount.textValue
-                            || when (item.amount) {
-                                is Amount.Measured -> !editItemState.amount.hasLabel || editItemState.amount.label.fieldText != item.amount.label
-                                is Amount.Units -> editItemState.amount.hasLabel
-                            }
+                            || editItemState.amount.type != item.amount.type
+                            || if (item.amount is Amount.Measured) {
+                                editItemState.amount.label.fieldText != item.amount.label
+                            } else { false }
                         } && containsNoErrors
                         else -> { true }
                     }
@@ -514,7 +570,7 @@ private fun ItemsViewDialog(
                     editItemState.name.doValidate()
                     editItemState.unitPrice.doValidate()
                     editItemState.amount.value.doValidate()
-                    if (editItemState.amount.hasLabel) {
+                    if (editItemState.amount.type == Amount.Type.Measured) {
                         editItemState.amount.label.doValidate()
                     }
 
@@ -522,10 +578,9 @@ private fun ItemsViewDialog(
                         val newData = Item(
                             name = editItemState.name.fieldText,
                             unitPrice = editItemState.unitPrice.parseResult.unwrap(),
-                            amount = if (editItemState.amount.hasLabel) {
-                                Amount.Measured(editItemState.amount.value.parseResult.unwrap(), editItemState.amount.label.fieldText)
-                            } else {
-                                Amount.Units(editItemState.amount.value.parseResult.unwrap().toUInt())
+                            amount = when (editItemState.amount.type) {
+                                Amount.Type.Measured -> Amount.Measured(editItemState.amount.value.parseResult.unwrap(), editItemState.amount.label.fieldText)
+                                Amount.Type.Units -> Amount.Units(editItemState.amount.value.parseResult.unwrap().toUInt())
                             }
                         )
                         when (state) {
@@ -635,8 +690,8 @@ private fun ItemsViewDialog(
                                 priceState = editItemState.unitPrice,
                                 amountValueState = editItemState.amount.value,
                                 amountLabelState = editItemState.amount.label,
-                                hasLabel = editItemState.amount.hasLabel,
-                                onHasLabelChange = { editItemState.amount.hasLabel = it }
+                                amountType = editItemState.amount.type,
+                                onHasLabelChange = { editItemState.amount.type = it }
                             )
                             LaunchedEffect(Unit) {
                                 delay(animationScope.transition.totalDurationNanos.nanoseconds)
@@ -686,21 +741,23 @@ private fun ItemsViewDialog(
                     ) {
                         PlainToolTipBox("Switch tax type") {
                             TextButton(
-                                modifier = Modifier.semantics { stateDescription = viewModel.taxType.toString() },
+                                modifier = Modifier.semantics { stateDescription = viewModel.tax.type.toString() },
                                 onClick = {
-                                    viewModel.taxType = when (viewModel.taxType) {
-                                        is ItemsViewModel.TaxType.CurrencyAmount -> ItemsViewModel.TaxType.Percentage
-                                        is ItemsViewModel.TaxType.Percentage -> ItemsViewModel.TaxType.CurrencyAmount
+                                    val taxValue = viewModel.tax.value
+                                    viewModel.tax = when (viewModel.tax) {
+                                        is Tax.CurrencyAmount -> Tax.Percentage(taxValue)
+                                        is Tax.Percentage -> Tax.CurrencyAmount(taxValue)
                                     }
+                                    taxAmountState.doValidate()
                                 },
                                 contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)
                             ) {
                                 Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
                                     modifier = Modifier.size(20.dp),
                                 )
-                                Icon(when (viewModel.taxType) {
-                                    is ItemsViewModel.TaxType.CurrencyAmount -> currencyIcon
-                                    is ItemsViewModel.TaxType.Percentage -> painterResource(R.drawable.percent_24px)
+                                Icon(when (viewModel.tax) {
+                                    is Tax.CurrencyAmount -> currencyIcon
+                                    is Tax.Percentage -> painterResource(R.drawable.percent_24px)
                                 }, null)
                             }
                         }
@@ -711,28 +768,20 @@ private fun ItemsViewDialog(
                             .padding(itemFieldPadding)
                             .fillMaxWidth()
                         ) {
-                            when (viewModel.taxType) {
-                                is ItemsViewModel.TaxType.CurrencyAmount -> {
-                                    SmallBasicTextField(
-                                        modifier = Modifier.semantics { contentDescription = "Tax value" },
-                                        value = taxAmountState.fieldText,
-                                        onValueChange = { taxAmountState.fieldText = it },
-                                        isError = taxAmountState.isError,
-                                        placeholderText = currency.formatPrice(0.0, locale),
-                                        keyboardOptions = RealNumberFieldState.keyboardOptions,
-                                    )
-                                }
-                                is ItemsViewModel.TaxType.Percentage -> {
-                                    SmallBasicTextField(
-                                        modifier = Modifier.semantics { contentDescription = "Tax value" },
-                                        value = taxAmountState.fieldText,
-                                        onValueChange = { taxAmountState.fieldText = it },
-                                        isError = taxAmountState.isError,
-                                        placeholderText = "0.0",
-                                        keyboardOptions = RealNumberFieldState.keyboardOptions,
-                                    )
-                                }
-                            }
+                            SmallBasicTextField(
+                                modifier = Modifier.semantics { contentDescription = "Tax value" },
+                                value = taxAmountState.fieldText,
+                                onValueChange = { text ->
+                                    taxAmountState.fieldText = text
+                                    taxAmountState.ifParseOk { viewModel.tax = Tax.new(viewModel.tax.type, it) }
+                                },
+                                isError = taxAmountState.isError,
+                                placeholderText = when (viewModel.tax) {
+                                    is Tax.CurrencyAmount -> currency.formatPrice(0.0, locale)
+                                    is Tax.Percentage -> "0.0"
+                                },
+                                keyboardOptions = RealNumberFieldState.keyboardOptions,
+                            )
                         }
                     }
                 }
@@ -786,8 +835,8 @@ private fun ItemsViewDialog(
                         priceState = editItemState.unitPrice,
                         amountValueState = editItemState.amount.value,
                         amountLabelState = editItemState.amount.label,
-                        hasLabel = editItemState.amount.hasLabel,
-                        onHasLabelChange = { editItemState.amount.hasLabel = it }
+                        amountType = editItemState.amount.type,
+                        onHasLabelChange = { editItemState.amount.type = it }
                     )
                 }
                 else -> { }
@@ -931,8 +980,8 @@ private fun StaticItemListRow(
  * @param priceState The state object for the "Unit Price" field.
  * @param amountValueState The state object for the "Amount Value" field.
  * @param amountLabelState The state object for the "Amount Label" field.
- * @param hasLabel The state of the *[Amount] type* toggle button, and whether the "Amount Label" field should be displayed.
- * @param onHasLabelChange Updates the state object of the [hasLabel] state. */
+ * @param amountType The state of the *[Amount] type* toggle button, and whether the "Amount Label" field should be displayed.
+ * @param onHasLabelChange Updates the state object of the [amountType] state. */
 @Composable
 private fun EditingItemListBox(
     modifier: Modifier = Modifier,
@@ -944,8 +993,8 @@ private fun EditingItemListBox(
     priceState: RealNumberFieldState,
     amountValueState: RealNumberFieldState,
     amountLabelState: StringTextFieldState,
-    hasLabel: Boolean,
-    onHasLabelChange: (Boolean) -> Unit,
+    amountType: Amount.Type,
+    onHasLabelChange: (Amount.Type) -> Unit,
 ) {
     val columnShapes = ItemColumnsShapes(rowShape)
 
@@ -990,7 +1039,12 @@ private fun EditingItemListBox(
 
     @Composable
     fun Label(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.labelMedium) {
-        Text(text, modifier, softWrap = false, maxLines = 1, style = style)
+        Text(text,
+            // The label should not be detected by semantics/screen reader to avoid duplicates
+            // since each editable TextField has its own Content Description.
+            modifier.clearAndSetSemantics { },
+            softWrap = false, maxLines = 1, style = style,
+        )
     }
 
     LabeledBorderBox(
@@ -1006,6 +1060,7 @@ private fun EditingItemListBox(
                 Column(Modifier.weight(NAME_COLUMN_WEIGHT)) {
                     Label("Name")
                     ItemColumnField(
+                        modifier = Modifier.semantics { contentDescription = "Name" },
                         columnNum = 0u,
                         shape = columnShapes.Start,
                         value = nameState.fieldText,
@@ -1014,8 +1069,10 @@ private fun EditingItemListBox(
                     )
                 }
                 Column(Modifier.weight(PRICE_COLUMN_WEIGHT)) {
-                    Label("Price (${currency.symbol})")
+                    val currencySymbol = currency.symbol
+                    Label("Price ($currencySymbol)")
                     ItemColumnField(
+                        modifier = Modifier.semantics { contentDescription = "Price in $currencySymbol" },
                         columnNum = 1u,
                         shape = columnShapes.End,
                         value = priceState.fieldText,
@@ -1026,53 +1083,67 @@ private fun EditingItemListBox(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val amountType = if (hasLabel) { "Measurement" } else { "Units" }
-                val displayLabelTransition = updateTransition(hasLabel)
+                val displayLabelTransition = updateTransition(amountType)
 
                 Column {
                     Label("Amount")
                     PlainToolTipBox("Change amount type") {
                         TextButton(
-                            modifier = Modifier.semantics { stateDescription = amountType },
-                            onClick = { onHasLabelChange(!hasLabel) },
+                            modifier = Modifier.semantics { stateDescription = amountType.toString() },
+                            onClick = { onHasLabelChange(when (amountType) {
+                                Amount.Type.Measured -> Amount.Type.Units
+                                Amount.Type.Units -> Amount.Type.Measured
+                            }) },
                             contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
                         ) {
                             Icon(painterResource(R.drawable.arrow_drop_down_24px), null,
                                 modifier = Modifier.size(20.dp),
                             )
-                            Icon(painterResource(if (hasLabel) {
-                                R.drawable.scale_24px
-                            } else {
-                                R.drawable.units_24px
+                            Icon(painterResource(when (amountType) {
+                                Amount.Type.Measured -> R.drawable.scale_24px
+                                Amount.Type.Units -> R.drawable.units_24px
                             }), null)
                         }
                     }
                 }
                 Spacer(Modifier.width(COLUMN_SPACING * 2))
 
-                Column(Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 1.0f } }.value)) {
-                    displayLabelTransition.AnimatedContent { hasLabel ->
-                        if (hasLabel) { Label(amountType) } else { Label(amountType) }
+                /** Returns either argument value depending on the [Amount.Type]. */
+                fun <T> Amount.Type.typeState(labelExpanded: T, labelCollapsed: T): T {
+                    return when (this) {
+                        Amount.Type.Measured -> labelExpanded
+                        Amount.Type.Units -> labelCollapsed
                     }
+                }
+
+                Column(Modifier
+                    .weight(displayLabelTransition.animateFloat { it.typeState(0.5f, 1.0f) }.value)
+                ) {
+                    displayLabelTransition.AnimatedContent { type -> when (type) {
+                        Amount.Type.Measured -> Label(amountType.toString())
+                        Amount.Type.Units -> Label(amountType.toString())
+                    } }
                     ItemColumnField(
+                        Modifier.semantics { contentDescription = "Amount value" },
                         columnNum = 2u,
-                        shape = if (hasLabel) { columnShapes.Start } else { rowShape },
+                        shape = amountType.typeState(columnShapes.Start, rowShape),
                         value = amountValueState.fieldText,
                         onValueChange = { amountValueState.fieldText = it },
                         isError = amountValueState.isError,
                         keyboardOptions = RealNumberFieldState.keyboardOptions,
                     )
                 }
-                Spacer(Modifier.width(displayLabelTransition.animateDp { if (it) { COLUMN_SPACING * 2 } else { 0.dp } }.value))
+                Spacer(Modifier.width(displayLabelTransition.animateDp { it.typeState(COLUMN_SPACING * 2, 0.dp) }.value))
 
-                displayLabelTransition.AnimatedVisibility({ it },
+                displayLabelTransition.AnimatedVisibility({ it == Amount.Type.Measured },
                     enter = fadeIn() + expandHorizontally(),
                     exit = fadeOut() + shrinkHorizontally(),
-                    modifier = Modifier.weight(displayLabelTransition.animateFloat { if (it) { 0.5f } else { 0.001f } }.value),
+                    modifier = Modifier.weight(displayLabelTransition.animateFloat { it.typeState(0.5f, 0.001f) }.value),
                 ) {
                     Column {
                         Label("Label")
                         ItemColumnField(
+                            Modifier.semantics { contentDescription = "Amount Measurement label" },
                             columnNum = 3u,
                             shape = columnShapes.End,
                             value = amountLabelState.fieldText,
@@ -1196,24 +1267,22 @@ private fun LabeledBorderBox(
     modifier: Modifier = Modifier,
     labelXOffset: Dp = 15.dp,
     labelMaskPadding: Dp = 4.dp,
-    borderWidth: Dp,
+    borderWidth: Dp = 1.dp,
     borderColor: Color = MaterialTheme.colorScheme.outline,
     borderShape: Shape = MaterialTheme.shapes.medium,
     label: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    var labelHeight by remember { mutableStateOf(0.dp) }
-    var labelWidth by remember { mutableStateOf(0.dp) }
-    var contentWidth by remember { mutableStateOf(0.dp) }
-    var contentHeight by remember { mutableStateOf(0.dp) }
+    var labelSize by remember { mutableStateOf(DpSize(0.dp, 0.dp)) }
+    var contentSize by remember { mutableStateOf(DpSize(0.dp, 0.dp)) }
 
     Box(Modifier
-        .padding(top = max(0.dp, (labelHeight / 2f) - 2.dp))
+        .padding(top = max(0.dp, (labelSize.height / 2f) - 2.dp))
         .then(modifier)
     ) {
         Box(Modifier
-            .width(contentWidth)
-            .height(contentHeight)
+            .width(contentSize.width)
+            .height(contentSize.height)
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawBehind {
                 val stroke = borderWidth.toPx()
@@ -1230,8 +1299,8 @@ private fun LabeledBorderBox(
                     )
                 }
                 this.drawRect(
-                    topLeft = Offset(x = labelXOffset.toPx(), y = (-labelHeight / 2f).toPx()),
-                    size = Size((labelWidth + labelMaskPadding * 2f).toPx(), labelHeight.toPx()),
+                    topLeft = Offset(x = labelXOffset.toPx(), y = (-labelSize.height / 2f).toPx()),
+                    size = Size((labelSize.width + labelMaskPadding * 2f).toPx(), labelSize.height.toPx()),
                     color = Color.Transparent,
                     blendMode = BlendMode.SrcOut,
                 )
@@ -1265,10 +1334,8 @@ private fun LabeledBorderBox(
                 }
             }
 
-            labelWidth = labelMaxWidth.toDp()
-            labelHeight = labelMaxHeight.toDp()
-            contentWidth = childrenMaxWidth.toDp()
-            contentHeight = childrenMaxHeight.toDp()
+            labelSize = DpSize(labelMaxWidth.toDp(), labelMaxHeight.toDp())
+            contentSize = DpSize(childrenMaxWidth.toDp(), childrenMaxHeight.toDp())
 
             layout(childrenMaxWidth, childrenMaxHeight) {
                 placeables.forEach { it.placeRelative(0, 0) }
@@ -1281,7 +1348,6 @@ private fun LabeledBorderBox(
             }
         }
     }
-
 }
 
 @Composable
@@ -1349,8 +1415,7 @@ fun ItemsFieldFilledPreview() {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>().apply {
                 items.addAll(FAKE_ITEMS)
-                taxType = ItemsViewModel.TaxType.CurrencyAmount
-                taxValue = 4.08
+                tax = Tax.CurrencyAmount(4.08)
             },
             locale = locale,
             currency = remember(locale) { Currency.getInstance(locale) },
