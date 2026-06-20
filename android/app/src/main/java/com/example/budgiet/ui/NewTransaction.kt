@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +49,8 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +87,7 @@ import com.example.budgiet.ui.utils.TextIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.Currency
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
@@ -136,7 +141,107 @@ private sealed class DialogState {
         var state by mutableStateOf(state)
     }
     object TagsPicker: DialogState()
+
+    companion object {
+        val Saver = mapSaver(
+            save = { state: DialogState -> mapOf(
+                "discriminant" to state.javaClass.simpleName,
+                "locationPickerState" to if (state is LocationPicker) {
+                    val state = state.state
+                    mapOf(
+                        "discriminant" to state.javaClass.simpleName,
+                        "location" to when (state) {
+                            is LocationPickerState.Edit -> mapOf(
+                                "id" to state.location.id,
+                                "name" to state.location.data.name,
+                                "address" to state.location.data.address,
+                                "lastUsed" to state.location.data.lastUsed,
+                            )
+                            else -> null
+                        },
+                    )
+                } else null,
+                "itemsDialogState" to if (state is Items) {
+                    val state = state.state
+                    mapOf(
+                        "discriminant" to state.javaClass.simpleName,
+                        "item" to when (state) {
+                            is ItemsDialogState.Edit -> mapOf(
+                                "name" to state.value.name,
+                                "unitPrice" to state.value.unitPrice,
+                                "amountType" to state.value.amount.type.toString(),
+                                "amountValue" to when (state.value.amount) {
+                                    is Amount.Units -> state.value.amount.value
+                                    is Amount.Measured -> state.value.amount.value
+                                },
+                                "amountLabel" to when (state.value.amount) {
+                                    is Amount.Measured -> state.value.amount.label
+                                    else -> null
+                                }
+                            )
+                            else -> null
+                        },
+                    )
+                } else null,
+            ) },
+            restore = { map -> when (val discriminant = map["discriminant"]) {
+                "None" -> None
+                "DatePicker" -> DatePicker
+                "LocationPicker" -> LocationPicker(@Suppress("UNCHECKED_CAST") run {
+                    val map = map["locationPickerState"] as Map<String, Any?>
+
+                    when (val discriminant = map["discriminant"]) {
+                        "Search" -> LocationPickerState.Search
+                        "Nearby" -> LocationPickerState.Nearby
+                        "New" -> LocationPickerState.New
+                        "Edit" -> LocationPickerState.Edit(run {
+                            val location = map["location"]!! as Map<String, Any?>
+
+                            DbEntry(
+                                id = location["id"]!! as UInt,
+                                data = Location(
+                                    name = location["name"]!! as String,
+                                    address = location["address"] as String?,
+                                    lastUsed = location["lastUsed"] as LocalTime?,
+                                )
+                            )
+                        })
+                        else -> throw IllegalStateException("Invalid discriminant for 'LocationPickerState': $discriminant")
+                    }
+                })
+                "Items" -> Items(@Suppress("UNCHECKED_CAST") run {
+                    val map = map["itemsDialogState"] as Map<String, Any?>
+
+                    when (val discriminant = map["discriminant"]) {
+                        "View" -> ItemsDialogState.View
+                        "New" -> ItemsDialogState.New
+                        "Ocr" -> ItemsDialogState.Ocr
+                        "Edit" -> ItemsDialogState.Edit(run {
+                            val item = map["item"]!! as Map<String, Any?>
+
+                            Item(
+                                name = item["name"]!! as String,
+                                unitPrice = item["unitPrice"]!! as Double,
+                                amount = when (val type = item["amountType"]!! as String) {
+                                    Amount.Type.Units.toString() -> Amount.Units(item["amountValue"]!! as UInt)
+                                    Amount.Type.Measured.toString() -> Amount.Measured(
+                                        value = item["amountValue"]!! as Double,
+                                        label = item["amountLabel"]!! as String,
+                                    )
+                                    else -> throw IllegalStateException("Invalid discriminant for ItemsDialogState.Edit.Item.amount.type: $type")
+                                }
+                            )
+                        })
+                        else -> throw IllegalStateException("Invalid discriminant for 'DialogState': $discriminant")
+                    }
+                })
+                "TagsPicker" -> TagsPicker
+                else -> throw IllegalStateException("Invalid discriminant for 'DialogState': $discriminant")
+            } },
+        )
+    }
 }
+
 @Composable
 fun NewTransactionForm(
     modifier: Modifier = Modifier,
@@ -144,10 +249,12 @@ fun NewTransactionForm(
     userLocale: Locale,
     onDismiss: () -> Unit,
 ) {
-    var dialogState by remember { mutableStateOf<DialogState>(DialogState.None) }
+    var dialogState by rememberSaveable(stateSaver = DialogState.Saver) { mutableStateOf(DialogState.None) }
     val dialogDismiss = { dialogState = DialogState.None }
 
-    Column(modifier = modifier) {
+    Column(modifier
+        .verticalScroll(rememberScrollState())
+    ) {
         FormField("Date") {
             OutlinedTextField(
                 readOnly = true,
