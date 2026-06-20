@@ -147,7 +147,23 @@ class TagsPickerTests {
     /** Tests that clicking "Cancel" discards any changes in the tag selection. */
     @Test
     fun cancelSelectTagsFromPicker() {
-        TODO()
+        val state = TestState(this.rule)
+
+        // Select a Tag from the TagsPickerDialog.
+        state.tagsPickerDialog
+            .onDescendants(this.rule)
+            .filterToOne(hasTextExactly(FAKE_TAGS[0].name))
+            .assertExists()
+            .performClick()
+
+        state.tagsPickerDialog
+            .onDescendants(this.rule)
+            .filterToOne(hasTextExactly("Cancel"))
+            .performClick()
+
+        // Check that the tag was not actually selected
+        state.tagsFieldContainer
+            .assertDoesNotExist()
     }
 
     /** Tests that the SearchBar in [TagsPickerDialog] filters tags by name correctly. */
