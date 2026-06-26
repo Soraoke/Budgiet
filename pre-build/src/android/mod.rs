@@ -6,22 +6,22 @@ use serde_xml_rs::SerdeXml;
 use xml::EmitterConfig;
 use crate::{Error, Errors, utils::{IterResultExt as _, read_dir_files}};
 
-static ANDROID_RESOURCE_DIR: &str = "../android/app/src/main/res";
+static ANDROID_RESOURCE_DIR: &str = "./android/app/src/main/res";
 static DRAWABLE_DIR: LazyLock<PathBuf> = LazyLock::new(||
     Path::new(ANDROID_RESOURCE_DIR).join("drawable")
 );
 static USER_ICON_DRAWABLE_PREFIX: &str = "usericon_";
-static ICONS_DIR: &str = "../res/user-icons";
+static ICONS_DIR: &str = "./res/user-icons";
 static USER_ICONS_ARRAY_PATH: &str = "values/usericons.xml";
 
 /// Crates a file in the `res/values` directory containing XML in the format of a *list of elements*.
 /// The array can be either of **strings** or **integers** (string, but will be parsed) (not both!),
 /// and can be used in the android code with Jetpack Compose's `integerArrayResource()` or `stringArrayResource`.
-/// 
+///
 /// ### Parameters
 /// **`res_name`**: The name of the file (without the `.xml`) extension *and* the name of the array resource.
 /// **`elements`**: The contents of the array.
-/// 
+///
 /// If **`verbose`** is `true`, prints information about an opperation to *stderr*.
 /// If **dry** is `true`, doesn't write to any files.
 fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
@@ -76,12 +76,12 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
 }
 
 /// Calls [create_array_resource()], creating an *array resource* with values corresponing to the *userIcon* drawables IDs.
-/// 
+///
 /// If **`verbose`** is `true`, prints information about an opperation to *stderr*.
 /// If **dry** is `true`, doesn't write to any files.
-/// 
+///
 /// Must run [`svg2drawable::copy_icons()`] before this.
-/// 
+///
 /// See [this stackoverflow post](https://stackoverflow.com/a/51824649) for more details.
 pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
     let icon_names = read_dir_files(if dry { Path::new(ICONS_DIR) } else { DRAWABLE_DIR.as_path() })
@@ -99,7 +99,7 @@ pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>>
             let icon_name = icon_name.file_name()
                 .unwrap()
                 .to_str()
-                .ok_or_else(|| Error::new(format!("Drawable file name \"{}\" contains non-UTF8 characters", entry.file_name().to_string_lossy()).into()))?
+                .ok_or_else(|| Error::new(format!("Drawable file name \"{}\" contains non-UTF8 characters", entry.file_name().to_string_lossy())))?
                 .to_string();
 
             Ok(icon_name)
@@ -112,7 +112,7 @@ pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>>
                 if verbose {
                     eprintln!("Adding \"{icon_name}\" to {USER_ICONS_ARRAY_PATH}");
                 }
-                
+
                 format!("@drawable/{icon_name}")
             })
             .collect(),

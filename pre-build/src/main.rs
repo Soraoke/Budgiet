@@ -1,9 +1,10 @@
 mod android;
+mod ffi;
 mod utils;
 
 use std::{error::Error as StdError, fmt::{Debug, Display, Write}, fs, io, path::{Path, PathBuf}, process::exit};
 use clap::{Parser, Subcommand};
-use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, utils::{IterResultExt as _, read_dir}};
+use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, ffi::pack_rust_lib, utils::{IterResultExt as _, read_dir}};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -57,6 +58,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
             if verbose {
                 eprintln!("\nDone!");
             }
+            pack_rust_lib(ffi::BoltFfiPlatform::Android, verbose, dry)?;
         },
         Commands::Svg2Drawable { input, output } => {
             // Don't have to worry about symlinks here, metadata follows them.
@@ -179,8 +181,8 @@ enum Error {
     }
 }
 impl Error {
-    pub fn new(err: Box<dyn StdError>) -> Self {
-        Self::Lone(err.to_string().into())
+    pub fn new(err: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
+        Self::Lone(err.into())
     }
     pub fn io(err: io::Error, msg: impl Display) -> Self {
         Self::WithPrefix {
@@ -218,6 +220,6 @@ impl Display for Error {
                 f.write_str(": ")?;
                 <std::io::Error as Display>::fmt(error, f)
             },
-        }   
+        }
     }
 }

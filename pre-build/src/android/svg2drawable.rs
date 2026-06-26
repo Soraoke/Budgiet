@@ -6,14 +6,14 @@ use xml::EmitterConfig;
 use super::{DRAWABLE_DIR, ICONS_DIR, USER_ICON_DRAWABLE_PREFIX};
 use crate::{Error, Errors, command, utils::{IterResultExt as _, checksum, read_dir}};
 
-static TARGET_DIR: &str = "../target";
+static TARGET_DIR: &str = "./target";
 
 /// Copy and **reformat** `SVG` files in [`ICONS_DIR`] to the `res/drawable` directory in the Android application.
-/// 
+///
 /// If **`verbose`** is `true`, prints information about an opperation to *stderr*.
 /// If **`dry`** is `true`, doesn't write to any files.
-/// 
-/// The files are converted to Android's proprietary *Drawable Resource (XML)* format and have `"userIcon_"` prefixed to their file name. 
+///
+/// The files are converted to Android's proprietary *Drawable Resource (XML)* format and have `"userIcon_"` prefixed to their file name.
 pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
     let tmp_dir = &svg_to_bad_drawable(ICONS_DIR, verbose, dry)?;
 
@@ -64,19 +64,19 @@ pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
 }
 
 /// Convert an **SVG** file to Android's proprietary **Vector Drawable** format.
-/// 
+///
 /// The Vector Drawable Tool, however, does not produce a valid Drawable that the Android build can use,
 /// so the file must be converted *once again* by **deserializing** and **serializing** a [`BadDrawable`].
-/// 
+///
 /// **`path`** is the SVG file, *or* a directory containing SVG files.
-/// 
+///
 /// Returns the **path** to the converted **Vector Drawable** file (or directory, if **`path`** was a directory).
 pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> Result<PathBuf, Error> {
     let path = path.as_ref();
     let tmp_dir = Path::new(TARGET_DIR)
         .join("tmp")
         .join(path.file_name()
-            .ok_or_else(|| Error::new(format!("Path to SVG[s] must be a file or directory").into()))?
+            .ok_or_else(|| Error::new(format!("Path to SVG[s] must be a file or directory")))?
         );
 
     let input_is_file = path.metadata()
@@ -98,7 +98,7 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
             .map(|entry| entry.and_then(|entry| {
                 let path = entry.path();
                 let name = path.file_stem()
-                    .ok_or_else(|| Error::new(format!("Invalid SVG file found: \"{}\"", entry.path().display()).into()))?;
+                    .ok_or_else(|| Error::new(format!("Invalid SVG file found: \"{}\"", entry.path().display())))?;
 
                 // Check if "{path}/{name}.svg" also exists as "{tmp_dir}/{name}.xml"
                 tmp_dir.join(name).with_extension("xml")
@@ -225,7 +225,7 @@ impl BadDrawable {
                 .perform_indent(true)
                 .write_document_declaration(false)
             );
-        
+
         // Open the file for writing.
         let mut drawable_file = fs::OpenOptions::new()
             .create(true)

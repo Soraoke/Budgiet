@@ -5,15 +5,33 @@ use crate::{Error, Errors};
 /// Run a system command.
 #[macro_export]
 macro_rules! command {
-    ($command:literal, $($args:expr),*) => {
-        crate::utils::_command($command, &[
+    (ENV => [ $($env_key:expr => $env_val:expr),* ], $command:expr, $($args:expr),*) => {
+        crate::utils::_command(
+            $command,
+            &[ $( (::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$env_key), ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$env_val))),* ],
+            &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
+        )
+    };
+    (ENV => $env:expr, $command:expr, $($args:expr),*) => {
+        crate::utils::_command(
+            $command, $env, &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
+        )
+    };
+    ($command:expr, $($args:expr),*) => {
+        crate::utils::_command($command, &[], &[
             $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),*
         ])
     };
 }
 #[doc(hidden)]
-pub fn _command<'a>(command: &str, args: &[&'a OsStr]) -> Result<String, Error> {
-    let output = Command::new(command)
+pub fn _command<'a>(command: &str, env: &[(&'a OsStr, &'a OsStr)], args: &[&'a OsStr]) -> Result<String, Error> {
+    let mut command = Command::new(command);
+    let mut command = &mut command;
+    for (key, val) in env {
+        command = command.env(key, val);
+    }
+
+    let output = command
         .args(args)
         .output()
         .map_err(|err| Error::io(err, format!("Error spawning {command:?} command")))?;
@@ -24,7 +42,7 @@ pub fn _command<'a>(command: &str, args: &[&'a OsStr]) -> Result<String, Error> 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Checks that the resulting [`Output`] **hash** matches an **`expected`** *hexadecimal* string. 
+/// Checks that the resulting [`Output`] **hash** matches an **`expected`** *hexadecimal* string.
 pub fn checksum<D: Digest>(expected: impl AsRef<str>, actual: Output<D>) -> Result<(), io::Error> {
     let expected_str = expected.as_ref();
     let expected = hex::decode(expected_str)
@@ -93,11 +111,11 @@ pub fn read_dir_files(path: &Path) -> impl Iterator<Item = Result<DirEntry, Erro
 pub trait IterResultExt<T, E>
 where Self: Iterator {
     /// Collects results of all the calls to [`next`] and returns it.
-    /// 
+    ///
     /// If [`next`] only returned `T`s, then it returns a **Collection** containing those values.
     /// Buf if [`next`] returns *at least 1* **Error**,
     /// this functions continues calling [`next`] until the end to collect all the **Errors**.
-    /// 
+    ///
     /// [`next`]: Iterator::next()
     fn collect_results<C>(self) -> Result<C, Errors<E>>
     where Self: Iterator<Item = Result<T, E>>,

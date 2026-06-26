@@ -19,6 +19,8 @@ Ensure it is installed by reopening the terminal and running `cargo --help`.
 
  * Install [**Android Studio**](https://developer.android.com/studio).
  * Clone the repository: `git clone git@github.com:Soraoke/Budgiet.git`
+ * Set environment variables:
+   * `ANDROID_HOME="$HOME/Android"`
  * Open the `Budgiet/android` directory with **Android Studio**.
   
    > After opening the project, you might not be able to build the app.
