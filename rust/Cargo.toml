@@ -1,0 +1,15 @@
+[package]
+name = "budgietlib"
+description = "Bundled library for the native apps to call on"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+boltffi = "0.26.1"
+itertools = "0.15.0"
+rust_decimal = "1.42.1"
+rusty-money = "=0.5.0"
+thiserror = "2.0.18"
