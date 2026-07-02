@@ -2,31 +2,65 @@ use std::{ffi::OsStr, fs::{self, DirEntry}, io, mem::ManuallyDrop, path::Path, p
 use sha2::digest::{Digest, Output};
 use crate::{Error, Errors};
 
-/// Run a system command.
+/// Run a system command, streaming **stdout** and **stderr**.
 #[macro_export]
 macro_rules! command {
     (ENV => [ $($env_key:expr => $env_val:expr),* ], $command:expr, $($args:expr),*) => {
         crate::utils::_command(
-            $command,
+            ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$command),
             &[ $( (::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$env_key), ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$env_val))),* ],
             &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
         )
     };
     (ENV => $env:expr, $command:expr, $($args:expr),*) => {
         crate::utils::_command(
-            $command, $env, &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
+            ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$command),
+            $env,
+            &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
         )
     };
     ($command:expr, $($args:expr),*) => {
-        crate::utils::_command($command, &[], &[
-            $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),*
-        ])
+        crate::utils::_command(
+            ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$command),
+            &[],
+            &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
+        )
+    };
+}
+/// Run a system command, returning the output of **stdout** or **stderr** in the [`Result`].
+#[macro_export]
+macro_rules! command_output {
+    ($command:expr, $($args:expr),*) => {
+        crate::utils::_command_output(
+            ::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$command),
+            &[],
+            &[ $(::std::convert::AsRef::<::std::ffi::OsStr>::as_ref(&$args)),* ],
+        )
     };
 }
 #[doc(hidden)]
-pub fn _command<'a>(command: &str, env: &[(&'a OsStr, &'a OsStr)], args: &[&'a OsStr]) -> Result<String, Error> {
-    let mut command = Command::new(command);
-    let mut command = &mut command;
+pub fn _command<'a>(command: &'a OsStr, env: &[(&'a OsStr, &'a OsStr)], args: &[&'a OsStr]) -> Result<(), Error> {
+    let mut command = &mut Command::new(command);
+    for (key, val) in env {
+        command = command.env(key, val);
+    }
+
+    let status = command
+        .args(args)
+        .stderr(std::io::stderr())
+        .stdout(std::io::stdout())
+        .status()
+        .map_err(|err| Error::io(err, format!("Error spawning {command:?} command")))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::io_other(format!("Command {command:?} exited with error code '{:?}'", status.code()), ""))
+    }
+}
+#[doc(hidden)]
+pub fn _command_output<'a>(command: &'a OsStr, env: &[(&'a OsStr, &'a OsStr)], args: &[&'a OsStr]) -> Result<String, Error> {
+    let mut command = &mut Command::new(command);
     for (key, val) in env {
         command = command.env(key, val);
     }
@@ -54,6 +88,19 @@ pub fn checksum<D: Digest>(expected: impl AsRef<str>, actual: Output<D>) -> Resu
         )))
     }
     Ok(())
+}
+
+/// Creates a *runtime-initialized* ([`LazyLock`][std::sync::lazy_lock::LazyLock]) [`PathBuf`].
+///
+/// The point of using this is writing less code :D
+#[macro_export]
+macro_rules! static_path {
+    (pub $name:ident = $val:expr) => {
+        pub static $name: ::std::sync::LazyLock<std::path::PathBuf> = ::std::sync::LazyLock::new(|| $val);
+    };
+    ($name:ident = $val:expr) => {
+        static $name: ::std::sync::LazyLock<std::path::PathBuf> = ::std::sync::LazyLock::new(|| $val);
+    };
 }
 
 /// Same as [`std::fs::read_dir()`], but transforms the errors to this crate's [`Error`].

@@ -622,6 +622,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "project-root",
  "serde",
  "serde-xml-rs",
  "sha2",
@@ -645,6 +646,12 @@ checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "project-root"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bccbff07d5ed689c4087d20d7307a52ab6141edeedf487c3876a55b86cf63df"
 
 [[package]]
 name = "ptr_meta"

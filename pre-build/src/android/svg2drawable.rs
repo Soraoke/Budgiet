@@ -4,9 +4,7 @@ use serde_xml_rs::SerdeXml;
 use sha2::{Digest as _, Sha256};
 use xml::EmitterConfig;
 use super::{DRAWABLE_DIR, ICONS_DIR, USER_ICON_DRAWABLE_PREFIX};
-use crate::{Error, Errors, command, utils::{IterResultExt as _, checksum, read_dir}};
-
-static TARGET_DIR: &str = "./target";
+use crate::{Error, Errors, TARGET_DIR, command_output, static_path, utils::{IterResultExt as _, checksum, read_dir}};
 
 /// Copy and **reformat** `SVG` files in [`ICONS_DIR`] to the `res/drawable` directory in the Android application.
 ///
@@ -15,7 +13,7 @@ static TARGET_DIR: &str = "./target";
 ///
 /// The files are converted to Android's proprietary *Drawable Resource (XML)* format and have `"userIcon_"` prefixed to their file name.
 pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
-    let tmp_dir = &svg_to_bad_drawable(ICONS_DIR, verbose, dry)?;
+    let tmp_dir = &svg_to_bad_drawable(ICONS_DIR.as_path(), verbose, dry)?;
 
     if verbose {
         eprintln!("\nConverted SVGs to Vector Drawable; now fixing output files...\n");
@@ -51,7 +49,7 @@ pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
 
         if verbose {
             if dry { eprint!("Dry run: "); }
-            eprint!("Converted SVG file \"{}\"", Path::new(ICONS_DIR).join(entry.file_name()).with_extension("svg").display());
+            eprint!("Converted SVG file \"{}\"", ICONS_DIR.join(entry.file_name()).with_extension("svg").display());
             if !dry {
                 eprint!("; wrote to \"{}\"", android_file.display());
             }
@@ -72,8 +70,10 @@ pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
 ///
 /// Returns the **path** to the converted **Vector Drawable** file (or directory, if **`path`** was a directory).
 pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> Result<PathBuf, Error> {
+    static_path! { VD_TOOL_PATH = TARGET_DIR.join("bin/vd-tool/bin/vd-tool") }
+
     let path = path.as_ref();
-    let tmp_dir = Path::new(TARGET_DIR)
+    let tmp_dir = TARGET_DIR.as_path()
         .join("tmp")
         .join(path.file_name()
             .ok_or_else(|| Error::new(format!("Path to SVG[s] must be a file or directory")))?
@@ -116,7 +116,7 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
 
         // Operation was not done, so do it here.
         unpack_vd_tool(verbose)?;
-        command!("../target/bin/vd-tool/bin/vd-tool", "-c", "-in", path, "-out", tmp_dir)?;
+        command_output!(VD_TOOL_PATH.as_path(), "-c", "-in", path, "-out", tmp_dir)?;
         if verbose {
             eprint!("Converted all SVG files in \"{}\" to *bad* Drawable files in \"{}\"", path.display(), tmp_dir.display());
             eprintln!("");
@@ -140,8 +140,8 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
     static PKG_URL: &str = "https://github.com/rharter/vd-tool/releases/download/v1/vd-tool.zip";
     static PKG_SHA256: &str = "9bc7b2046b51e22c62663a93c9e91c3b29b053a36a5484a0d73d8c54def3e595";
 
-    let zip_file = Path::new(TARGET_DIR).join(PKG_NAME).with_extension("zip");
-    let unpkg_dir = Path::new(TARGET_DIR).join("bin").join(PKG_NAME);
+    let zip_file = TARGET_DIR.join(PKG_NAME).with_extension("zip");
+    let unpkg_dir = TARGET_DIR.join("bin").join(PKG_NAME);
 
     if unpkg_dir.try_exists()
         .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", unpkg_dir.display())))?
@@ -155,7 +155,7 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
     if verbose {
         eprintln!("Downloading {PKG_NAME}...");
     }
-    command!("curl", "--location", PKG_URL, "--output", zip_file)?;
+    command_output!("curl", "--location", PKG_URL, "--output", zip_file)?;
     let sha256 = Sha256::digest(fs::read(&zip_file)
         .map_err(|err| Error::io(err, format!("Error reading file \"{}\"", zip_file.display())))?
     );
@@ -165,7 +165,7 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
         eprintln!("Download completed");
     }
 
-    command!("unzip", zip_file, "-d", unpkg_dir.parent().unwrap())?;
+    command_output!("unzip", zip_file, "-d", unpkg_dir.parent().unwrap())?;
     if verbose {
         eprintln!("Unpacked {PKG_NAME} to \"{}\"", unpkg_dir.display());
     }

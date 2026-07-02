@@ -1,5 +1,5 @@
 use std::{ffi::OsString, fmt::Display, io, path::PathBuf};
-use crate::{Error, command, utils::read_dir};
+use crate::{Error, TARGET_DIR, command, command_output, static_path, utils::read_dir};
 
 pub enum BoltFfiPlatform {
     Apple, Android, // Java, CSharp, Wasm, Python
@@ -76,18 +76,18 @@ impl Display for BoltFfiPlatform {
 }
 
 pub fn pack_rust_lib(platform: BoltFfiPlatform, verbose: bool, dry: bool) -> Result<(), Error> {
-    let command_path = "./target/bin/boltffi";
+    static_path! { BOLT_FFI = TARGET_DIR.join("bin/boltffi") }
 
-    if let Err(_) = command!("command", "-v", command_path) {
+    if let Err(_) = command_output!("command", "-v", BOLT_FFI.as_path()) {
         if verbose { println!("Installing boltffi_cli..."); }
-        if !dry { command!("cargo", "install", "boltffi_cli", "--root", "target")?; }
+        if !dry { command!("cargo", "install", "boltffi_cli", "--root", TARGET_DIR.as_path())?; }
         if verbose { println!("Finished installing boltffi_cli"); }
     }
 
     if !dry { platform.add_rust_targets(verbose)?; }
 
     // TODO: check if boltffi.toml exists
-    // if !dry { command!(command_path, "init")?; }
+    // if !dry { command!(BOLT_FFI.as_path(), "init")?; }
 
     let env = platform.generate_env()?;
     let env = env.iter()
@@ -97,9 +97,9 @@ pub fn pack_rust_lib(platform: BoltFfiPlatform, verbose: bool, dry: bool) -> Res
     // TODO: skip if already packed (also check file last-modified).
     if !dry {
         if verbose {
-            command!(ENV => &env, command_path, "pack", &platform.to_string(), "-v")?;
+            command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string(), "-v")?;
         } else {
-            command!(ENV => &env, command_path, "pack", &platform.to_string())?;
+            command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string())?;
         }
     } else {
         println!("DRY RUN: packed budgietlib for {platform}")

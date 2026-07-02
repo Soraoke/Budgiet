@@ -6,6 +6,9 @@ use std::{error::Error as StdError, fmt::{Debug, Display, Write}, fs, io, path::
 use clap::{Parser, Subcommand};
 use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, ffi::pack_rust_lib, utils::{IterResultExt as _, read_dir}};
 
+static_path! { pub PROJECT_ROOT = project_root::get_project_root().expect("Could not find root directory of the Rust project") }
+static_path! { pub TARGET_DIR = PROJECT_ROOT.join("target") }
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -54,7 +57,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
                 eprintln!("\nConverted SVG files to usable Vector Drawables; now adding array with icon names...\n");
             }
             android::create_icons_array(verbose, dry)?;
-            android::create_gitignore(verbose, dry)?;
+            // android::create_gitignore(verbose, dry)?;
             if verbose {
                 eprintln!("\nDone!");
             }

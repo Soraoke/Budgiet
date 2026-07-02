@@ -10,9 +10,12 @@ plugins {
 }
 
 val androidPreBuildTask = tasks.register<Exec>("androidPreBuild") {
-    this.description = "Run Rust script to generate Vector Drawables and other resources."
-    this.workingDir = File("../../pre-build")
-    commandLine("cargo", "run", "--release", "--", "--verbose", "android")
+    description = "Run Rust script to generate Vector Drawables and other resources."
+    workingDir = File("../..")
+    environment = environment + mapOf(
+        "ANDROID_NDK_HOME" to androidComponents.sdkComponents.ndkDirectory.get()
+    )
+    commandLine("cargo", "run", "--release", "--package", "pre-build", "--", "--verbose", "android")
 }
 tasks.preBuild.dependsOn(androidPreBuildTask)
 

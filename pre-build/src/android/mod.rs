@@ -1,18 +1,16 @@
 pub mod svg2drawable;
 
-use std::{fs, io::Write, path::{Path, PathBuf}, sync::LazyLock};
+use std::{fs, io::Write, path::Path};
 use serde::Serialize;
 use serde_xml_rs::SerdeXml;
 use xml::EmitterConfig;
-use crate::{Error, Errors, utils::{IterResultExt as _, read_dir_files}};
+use crate::{Error, Errors, PROJECT_ROOT, static_path, utils::{IterResultExt as _, read_dir_files}};
 
-static ANDROID_RESOURCE_DIR: &str = "./android/app/src/main/res";
-static DRAWABLE_DIR: LazyLock<PathBuf> = LazyLock::new(||
-    Path::new(ANDROID_RESOURCE_DIR).join("drawable")
-);
+static_path! { ANDROID_RESOURCE_DIR = PROJECT_ROOT.join("android/app/src/main/res") }
+static_path! { DRAWABLE_DIR = ANDROID_RESOURCE_DIR.join("drawable") }
 static USER_ICON_DRAWABLE_PREFIX: &str = "usericon_";
-static ICONS_DIR: &str = "./res/user-icons";
-static USER_ICONS_ARRAY_PATH: &str = "values/usericons.xml";
+static_path! { ICONS_DIR = PROJECT_ROOT.join("res/user-icons") }
+static_path! { USER_ICONS_ARRAY_PATH = ANDROID_RESOURCE_DIR.join("values/usericons.xml") }
 
 /// Crates a file in the `res/values` directory containing XML in the format of a *list of elements*.
 /// The array can be either of **strings** or **integers** (string, but will be parsed) (not both!),
@@ -28,7 +26,7 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
     let res_file_path = &if dry {
         Path::new("/dev/null").to_path_buf()
     } else {
-        let path = Path::new(ANDROID_RESOURCE_DIR).join("values").join(res_name).with_extension("xml");
+        let path = ANDROID_RESOURCE_DIR.join("values").join(res_name).with_extension("xml");
         if path.try_exists()
             .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", path.display())))?
         {
@@ -84,7 +82,7 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
 ///
 /// See [this stackoverflow post](https://stackoverflow.com/a/51824649) for more details.
 pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
-    let icon_names = read_dir_files(if dry { Path::new(ICONS_DIR) } else { DRAWABLE_DIR.as_path() })
+    let icon_names = read_dir_files(if dry { ICONS_DIR.as_path() } else { DRAWABLE_DIR.as_path() })
         // Only take files with 'usericons_' prefix if reading from the drawables directory.
         .filter(|result| result.as_ref().is_ok_and(|entry|
             entry.file_name()
@@ -110,7 +108,7 @@ pub fn create_icons_array(verbose: bool, dry: bool) -> Result<(), Errors<Error>>
         icon_names.iter()
             .map(|icon_name| {
                 if verbose {
-                    eprintln!("Adding \"{icon_name}\" to {USER_ICONS_ARRAY_PATH}");
+                    eprintln!("Adding \"{icon_name}\" to {}", USER_ICONS_ARRAY_PATH.display());
                 }
 
                 format!("@drawable/{icon_name}")
@@ -135,8 +133,9 @@ struct ArrayResource {
     items: Vec<String>,
 }
 
+#[allow(unused)]
 pub fn create_gitignore(verbose: bool, dry: bool) -> Result<(), Error> {
-    let path = &Path::new(ANDROID_RESOURCE_DIR).join(".gitignore");
+    let path = &ANDROID_RESOURCE_DIR.join(".gitignore");
     // Overwrite file even if it exists, to keep changes in file names
     // if path.try_exists()
     //     .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", path.display())))?
@@ -147,7 +146,7 @@ pub fn create_gitignore(verbose: bool, dry: bool) -> Result<(), Error> {
     //     return Ok(());
     // }
 
-    let gitignore = format!("drawable/{USER_ICON_DRAWABLE_PREFIX}*\n{USER_ICONS_ARRAY_PATH}\n");
+    let gitignore = format!("drawable/{USER_ICON_DRAWABLE_PREFIX}*\n{}\n", USER_ICONS_ARRAY_PATH.display());
 
     if !dry {
         fs::File::options()
