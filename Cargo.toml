@@ -1,3 +1,7 @@
 [workspace]
 resolver = "3"
 members = [ "pre-build", "rust" ]
+
+[workspace.dependencies]
+chrono = "0.4.45"
+itertools = "0.15.0"

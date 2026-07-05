@@ -6,6 +6,8 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
+chrono = { workspace = true }
+itertools = { workspace = true }
 hex = "0.4.3"
 project-root = "0.2.2"
 serde = { version = "1.0.228", features = ["derive"] }

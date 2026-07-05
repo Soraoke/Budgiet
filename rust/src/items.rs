@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::LazyLock};
 use std::str::FromStr;
 use boltffi::{data, export};
 use rust_decimal::Decimal;
-use crate::price::validate_money_field_input;
+use crate::price::{format_money, validate_money_field_input};
 use crate::{Currency, Locale, Money};
 
 static FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
@@ -12,33 +12,22 @@ static FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
     Item::new_fake("Crackers", 1.89, Amount::Units(1)),
     Item::new_fake("Chicken", 4.99, Amount::new_fake_measured(3.5, "lbs")),
 ]);
+/// Returns a slice containing sample [`Items`][Item] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
 #[export]
 pub fn get_fake_items() -> &'static [Item] { &*FAKE_ITEMS }
 
 /// Calculate the total cost of *all [`Items`][Item]* combined, plus the [`Tax`] amount.
 #[export]
 pub fn total_price(items: &[Item], tax: Tax) -> Decimal {
-    let mut currency = match &tax {
-        Tax::CurrencyAmount(money) => Some(money.currency),
-        Tax::Percentage(_) => None,
-    };
-
     let items_sum: Decimal = items.iter()
-        .map(|item| {
-            // Check that all items use the same currency.
-            match &currency {
-                Some(currency) => if currency != &item.unit_price.currency {
-                    panic!("Items have different currencies")
-                },
-                None => currency = Some(item.unit_price.currency)
-            }
-
-            item.total_price().amount
-        })
+        .map(|item| item.total_price())
         .sum();
 
     let tax_amount = match tax {
-        Tax::CurrencyAmount(money) => money.amount,
+        Tax::CurrencyAmount(amount) => amount,
         Tax::Percentage(percent) => items_sum * percent * Decimal::from_f32_retain(0.01).unwrap()
     };
 
@@ -48,7 +37,7 @@ pub fn total_price(items: &[Item], tax: Tax) -> Decimal {
 /// Produces a message to display in the `NewTransactionForm` `ItemsField`.
 /// Includes the number of items, their total cost, and the tax amount/percentage.
 #[export]
-pub fn display_field_info(
+pub fn display_items_field_info(
     items: &[Item],
     tax: Tax,
     currency: Currency,
@@ -62,15 +51,15 @@ pub fn display_field_info(
         })
         .sum();
     let items_price = items.iter()
-        .map(|item| item.total_price().amount)
+        .map(|item| item.total_price())
         .fold(Decimal::ZERO, |acc, amount| acc + amount);
 
     format!("{items_count} {items_word} ({items_price}){display_tax}",
         items_word = if items_count == 1 { "item" } else { "items" },
-        items_price = Money::from_decimal(items_price, currency).format(locale, true),
+        items_price = format_money(&Money::from_decimal(items_price, currency), locale, true),
         display_tax = if tax.value() != Decimal::ZERO && items_count != 0 {
             match tax {
-                Tax::CurrencyAmount(tax_money) => format!(" + {} tax", tax_money.format(locale, true)),
+                Tax::CurrencyAmount(tax_amount) => format!(" + {} tax", format_money(&Money::from_decimal(tax_amount, currency), locale, true)),
                 Tax::Percentage(percent) => format!(" + {percent}% tax"),
             }
         } else { String::new() },
@@ -81,30 +70,29 @@ pub fn display_field_info(
 #[derive(Debug, Clone)]
 pub struct Item {
     pub name: String,
-    pub unit_price: Money,
+    pub unit_price: Decimal,
     pub amount: Amount,
 }
+#[data(impl)]
 impl Item {
     fn new_fake(name: &str, unit_price: f64, amount: Amount) -> Self {
         Self {
             name: name.to_string(),
-            unit_price: Money::from_decimal(Decimal::from_f64_retain(unit_price).unwrap(), Currency(rusty_money::iso::USD)),
+            unit_price: Decimal::from_f64_retain(unit_price).unwrap(),
             amount,
         }
     }
 
     /// Calculate how much *this* single [`Item`] entry costs based on its **`unit_price`** and **`amount`**.
-    pub fn total_price(&self) -> Money {
-        let currency = self.unit_price.currency;
-        let amount = match &self.amount {
-            Amount::Measured { value, .. } => self.unit_price.amount * value,
-            Amount::Units(value) => self.unit_price.amount * Decimal::from(*value),
-        };
-        Money::from_decimal(amount, currency)
+    pub fn total_price(&self) -> Decimal {
+        match &self.amount {
+            Amount::Measured { value, .. } => self.unit_price * value,
+            Amount::Units(value) => self.unit_price * Decimal::from(*value),
+        }
     }
 
-    // TODO: doc
-    pub fn validate_name(existing_items: &[Self], name: &str, is_new: bool) -> Result<(), String> {
+    /// Check that the provided **`name`** can be used for a *new or edited [`Item`]*,
+    pub fn validate_name(existing_items: &[Item], name: &str, is_new: bool) -> Result<(), String> {
         let name_exists = existing_items.iter()
             .find(|item| item.name == name)
             .is_some();
@@ -149,15 +137,18 @@ impl Amount {
             Ok(())
         }
     }
-    /// Parse the *numeric value* that will be used in [`Amount::Measured`].
-    pub fn parse_measured_value(s: &str) -> Result<Decimal, String> {
-        Decimal::from_str(s)
-            .map_err(|err| err.to_string())
-    }
-    /// Parse the *numeric value* that will be used in [`Amount::Units`].
-    pub fn parse_units_value(s: &str) -> Result<u32, String> {
-        <u32 as FromStr>::from_str(s)
-            .map_err(|err| err.to_string())
+
+    /// Parse the *numeric value* that will be used in the [`Amount`].
+    ///
+    /// Parses differently depending on the [`AmountType`].
+    pub fn parse_value(s: &str, ty: AmountType) -> Result<Decimal, String> {
+        match ty {
+            AmountType::Units => <u32 as FromStr>::from_str(s)
+                .map_err(|err| err.to_string())
+                .map(|num| Decimal::new(num as i64, 0)),
+            AmountType::Measured => Decimal::from_str(s)
+                .map_err(|err| err.to_string()),
+        }
     }
 
     pub fn text_value(&self) -> String {
@@ -186,7 +177,7 @@ impl Display for Amount {
 #[data]
 #[derive(Debug, Clone, Copy)]
 pub enum Tax {
-    CurrencyAmount(Money),
+    CurrencyAmount(Decimal),
     Percentage(Decimal),
 }
 /// A lone *discriminant* value for the [`Tax`] type.
@@ -196,10 +187,17 @@ pub enum TaxType { CurrencyAmount, Percentage }
 
 #[data(impl)]
 impl Tax {
+    pub fn new(ty: TaxType, value: Decimal) -> Self {
+        match ty {
+            TaxType::CurrencyAmount => Self::CurrencyAmount(value),
+            TaxType::Percentage => Self::Percentage(value),
+        }
+    }
+
     pub fn parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Tax, String> {
         match ty {
             TaxType::CurrencyAmount => validate_money_field_input(s, currency, locale)
-                .map(|money| Self::CurrencyAmount(money))
+                .map(|money| Self::CurrencyAmount(*money.amount()))
                 .map_err(|err| err.to_string()),
             TaxType::Percentage => if s.is_empty() {
                 Ok(Tax::Percentage(Decimal::ZERO))
@@ -213,7 +211,7 @@ impl Tax {
 
     pub fn value(&self) -> Decimal {
         match self {
-            Self::CurrencyAmount(money) => money.amount,
+            Self::CurrencyAmount(amount) => *amount,
             Self::Percentage(value) => *value,
         }
     }

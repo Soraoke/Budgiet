@@ -1,6 +1,6 @@
 pub mod svg2drawable;
 
-use std::{fs, io::Write, path::Path};
+use std::{fs, io::{self, Write}, path::Path};
 use serde::Serialize;
 use serde_xml_rs::SerdeXml;
 use xml::EmitterConfig;
@@ -28,7 +28,7 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
     } else {
         let path = ANDROID_RESOURCE_DIR.join("values").join(res_name).with_extension("xml");
         if path.try_exists()
-            .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", path.display())))?
+            .map_err(|err| Error::with_prefix(err, format!("Error checking if file \"{}\" exists", path.display())))?
         {
             if verbose {
                 eprintln!("Vector Drawable \"{}\" already exists; skipping", path.display());
@@ -43,7 +43,7 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
         .write(true)
         .truncate(true)
         .open(res_file_path)
-        .map_err(|err| Error::io(err, format!("Error opening file \"{}\" for writing", res_file_path.display())))?;
+        .map_err(|err| Error::with_prefix(err, format!("Error opening file \"{}\" for writing", res_file_path.display())))?;
 
     let array_resource = ArrayResources { array: ArrayResource {
         name: res_name.to_string(),
@@ -58,7 +58,7 @@ fn create_array_resource(res_name: &str, elements: Box<[String]>, verbose: bool,
             .write_document_declaration(true)
         )
         .to_writer(res_file, &array_resource)
-        .map_err(|err| Error::io_other(err, format!("Error serializing array resource")))?;
+        .map_err(|err| Error::with_prefix(io::Error::other(err), format!("Error serializing array resource")))?;
 
     if verbose {
         eprintln!("");
@@ -154,9 +154,9 @@ pub fn create_gitignore(verbose: bool, dry: bool) -> Result<(), Error> {
             .write(true)
             .truncate(true)
             .open(path)
-            .map_err(|err| Error::io(err, format!("Error opening file \"{}\" for writing", path.display())))?
+            .map_err(|err| Error::with_prefix(err, format!("Error opening file \"{}\" for writing", path.display())))?
             .write_all(gitignore.as_bytes())
-            .map_err(|err| Error::io(err, format!("Error writing to file \"{}\"", path.display())))?;
+            .map_err(|err| Error::with_prefix(err, format!("Error writing to file \"{}\"", path.display())))?;
         if verbose {
             eprintln!("Created .gitignore");
         }

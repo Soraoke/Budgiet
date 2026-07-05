@@ -9,7 +9,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 boltffi = "0.26.1"
-itertools = "0.15.0"
+chrono = { workspace = true }
+itertools = { workspace = true }
 rust_decimal = "1.42.1"
 rusty-money = "=0.5.0"
+serde = "1.0.228"
 thiserror = "2.0.18"
+unicode-segmentation = "1.13.3"

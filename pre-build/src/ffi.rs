@@ -1,5 +1,5 @@
 use std::{ffi::OsString, fmt::Display, io, path::PathBuf};
-use crate::{Error, TARGET_DIR, command, command_output, static_path, utils::read_dir};
+use crate::{Error, PROJECT_ROOT, TARGET_DIR, command, command_output, static_path, utils::{read_dir, recursive_dir_mtime}};
 
 pub enum BoltFfiPlatform {
     Apple, Android, // Java, CSharp, Wasm, Python
@@ -25,6 +25,14 @@ impl BoltFfiPlatform {
         Ok(())
     }
 
+    /// The directory where the resulting packed code will be placed in.
+    pub fn packed_dir(&self) -> PathBuf {
+        match self {
+            Self::Android => PROJECT_ROOT.join("android/app/src/main/kotlin"),
+            Self::Apple => todo!(),
+        }
+    }
+
     pub fn generate_env(&self) -> Result<Box<[(OsString, OsString)]>, Error> {
         match self {
             Self::Android => {
@@ -45,7 +53,7 @@ impl BoltFfiPlatform {
                             versions.iter()
                                 .find(|entry| entry.file_name() == "latest")
                                 .or(versions.get(0))
-                                .ok_or(Error::io(io::Error::new(io::ErrorKind::NotFound, "File not found"), "Error: NDK version directory is empty"))?
+                                .ok_or(Error::with_prefix(io::Error::from(io::ErrorKind::NotFound), "Error: NDK version directory is empty"))?
                                 .path()
                         },
                         Err(_) => return Err(Error::new(format!(
@@ -79,30 +87,52 @@ pub fn pack_rust_lib(platform: BoltFfiPlatform, verbose: bool, dry: bool) -> Res
     static_path! { BOLT_FFI = TARGET_DIR.join("bin/boltffi") }
 
     if let Err(_) = command_output!("command", "-v", BOLT_FFI.as_path()) {
-        if verbose { println!("Installing boltffi_cli..."); }
+        if verbose { eprintln!("Installing boltffi_cli..."); }
         if !dry { command!("cargo", "install", "boltffi_cli", "--root", TARGET_DIR.as_path())?; }
-        if verbose { println!("Finished installing boltffi_cli"); }
+        if verbose { eprintln!("Finished installing boltffi_cli"); }
     }
 
     if !dry { platform.add_rust_targets(verbose)?; }
 
-    // TODO: check if boltffi.toml exists
-    // if !dry { command!(BOLT_FFI.as_path(), "init")?; }
+    // Check if boltffi.toml exists
+    if !PROJECT_ROOT.join("boltffi.toml")
+        .try_exists()
+        .map_err(|err| Error::with_prefix(err, format!("Error checking if file ./boltffi.toml exists")))?
+    {
+        return Err(Error::new(format!("File ./boltffi.toml is required to exist at the project root directory, but was not found.\nRun command \"{} init\" and edit the file as required.", BOLT_FFI.display())))
+    }
 
     let env = platform.generate_env()?;
     let env = env.iter()
         .map(|(k, v)| (k.as_os_str(), v.as_os_str()))
         .collect::<Box<[_]>>();
 
-    // TODO: skip if already packed (also check file last-modified).
-    if !dry {
-        if verbose {
-            command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string(), "-v")?;
-        } else {
-            command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string())?;
-        }
+    // Skip packing if the the Rust code has NOT been modified since the last time it was packed.
+    let already_packed = {
+        let platform_packed_mtime = match recursive_dir_mtime(platform.packed_dir().as_path()) {
+            Ok(mtime) => Some(mtime),
+            // Platform package has not been packed yet
+            Err(err) if err.io_error_kind().is_some_and(|err| err == io::ErrorKind::NotFound) => None,
+            Err(err) => return Err(err),
+        };
+        let rust_code_mtime = recursive_dir_mtime(PROJECT_ROOT.join("rust/src").as_path())?;
+
+        platform_packed_mtime
+            .is_some_and(|mtime| mtime > rust_code_mtime)
+    };
+
+    if already_packed {
+        eprintln!("budgietlib for {platform} is already packed and not modified; Skipping")
     } else {
-        println!("DRY RUN: packed budgietlib for {platform}")
+        if !dry {
+            if verbose {
+                command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string(), "-v")?;
+            } else {
+                command!(ENV => &env, BOLT_FFI.as_path(), "pack", &platform.to_string())?;
+            }
+        } else {
+            eprintln!("DRY RUN: packed budgietlib for {platform}")
+        }
     }
 
     Ok(())

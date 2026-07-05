@@ -1,4 +1,5 @@
-use std::{ffi::OsStr, fs::{self, DirEntry}, io, mem::ManuallyDrop, path::Path, process::Command};
+use std::{ffi::OsStr, fs::{self, DirEntry}, io, mem::ManuallyDrop, path::Path, process::Command, str::FromStr as _};
+use chrono::{DateTime, Utc};
 use sha2::digest::{Digest, Output};
 use crate::{Error, Errors};
 
@@ -50,12 +51,12 @@ pub fn _command<'a>(command: &'a OsStr, env: &[(&'a OsStr, &'a OsStr)], args: &[
         .stderr(std::io::stderr())
         .stdout(std::io::stdout())
         .status()
-        .map_err(|err| Error::io(err, format!("Error spawning {command:?} command")))?;
+        .map_err(|err| Error::with_prefix(err, format!("Error spawning {command:?} command")))?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(Error::io_other(format!("Command {command:?} exited with error code '{:?}'", status.code()), ""))
+        Err(Error::new(io::Error::other(format!("Command {command:?} exited with error code '{:?}'", status.code()))))
     }
 }
 #[doc(hidden)]
@@ -68,10 +69,10 @@ pub fn _command_output<'a>(command: &'a OsStr, env: &[(&'a OsStr, &'a OsStr)], a
     let output = command
         .args(args)
         .output()
-        .map_err(|err| Error::io(err, format!("Error spawning {command:?} command")))?;
+        .map_err(|err| Error::with_prefix(err, format!("Error spawning {command:?} command")))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::io_other(err.as_ref(), format!("Command {command:?} exited with error code '{:?}'", output.status.code())));
+        return Err(Error::with_prefix(io::Error::other(err.as_ref()), format!("Command {command:?} exited with error code '{:?}'", output.status.code())));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -129,9 +130,9 @@ pub fn read_dir(path: &Path) -> impl Iterator<Item = Result<DirEntry, Error>> {
     }
 
     let result = fs::read_dir(&path)
-        .map_err(|err| Error::io(err, format!("Error opening directory \"{}\"", path.display())))
+        .map_err(|err| Error::with_prefix(err, format!("Error opening directory \"{}\"", path.display())))
         .map(|entries| entries.map(|entry| entry
-            .map_err(|err| Error::io(err, format!("Error reading entry of directory \"{}\"", path.display())))
+            .map_err(|err| Error::with_prefix(err, format!("Error reading entry of directory \"{}\"", path.display())))
         ));
     match result {
         Ok(iter) => ResultIterator::Ok(iter),
@@ -145,7 +146,7 @@ pub fn read_dir_files(path: &Path) -> impl Iterator<Item = Result<DirEntry, Erro
     read_dir(path).filter_map(|result| match result {
         Ok(entry) => {
             let meta = entry.metadata()
-                .map_err(|err| Error::io(err, format!("Error getting metadata for \"{}\"", entry.path().display())));
+                .map_err(|err| Error::with_prefix(err, format!("Error getting metadata for \"{}\"", entry.path().display())));
             match meta {
                 Ok(meta) => meta.is_file().then_some(Ok(entry)),
                 Err(err) => Some(Err(err)),
@@ -153,6 +154,47 @@ pub fn read_dir_files(path: &Path) -> impl Iterator<Item = Result<DirEntry, Erro
         },
         result => Some(result),
     })
+}
+
+/// Read the *Modified time (mtime)* of a directory tree.
+///
+/// Returns the **mtime** of the file within the *directory tree* that was last modified.
+pub fn recursive_dir_mtime(path: &Path) -> Result<DateTime<Utc>, Error> {
+    if !path.metadata()
+        .map_err(|err| Error::with_prefix(err, format!("Error getting file metadata of \"{}\"", path.display())))?
+        .is_dir()
+    {
+        return Err(Error::with_prefix(io::Error::from(io::ErrorKind::NotADirectory), format!("Error getting recursive modified times of \"{}\"", path.display())));
+    }
+
+    let mut mtimes = command_output!("find", path, "-type", "f", "-printf", "%T@\\n")?
+        .split('\n')
+        .filter(|line| !line.is_empty())
+        .map(|mtime| {
+            let unix_time = mtime.split_once('.')
+                .ok_or_else(|| Error::new(format!("Error parsing UNIX Timestamp: expected format \"{{unix_time}}.{{nsecs}}\", but got \"{mtime}\"")))
+                .and_then(|(unix_time, _)| Ok(
+                    u64::from_str(unix_time)
+                        .map_err(|err| Error::with_prefix(io::Error::other(err), "Error parsing u64 from <unix_time>"))?
+                ))?;
+            DateTime::from_timestamp(unix_time as i64, 0)
+                .ok_or_else(|| Error::with_prefix(io::Error::new(io::ErrorKind::InvalidData, "seconds and/or nanoseconds are invalid/out-of-range"), "Error parsing DateTime from UNIX Timestamp \"{unix_time}.{nsecs}\""))
+        })
+        .collect_results::<Box<[_]>>()
+        .map_err(|errors| Error::new(errors.to_string()))?;
+
+    mtimes.sort();
+    mtimes.last()
+        .map(DateTime::clone)
+        .ok_or(())
+        .or_else(|()| Ok({
+            // The directory tree contained no files, check the mtime of the directory file itself.
+            path.metadata()
+                .map_err(|err| Error::with_prefix(err, format!("Could not get metadata of directory \"{}\"", path.display())))?
+                .modified()
+                .map_err(|err| Error::with_prefix(err, format!("Could not get modified time of directory \"{}\"", path.display())))?
+                .into()
+        }))
 }
 
 pub trait IterResultExt<T, E>

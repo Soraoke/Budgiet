@@ -66,13 +66,13 @@ fn _main() -> Result<(), Box<dyn StdError>> {
         Commands::Svg2Drawable { input, output } => {
             // Don't have to worry about symlinks here, metadata follows them.
             let input_is_file = input.metadata()
-                .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                .map_err(|err| Error::with_prefix(err, format!("Error checking if \"{}\" is a file", input.display())))?
                 .is_file()
                 // consider stdin to be a file.
                 || input.as_os_str() == "-";
             let output_is_file = match &output {
                 Some(output) => output.metadata()
-                    .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", input.display())))?
+                    .map_err(|err| Error::with_prefix(err, format!("Error checking if \"{}\" is a file", input.display())))?
                     .is_file(),
                 // Consider stdout to be a file.
                 None => true,
@@ -96,7 +96,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
             fn delete_tmp_file(path: &Path) -> Result<(), Error> {
                 // Delete the temporary, bad drawable file.
                 fs::remove_file(path)
-                    .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", path.display())))
+                    .map_err(|err| Error::with_prefix(err, format!("Error deleting file \"{}\"", path.display())))
             }
 
             if output_is_file {
@@ -175,54 +175,40 @@ impl<E> StdError for Errors<E>
 where E: StdError { }
 
 #[derive(Debug)]
-enum Error {
-    Lone(Box<dyn StdError>),
-    /// An [`io::Error`] with a proper prefix message.
-    WithPrefix {
-        message: String,
-        error: io::Error,
-    }
+struct Error {
+    pub prefix: String,
+    pub error: Box<dyn StdError>,
 }
 impl Error {
-    pub fn new(err: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
-        Self::Lone(err.into())
+    pub fn new(err: impl Into<Box<dyn StdError>>) -> Self {
+        Self { prefix: "".into(), error: err.into() }
     }
-    pub fn io(err: io::Error, msg: impl Display) -> Self {
-        Self::WithPrefix {
-            message: msg.to_string(),
-            error: err,
-        }
+    pub fn with_prefix(err: impl Into<Box<dyn StdError>>, msg: impl Display) -> Self {
+        Self { prefix: msg.to_string(), error: err.into() }
     }
-    pub fn io_other(err: impl Into<Box<dyn StdError + Send + Sync>>, msg: impl Display) -> Self {
-        Self::WithPrefix {
-            message: msg.to_string(),
-            error: io::Error::other(err),
-        }
+
+    pub fn io_error_kind(&self) -> Option<io::ErrorKind> {
+        self.error.downcast_ref::<io::Error>()
+            .map(|err| err.kind())
     }
 }
 impl<E: serde::ser::Error + 'static> From<E> for Error {
     fn from(value: E) -> Self {
-        Self::Lone(Box::new(value))
+        Self::new(Box::new(value))
     }
 }
 impl StdError for Error {
     #[inline(always)]
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            Self::Lone(err) => err.source(),
-            Self::WithPrefix { error, .. } => error.source(),
-        }
+        self.error.source()
     }
 }
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Lone(err) => <_ as Display>::fmt(err, f),
-            Self::WithPrefix { message, error } => {
-                f.write_str(message)?;
-                f.write_str(": ")?;
-                <std::io::Error as Display>::fmt(error, f)
-            },
+        if !self.prefix.is_empty() {
+            f.write_str(&self.prefix)?;
+            f.write_str(": ")?;
         }
+        (&self.error as &dyn Display).fmt(f)
     }
 }

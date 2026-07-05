@@ -1,4 +1,4 @@
-use std::{ffi::OsString, fs, path::{Path, PathBuf}};
+use std::{ffi::OsString, fs, io, path::{Path, PathBuf}};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::SerdeXml;
 use sha2::{Digest as _, Sha256};
@@ -29,7 +29,7 @@ pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
         };
 
         if android_file.try_exists()
-            .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", android_file.display())))?
+            .map_err(|err| Error::with_prefix(err, format!("Error checking if file \"{}\" exists", android_file.display())))?
         {
             if verbose {
                 eprintln!("Vector Drawable \"{}\" already exists; skipping", android_file.display());
@@ -45,7 +45,7 @@ pub fn copy_icons(verbose: bool, dry: bool) -> Result<(), Errors<Error>> {
 
         // Delete the temporary, bad drawable file.
         fs::remove_file(entry.path())
-            .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", entry.path().display())))?;
+            .map_err(|err| Error::with_prefix(err, format!("Error deleting file \"{}\"", entry.path().display())))?;
 
         if verbose {
             if dry { eprint!("Dry run: "); }
@@ -80,7 +80,7 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
         );
 
     let input_is_file = path.metadata()
-        .map_err(|err| Error::io(err, format!("Error checking if \"{}\" is a file", path.display())))?
+        .map_err(|err| Error::with_prefix(err, format!("Error checking if \"{}\" is a file", path.display())))?
         .is_file();
     let return_path = if input_is_file {
         // Won't panic because a path to a file that exists will not terminate in '..'.
@@ -91,7 +91,7 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
 
     if !dry {
         fs::create_dir_all(&tmp_dir)
-            .map_err(|err| Error::io(err, format!("Error creating directory \"{}\"", tmp_dir.display())))?;
+            .map_err(|err| Error::with_prefix(err, format!("Error creating directory \"{}\"", tmp_dir.display())))?;
 
         // Check if this operation was already done by checking that ALL files in path exist in tmp_dir.
         let files_exist = read_dir(path)
@@ -103,7 +103,7 @@ pub fn svg_to_bad_drawable(path: impl AsRef<Path>, verbose: bool, dry: bool) -> 
                 // Check if "{path}/{name}.svg" also exists as "{tmp_dir}/{name}.xml"
                 tmp_dir.join(name).with_extension("xml")
                     .try_exists()
-                    .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", tmp_dir.join(name).with_extension("xml").display())))
+                    .map_err(|err| Error::with_prefix(err, format!("Error checking if file \"{}\" exists", tmp_dir.join(name).with_extension("xml").display())))
             }))
             .collect::<Result<Box<[_]>, _>>()?;
 
@@ -144,7 +144,7 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
     let unpkg_dir = TARGET_DIR.join("bin").join(PKG_NAME);
 
     if unpkg_dir.try_exists()
-        .map_err(|err| Error::io(err, format!("Error checking if file \"{}\" exists", unpkg_dir.display())))?
+        .map_err(|err| Error::with_prefix(err, format!("Error checking if file \"{}\" exists", unpkg_dir.display())))?
     {
         if verbose {
             eprintln!("vd-tool already downloaded; Skipping")
@@ -157,10 +157,10 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
     }
     command_output!("curl", "--location", PKG_URL, "--output", zip_file)?;
     let sha256 = Sha256::digest(fs::read(&zip_file)
-        .map_err(|err| Error::io(err, format!("Error reading file \"{}\"", zip_file.display())))?
+        .map_err(|err| Error::with_prefix(err, format!("Error reading file \"{}\"", zip_file.display())))?
     );
     checksum::<Sha256>(PKG_SHA256, sha256)
-        .map_err(|err| Error::io(err, format!("SHA256 checksum of \"{PKG_NAME}\" failed")))?;
+        .map_err(|err| Error::with_prefix(err, format!("SHA256 checksum of \"{PKG_NAME}\" failed")))?;
     if verbose {
         eprintln!("Download completed");
     }
@@ -171,7 +171,7 @@ fn unpack_vd_tool(verbose: bool) -> Result<(), Error> {
     }
 
     fs::remove_file(&zip_file)
-        .map_err(|err| Error::io(err, format!("Error deleting file \"{}\"", zip_file.display())))?;
+        .map_err(|err| Error::with_prefix(err, format!("Error deleting file \"{}\"", zip_file.display())))?;
 
     Ok(())
 }
@@ -213,8 +213,8 @@ impl BadDrawable {
         let path = path.as_ref();
         serde_xml_rs::from_reader::<Self, _>(
             fs::File::open(path)
-                .map_err(|err| Error::io(err, format!("Error opening file \"{}\" for reading", path.display())))?
-        ).map_err(|err| Error::io_other(err, format!("Error deserializing file \"{}\" as XML", path.display())))
+                .map_err(|err| Error::with_prefix(err, format!("Error opening file \"{}\" for reading", path.display())))?
+        ).map_err(|err| Error::with_prefix(io::Error::other(err), format!("Error deserializing file \"{}\" as XML", path.display())))
     }
 
     /// [`Serialize`] the Vector Drawable with the correct data and write the output to a file.
@@ -232,9 +232,9 @@ impl BadDrawable {
             .write(true)
             .truncate(true)
             .open(path)
-            .map_err(|err| Error::io(err, format!("Error opening file \"{}\" for writing", path.display())))?;
+            .map_err(|err| Error::with_prefix(err, format!("Error opening file \"{}\" for writing", path.display())))?;
 
         config.to_writer(&mut drawable_file, self)
-            .map_err(|err| Error::io_other(err, format!("Error serializing Drawable data for \"{}\"", path.display())))
+            .map_err(|err| Error::with_prefix(io::Error::other(err), format!("Error serializing Drawable data for \"{}\"", path.display())))
     }
 }
