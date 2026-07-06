@@ -110,15 +110,6 @@ impl Color {
             _ => Err(ColorParseError::InvalidHexLength { len }),
         }
     }
-
-    // #[cfg(target_os = "android")]
-    // pub fn from_android_packed_value(val: u64) -> Self {
-
-    // }
-    // #[cfg(target_os = "android")]
-    // pub fn to_android_packed_value(self) -> u64 {
-
-    // }
 }
 #[data(impl)]
 impl Display for Color {

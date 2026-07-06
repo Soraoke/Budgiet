@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 use boltffi::{data, export};
 use chrono::{DateTime, Utc};
-use crate::{Money, db::{DbError, on_fake_or_real_db}, items::Item, location::LocationDbEntry, tags::Tag};
+use crate::{Money, db::{DbError, on_fake_or_real_db}, items::{Item, Tax}, location::LocationDbEntry, tags::Tag};
 
 static FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
     // TODO:
@@ -11,17 +11,18 @@ static FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
 /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
 /// The returned list should be cached in the memory of the native application running.
 #[export]
-pub fn get_fake_transactions() -> &'static [Transaction] { todo!() }
+pub fn get_fake_transactions() -> &'static [Transaction] { &*FAKE_TRANSACTIONS }
 
 #[derive(Debug, Clone)]
 #[data]
 pub struct Transaction {
-    date: DateTime<Utc>,
-    location: Option<LocationDbEntry>,
-    price: Money,
-    items: Vec<Item>,
-    tags: Vec<Tag>,
-    description: String,
+    pub date: DateTime<Utc>,
+    pub location: Option<LocationDbEntry>,
+    pub price: Money,
+    pub items: Vec<Item>,
+    pub tax: Tax,
+    pub tags: Vec<Tag>,
+    pub description: String,
 }
 impl PartialEq for Transaction {
     #[inline]
@@ -46,7 +47,7 @@ impl PartialOrd for Transaction {
 #[export]
 pub fn get_transactions_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<TransactionDbEntry>, DbError> {
     on_fake_or_real_db(
-        |fake_db| Ok(fake_db.get_transactions_page(query.as_ref().map(String::as_str), start, len)),
+        |fake_db| fake_db.get_transactions_page(query.as_ref().map(String::as_str), start, len),
         || {
             todo!("Search DB with {query:?}, {start:?}, {len:?}")
         }

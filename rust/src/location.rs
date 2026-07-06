@@ -25,7 +25,7 @@ pub fn get_fake_locations() -> &'static [Location] { &*FAKE_LOCATIONS }
 #[export]
 pub fn get_locations_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<LocationDbEntry>, DbError> {
     on_fake_or_real_db(
-        |fake_db| Ok(fake_db.get_locations_page(query.as_ref().map(String::as_str), start, len)),
+        |fake_db| fake_db.get_locations_page(query.as_ref().map(String::as_str), start, len),
         || {
             todo!("Search DB with {query:?}, {start:?}, {len:?}")
         }

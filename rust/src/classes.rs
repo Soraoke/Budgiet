@@ -2,9 +2,10 @@
 
 use std::fmt::Display;
 use boltffi::{custom_type, data};
+use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use rusty_money::{Findable as _, Locale};
-use crate::{Currency, Money, price::ParseMoneyError};
+use crate::{Currency, Money, price::{ALL_CURRENCIES, ParseMoneyError}};
 
 #[derive(Clone, Copy)]
 #[data]
@@ -24,7 +25,7 @@ impl FfiCurrency {
     ///
     /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
     /// The returned list should be cached in the memory of the native application running.
-    pub fn list() -> &'static [FfiCurrency] { todo!() }
+    pub fn list() -> Vec<Self> { ALL_CURRENCIES.iter().map(|c| FfiCurrency::to_ffi(c)).collect::<Vec<_>>() }
 }
 #[data(impl)]
 impl Default for FfiCurrency {
@@ -169,4 +170,13 @@ custom_type! {
         3 => Ok(Locale::EnBy),
         _ => Err(boltffi::CustomTypeConversionError),
     },
+}
+
+custom_type! {
+    pub DateTimeUtc,
+    remote = DateTime<Utc>,
+    repr = i64,
+    into_ffi = |value: &DateTime<Utc>| value.timestamp(),
+    try_from_ffi = |value: i64| DateTime::<Utc>::from_timestamp(value, 0)
+        .ok_or(boltffi::CustomTypeConversionError),
 }

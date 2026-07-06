@@ -1,5 +1,6 @@
-mod classes;
-mod db;
+#[doc(hidden)]
+pub mod classes;
+pub mod db;
 pub mod color;
 pub mod description;
 pub mod items;

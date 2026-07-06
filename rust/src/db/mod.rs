@@ -9,6 +9,7 @@ pub enum DbError {
     InsertError,
     EntryNotFound,
     IndexOutOfBounds,
+    Other(String),
 }
 
 /// Runs the operation on the **fake database**,
