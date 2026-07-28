@@ -14,3 +14,4 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde-xml-rs = "0.8.2"
 sha2 = "0.10.9"
 xml = "1.2.1"
+toml = "1.1.3"

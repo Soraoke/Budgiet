@@ -1,4 +1,4 @@
-use std::{ffi::OsString, fmt::Display, io, path::PathBuf};
+use std::{ffi::OsString, fmt::Display, fs, io, path::PathBuf};
 use crate::{Error, PROJECT_ROOT, TARGET_DIR, command, command_output, static_path, utils::{read_dir, recursive_dir_mtime}};
 
 pub enum BoltFfiPlatform {
@@ -87,9 +87,37 @@ pub fn pack_rust_lib(platform: BoltFfiPlatform, verbose: bool, dry: bool) -> Res
     static_path! { BOLT_FFI = TARGET_DIR.join("bin/boltffi") }
 
     if let Err(_) = command_output!("command", "-v", BOLT_FFI.as_path()) {
-        if verbose { eprintln!("Installing boltffi_cli..."); }
-        if !dry { command!("cargo", "install", "boltffi_cli", "--root", TARGET_DIR.as_path())?; }
-        if verbose { eprintln!("Finished installing boltffi_cli"); }
+        // Get version of boltffi_cli to install from the Rust native code Cargo.toml.
+        // Note: boltffi_cli version must match that of the library crate.
+        let version = {
+            let path = PROJECT_ROOT.join("rust/Cargo.toml");
+            let cargo = toml::from_str::<toml::Value>(
+                fs::read_to_string(&path)
+                    .map_err(|err| Error::with_prefix(err, format!("Error reading file \"{}\"", path.display())))?
+                    .as_str()
+            ).map_err(|err| Error::with_prefix(err, format!("Error parsing TOML value from \"{}\"", path.display())))?;
+
+            cargo.as_table()
+                .and_then(|cargo| cargo.get("dependencies").and_then(toml::Value::as_table))
+                .and_then(|deps| deps.get("boltffi"))
+                .and_then(|deps| match deps {
+                    // boltffi dependency version is defined within a table (i.e. `boltffi = { version = "<version>" }`).
+                    toml::Value::Table(boltffi) => boltffi.get("version")
+                        .and_then(toml::Value::as_str)
+                        .map(|v| v.to_string()),
+                    // boltffi dependency version is defined inline (i.e. `boltffi = "<version>"`).
+                    toml::Value::String(version) => Some(version.to_string()),
+                    // boltffi dependency does not exist.
+                    _ => None,
+                })
+                .ok_or_else(|| Error::new(format!("Dependency \"boltffi\" is not defined in manifest file \"{}\"", path.display())))?
+        };
+
+        let package_id = format!("boltffi_cli@{version}");
+
+        if verbose { eprintln!("Installing {package_id}..."); }
+        if !dry { command!("cargo", "install", format!("{package_id}"), "--root", TARGET_DIR.as_path())?; }
+        if verbose { eprintln!("Finished installing {package_id}"); }
     }
 
     if !dry { platform.add_rust_targets(verbose)?; }
