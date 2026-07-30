@@ -1,8 +1,11 @@
-use std::{fmt::Display, sync::LazyLock, time::SystemTime};
+use std::{fmt::Display, format, sync::LazyLock, time::SystemTime, todo, write};
 use boltffi::{data, export};
 use crate::db::{DbError, on_fake_or_real_db};
 
-static FAKE_LOCATIONS: LazyLock<[Location; 11]> = LazyLock::new(|| [
+/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
+pub fn fake_locations() -> &'static [Location] { &*__FAKE_LOCATIONS }
+#[doc(hidden)]
+static __FAKE_LOCATIONS: LazyLock<[Location; 11]> = LazyLock::new(|| [
     Location::new_fake("Chipotle", "123 Main Street, Bronx NY"),
     Location::new_fake("Aldi", "456 IsNuts Lane, Los Angeles CA"),
     Location::new_fake("Bowling Alley", "789 Trampoline Street, Detroit MI"),
@@ -15,12 +18,13 @@ static FAKE_LOCATIONS: LazyLock<[Location; 11]> = LazyLock::new(|| [
     Location::new_fake("The Little Grand Market", "710 Grandview Xing Wy Suite 112, Columbus, OH 43215"),
     Location::new_fake("Five Guys", "3273 Steelyard Dr, Cleveland, OH 44109"),
 ]);
-/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
+/// Returns an array containing sample [`Locations`][Location] that are used for demos and App Tests.
 ///
 /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
 /// The returned list should be cached in the memory of the native application running.
 #[export]
-pub fn get_fake_locations() -> &'static [Location] { &*FAKE_LOCATIONS }
+#[doc(hidden)]
+pub fn get_fake_locations() -> Vec<Location> { fake_locations().to_vec() }
 
 #[export]
 pub fn get_locations_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<LocationDbEntry>, DbError> {
@@ -114,19 +118,33 @@ impl LocationDbEntry {
         )
     }
 }
-#[data(impl)]
 impl PartialOrd for LocationDbEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-#[data(impl)]
 impl Ord for LocationDbEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.last_used.cmp(&other.last_used)
             .reverse() // Greater times means more recent use, so should go first.
             .then(self.id.cmp(&other.id))
             .then(self.data.cmp(&other.data))
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_LocationDbEntry {
+    use super::*;
+
+    #[data(impl)]
+    impl LocationDbEntry {
+        pub fn compare(&self, other: &LocationDbEntry) -> i8 {
+            match <Self as Ord>::cmp(self, other) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            }
+        }
     }
 }
 
@@ -163,12 +181,11 @@ impl Location {
         }
     }
 
-    #[allow(unused_variables)]
     pub fn validate_address(address: &str, is_new: bool) -> Result<(), String> {
+        #![allow(unused_variables)]
         Ok(())
     }
 }
-#[data(impl)]
 impl Display for Location {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let address = match &self.address {
@@ -176,5 +193,15 @@ impl Display for Location {
             None => String::new(),
         };
         write!(f, "{}{address}", self.name)
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Location {
+    use super::*;
+
+    #[data(impl)]
+    impl Location {
+        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }

@@ -43,7 +43,6 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val newTransactionViewModel by this.viewModels<NewTransactionViewModel>()
@@ -51,6 +50,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // // Apply fake/sample data for demo
+        // this.newTransactionViewModel.apply {
+        //     location.useAlternativeLocations(com.example.budgiet.ui.FAKE_LOCATIONS)
+        //     items.items.addAll(com.example.budgiet.ui.FAKE_ITEMS)
+        //     items.tax = com.example.budgiet.ui.Tax.Percentage(8.23)
+        //     tags.useAlternativeTags(com.example.budgiet.ui.FAKE_TAGS)
+        // }
 
         UserIcons.load(this)
         setContent {
@@ -107,16 +114,11 @@ fun MainPage(modifier: Modifier = Modifier, newTransactionViewModel: NewTransact
             NewTransactionForm(
                 viewModel = newTransactionViewModel,
                 onDismiss = dismissBottomSheet,
-                userLocale = remember { Locale.getDefault() }
+                userLocale = remember { Locale.current() }
             )
         }
     }
 }
-
-data class DbEntry<T>(
-    val id: UInt,
-    val data: T,
-)
 
 private var userIcons: Map<String, Int>? = null
 private var userIconsJob: Job? = null

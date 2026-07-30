@@ -45,7 +45,6 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
@@ -67,13 +65,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.budgiet.DbEntry
+import com.example.budgiet.Amount
+import com.example.budgiet.AmountType
+import com.example.budgiet.Currency
+import com.example.budgiet.Decimal
+import com.example.budgiet.Item
+import com.example.budgiet.Locale
+import com.example.budgiet.Location
+import com.example.budgiet.LocationDbEntry
+import com.example.budgiet.Money
 import com.example.budgiet.R
 import com.example.budgiet.RecentItems
 import com.example.budgiet.Result
-import com.example.budgiet.formatPrice
+import com.example.budgiet.Tax
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
+import com.example.budgiet.getFakeLocations
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -86,15 +93,13 @@ import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.TextIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
-import java.util.Currency
-import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
 /** The maximum number of characters (graphemes) allowed in the Description field.
  * This value should not be changed as the database enforces the value. */
-const val DESCRIPTION_MAX_LENGTH = 255
+const val DESCRIPTION_MAX_LENGTH = 255uL
 val DESCRIPTION_FIELD_MIN_HEIGHT = 125.dp
 val DESCRIPTION_FIELD_MAX_HEIGHT = 300.dp
 
@@ -104,13 +109,12 @@ val FIELD_TIMEOUT = 500.milliseconds
 
 class NewTransactionViewModel(
     // TODO: choose currency (and locale) from settings instead, only default to locale if the setting is not set.
-    locale: Locale = Locale.getDefault(),
-    initialCurrency: Currency = Currency.getInstance(locale),
+    initialCurrency: Currency = Currency.current()
 ): ViewModel() {
     var date by mutableStateOf<LocalDate>(LocalDate.now())
-    var location = LocationViewModel()
+    var selectedLocation by mutableStateOf<LocationDbEntry?>(null)
     var currency by mutableStateOf(initialCurrency)
-    var customPrice by mutableDoubleStateOf(0.0)
+    var customPrice by mutableStateOf(Decimal.zero())
     val items = ItemsViewModel()
     val tags = TagsViewModel()
     var description by mutableStateOf("")
@@ -121,10 +125,10 @@ class NewTransactionViewModel(
 
     fun cancel() {
         this.date = LocalDate.now()
-        this.location.selectedLocation = null
+        this.selectedLocation = null
         // Currency should persist even after a cancel
         // this.currency = Currency.getInstance(Locale.getDefault())
-        this.customPrice = 0.0
+        this.customPrice = Decimal.zero()
         this.items.reset()
         this.tags.selectedTags.clear()
         this.description = ""
@@ -155,7 +159,7 @@ private sealed class DialogState {
                                 "id" to state.location.id,
                                 "name" to state.location.data.name,
                                 "address" to state.location.data.address,
-                                "lastUsed" to state.location.data.lastUsed,
+                                "lastUsed" to state.location.lastUsed,
                             )
                             else -> null
                         },
@@ -169,9 +173,9 @@ private sealed class DialogState {
                             is ItemsDialogState.Edit -> mapOf(
                                 "name" to state.value.name,
                                 "unitPrice" to state.value.unitPrice,
-                                "amountType" to state.value.amount.type.toString(),
+                                "amountType" to state.value.amount.ty().toString(),
                                 "amountValue" to when (state.value.amount) {
-                                    is Amount.Units -> state.value.amount.value
+                                    is Amount.Units -> state.value.amount.value0
                                     is Amount.Measured -> state.value.amount.value
                                 },
                                 "amountLabel" to when (state.value.amount) {
@@ -197,13 +201,13 @@ private sealed class DialogState {
                         "Edit" -> LocationPickerState.Edit(run {
                             val location = map["location"]!! as Map<String, Any?>
 
-                            DbEntry(
-                                id = location["id"]!! as UInt,
+                            LocationDbEntry(
+                                id = location["id"]!! as ULong,
                                 data = Location(
                                     name = location["name"]!! as String,
                                     address = location["address"] as String?,
-                                    lastUsed = location["lastUsed"] as LocalTime?,
-                                )
+                                ),
+                                lastUsed = location["lastUsed"] as Instant,
                             )
                         })
                         else -> throw IllegalStateException("Invalid discriminant for 'LocationPickerState': $discriminant")
@@ -221,13 +225,14 @@ private sealed class DialogState {
 
                             Item(
                                 name = item["name"]!! as String,
-                                unitPrice = item["unitPrice"]!! as Double,
+                                unitPrice = item["unitPrice"]!! as Decimal,
                                 amount = when (val type = item["amountType"]!! as String) {
-                                    Amount.Type.Units.toString() -> Amount.Units(item["amountValue"]!! as UInt)
-                                    Amount.Type.Measured.toString() -> Amount.Measured(
-                                        value = item["amountValue"]!! as Double,
+                                    AmountType.UNITS.toString() -> Amount.Units(item["amountValue"]!! as UInt)
+                                    AmountType.MEASURED.toString() -> Amount.Measured(
+                                        value = item["amountValue"]!! as Decimal,
                                         label = item["amountLabel"]!! as String,
                                     )
+
                                     else -> throw IllegalStateException("Invalid discriminant for ItemsDialogState.Edit.Item.amount.type: $type")
                                 }
                             )
@@ -272,7 +277,7 @@ fun NewTransactionForm(
         }
         FormField("Location") {
             LocationField(
-                viewModel = viewModel.location,
+                selectedLocation = viewModel.selectedLocation?.data,
                 onClickSelect = { dialogState = DialogState.LocationPicker(LocationPickerState.Search) },
                 onClickNearby = { dialogState = DialogState.LocationPicker(LocationPickerState.Nearby) },
             )
@@ -335,9 +340,10 @@ fun NewTransactionForm(
             onSubmit = { viewModel.date = it },
         )
         is DialogState.LocationPicker -> LocationPickerDialog(
-            viewModel = viewModel.location,
             state = dialogState.state,
             onStateChange = { dialogState.state = it },
+            selectedLocation = viewModel.selectedLocation,
+            onSelectLocation = { viewModel.selectedLocation = it },
             onDismiss = dialogDismiss,
         )
         is DialogState.Items -> ItemsDialog(
@@ -437,7 +443,7 @@ fun PriceField(
         val fieldText = if (enabled) {
             state.fieldText
         } else {
-            currency.formatPrice(viewModel.items.totalPrice, locale)
+            Money.fromDecimal(viewModel.items.totalPrice, currency).format(locale, false)
         }
 
         OutlinedTextField(
@@ -470,7 +476,7 @@ fun PriceField(
                 )
             },
             placeholder = {
-                Text(viewModel.currency.formatPrice(0.0, locale),
+                Text(remember(currency, locale) { Money.fromDecimal(Decimal.zero(), currency).format(locale, false) },
                     textAlign = TextAlign.End,
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.outline,
@@ -521,13 +527,13 @@ fun CurrencySelectorButton(
     selectedCurrency: Currency,
     onCurrencyChange: (Currency) -> Unit,
 ) {
-    val localeCurrency = remember(locale) { Currency.getInstance(locale) }
+    val localeCurrency = remember(locale) { Currency.localeDefault(locale) }
 
     PlainToolTipBox("Select currency") {
         TextButton(
             modifier = modifier.padding(start = 8.dp)
                 .semantics {
-                    stateDescription = "${selectedCurrency.currencyCode} ${selectedCurrency.displayName}"
+                    stateDescription = "${selectedCurrency.code()} ${selectedCurrency.name()}"
                 },
             onClick = { onMenuStateChange(!showCurrencyMenu) },
             contentPadding = ButtonDefaults.TextButtonContentPadding.let { padding ->
@@ -542,7 +548,7 @@ fun CurrencySelectorButton(
             Icon(painterResource(R.drawable.arrow_drop_down_24px), null)
 
             val icon = getCurrencyIcon(selectedCurrency)
-            val code = selectedCurrency.currencyCode
+            val code = selectedCurrency.code()
 
             if (icon != null) {
                 Icon(icon, null)
@@ -550,7 +556,7 @@ fun CurrencySelectorButton(
 
             // Only show currency name in the field if it is not the locale's currency.
             // If the icon is not shown, must show the currency code either way.
-            if (code != localeCurrency.currencyCode
+            if (code != localeCurrency.code()
             || icon == null
             || !hideDefaultCurrencyCode) {
                 Text(code)
@@ -564,7 +570,7 @@ fun CurrencySelectorButton(
     val recentCurrencies by RecentItems.Currency.items()
     // This list gets re-sorted (not recalculated) every time the state of recentCurrencies changes.
     val orderedCurrencies = remember {
-        val currencies = Currency.getAvailableCurrencies()
+        val currencies = Currency.list()
             // This can be a MutableList, and not a MutableStateList because the sort state lies in recentCurrencies.
             .toMutableList()
 
@@ -576,7 +582,7 @@ fun CurrencySelectorButton(
         currencies
             // ... but keep Locale currency first.
             .subList(1, currencies.size)
-            .sortBy { currency -> currency.currencyCode }
+            .sortBy { currency -> currency.code() }
 
         currencies
     }
@@ -584,7 +590,6 @@ fun CurrencySelectorButton(
     val currencySearchState = rememberTextFieldState()
     val currencyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
     fun scrollToTop() {
         coroutineScope.launch {
             delay(FIELD_TIMEOUT)
@@ -599,9 +604,9 @@ fun CurrencySelectorButton(
 
     fun List<Currency>.currencySearchFilter(query: CharSequence): List<Currency> {
         return this.filter { currency ->
-            currency.currencyCode
+            currency.code()
                 .contains(query, ignoreCase = true)
-            || currency.displayName
+            || currency.name()
                 .contains(query, ignoreCase = true)
         }
     }
@@ -654,16 +659,16 @@ fun CurrencySelectorButton(
 
         this.items(
             items = orderedCurrencies.currencySearchFilter(currencySearchState.text),
-            key = { currency -> currency.currencyCode }
+            key = { currency -> currency.code() }
         ) { currency ->
-            PlainToolTipBox(currency.displayName) {
+            PlainToolTipBox(currency.name()) {
                 this.MenuItem(
                     // Apply a scrim color for the one that is selected.
                     modifier = Modifier
                         .run { if (currency == selectedCurrency) {
                             background(MaterialTheme.colorScheme.surfaceDim)
                         } else this },
-                    headlineContent = { Text(currency.currencyCode) },
+                    headlineContent = { Text(currency.code()) },
                     // Even if there is no icon for this currency, activate leadingIcon to align all the currency codes.
                     leadingIcon = {
                         getCurrencyIcon(currency)?.let { icon ->
@@ -672,7 +677,7 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        RecentItems.Currency.moveToFront(currency, context)
+                        RecentItems.Currency.moveToFront(currency)
                         onCurrencyChange(currency)
                     },
                 )
@@ -693,11 +698,11 @@ fun CurrencySelectorButton(
                     },
                     onClick = {
                         closeMenu()
-                        RecentItems.Currency.clear(context)
+                        RecentItems.Currency.clear()
                         // Sort ordered currencies alphabetically to reset the list
                         orderedCurrencies
                             .subList(1, orderedCurrencies.size) // Don't include locale currency in the sorting.
-                            .sortBy { currency -> currency.currencyCode }
+                            .sortBy { currency -> currency.code() }
                     }
                 )
             }
@@ -767,13 +772,13 @@ private fun NewTransactionPreview() {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
-                    location.selectedLocation = DbEntry(0u, FAKE_LOCATIONS[0u]!!)
+                    selectedLocation = LocationDbEntry(0u, getFakeLocations()[0])
                     items.items.addAll(FAKE_ITEMS)
-                    items.tax = Tax.Percentage(2.5)
+                    items.tax = Tax.Percentage(Decimal.new(2.5))
                     tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },
-                userLocale = remember { Locale.getDefault() },
+                userLocale = remember { Locale.current() },
                 onDismiss = { }
             )
         }
@@ -783,7 +788,7 @@ private fun NewTransactionPreview() {
 @Preview(showBackground = true, widthDp = 150, heightDp = 400)
 @Composable
 fun CurrenciesDropDownPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme {
         CurrencySelectorButton(
@@ -797,7 +802,7 @@ fun CurrenciesDropDownPreview() {
             showCurrencyMenu = true,
             onMenuStateChange = { },
             locale = locale,
-            selectedCurrency = remember(locale) { Currency.getInstance(locale) },
+            selectedCurrency = remember(locale) { Currency.current() },
             onCurrencyChange = { },
         )
     }

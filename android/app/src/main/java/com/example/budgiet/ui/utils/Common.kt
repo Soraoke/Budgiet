@@ -77,6 +77,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -185,6 +190,27 @@ fun TextIconButton(
         Spacer(Modifier.width(TEXT_ICON_BUTTON_SPACING))
         text()
     }
+}
+
+/** Displays a [Text] message for the given **`error`**, with an optional **`prefix`**.
+ *
+ * If the [Throwable] contained no message,
+ * the Object's class name will be displayed instead. */
+@Composable
+fun ErrorText(prefix: String?, error: Throwable) {
+    Text(buildAnnotatedString {
+        if (prefix != null) {
+            withStyle(
+                SpanStyle(
+                    fontWeight = FontWeight.Bold,
+                    textDecoration = TextDecoration.Underline,
+                )
+            ) {
+                append("$prefix:")
+            }
+        }
+        append(" ${error.message ?: error.javaClass.name}")
+    })
 }
 
 /** A shortcut for adding a [PlainTooltip] to some **content**.

@@ -1,6 +1,6 @@
 #![allow(unstable_name_collisions)]
 
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, format, str::FromStr, todo};
 use boltffi::{data, export};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -111,7 +111,17 @@ impl Color {
         }
     }
 }
-#[data(impl)]
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Color {
+    use super::*;
+
+    #[data(impl)]
+    impl Color {
+        pub fn to_string(&self) -> String { <Self as ToString>::to_string(&self) }
+        pub fn from_str(s: &str) -> Result<Self, ColorParseError> { <Self as FromStr>::from_str(s) }
+    }
+}
 impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&if self.alpha == 0xFF {
@@ -121,7 +131,6 @@ impl Display for Color {
         })
     }
 }
-#[data(impl)]
 impl FromStr for Color {
     type Err = ColorParseError;
 
@@ -179,52 +188,62 @@ pub fn correct_color_contrast(background: Color, foreground: Color) -> Color {
     //             }
     //         }
     // }
-    todo!()
+    todo!("Alter the ${foreground} color to have enough contrast to be legible when placed on the {background} color")
+}
+
+macro_rules! define_colors {
+    ($($name:ident = $val:literal;)*) => {
+        #[allow(non_upper_case_globals)]
+        impl UserColorPalette {
+            $(pub const $name: $crate::color::Color = $crate::color::Color::new_rgb($val);)*
+        }
+        // #[doc(hidden)]
+        // #[allow(non_snake_case)]
+        // mod __private_UserColorPalette {
+        //     use super::*;
+
+        //     #[boltffi::data(impl)]
+        //     impl UserColorPalette {
+        //         $(pub const fn $name() -> $crate::color::Color { Self::$name })*
+        //     }
+        // }
+        #[doc(hidden)]
+        static __USER_COLOR_PALETTE_LIST: &[$crate::color::Color] = &[
+            $(UserColorPalette::$name,)*
+        ];
+    };
 }
 
 pub struct UserColorPalette;
-#[allow(non_upper_case_globals)]
+define_colors! {
+    Red       = 0xF3413D;
+    Orange    = 0xFA7B40;
+    Brown     = 0xB37200;
+    Yellow    = 0xF3E248;
+    Green     = 0x21BF13;
+    Forest    = 0x00966E;
+    Turquoise = 0x37FDAD;
+    Cyan      = 0x34F6FA;
+    Blue      = 0x3D50F3;
+    Purple    = 0xAA07FF;
+    Lavender  = 0xD88FFF;
+    Pink      = 0xFF84EF;
+    Grey      = 0xCFCFCF;
+    DarkGrey  = 0x6B6B6B;
+}
+impl UserColorPalette {
+    /// Returns a slice containing the colors of the defined [`UserColorPalette`].
+    pub const fn list() -> &'static [Color] { __USER_COLOR_PALETTE_LIST }
+}
 #[export]
 impl UserColorPalette {
-    pub const Red       : Color = Color::new_rgb(0xF3413D);
-    pub const Orange    : Color = Color::new_rgb(0xFA7B40);
-    pub const Brown     : Color = Color::new_rgb(0xB37200);
-    pub const Yellow    : Color = Color::new_rgb(0xF3E248);
-    pub const Green     : Color = Color::new_rgb(0x21BF13);
-    pub const Forest    : Color = Color::new_rgb(0x00966E);
-    pub const Turquoise : Color = Color::new_rgb(0x37FDAD);
-    pub const Cyan      : Color = Color::new_rgb(0x34F6FA);
-    pub const Blue      : Color = Color::new_rgb(0x3D50F3);
-    pub const Purple    : Color = Color::new_rgb(0xAA07FF);
-    pub const Lavender  : Color = Color::new_rgb(0xD88FFF);
-    pub const Pink      : Color = Color::new_rgb(0xFF84EF);
-    pub const Grey      : Color = Color::new_rgb(0xCFCFCF);
-    pub const DarkGrey  : Color = Color::new_rgb(0x6B6B6B);
-
-    /// Returns a slice containing the colors of the defined [`UserColorPalette`].
+    /// Returns an array containing the colors of the defined [`UserColorPalette`].
     ///
     /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
     /// The returned list should be cached in the memory of the native application running.
-    pub const fn list() -> &'static [Color] { USER_COLOR_PALETTE_LIST }
+    #[doc(hidden)]
+    pub fn color_list() -> Vec<Color> { Self::list().to_vec() }
 }
-
-// TODO: use a macro instead
-static USER_COLOR_PALETTE_LIST: &[Color] = &[
-    UserColorPalette::Red,
-    UserColorPalette::Orange,
-    UserColorPalette::Brown,
-    UserColorPalette::Yellow,
-    UserColorPalette::Green,
-    UserColorPalette::Forest,
-    UserColorPalette::Turquoise,
-    UserColorPalette::Cyan,
-    UserColorPalette::Blue,
-    UserColorPalette::Purple,
-    UserColorPalette::Lavender,
-    UserColorPalette::Pink,
-    UserColorPalette::Grey,
-    UserColorPalette::DarkGrey,
-];
 
 #[cfg(test)]
 mod tests {

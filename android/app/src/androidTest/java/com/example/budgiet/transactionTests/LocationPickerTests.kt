@@ -30,26 +30,26 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.example.budgiet.DbEntry
+import com.example.budgiet.Location
+import com.example.budgiet.LocationDbEntry
 import com.example.budgiet.assert
+import com.example.budgiet.getFakeLocations
 import com.example.budgiet.getSemanticsProperty
 import com.example.budgiet.onDescendants
-import com.example.budgiet.ui.FAKE_LOCATIONS
-import com.example.budgiet.ui.Location
 import com.example.budgiet.ui.LocationField
 import com.example.budgiet.ui.LocationPickerDialog
 import com.example.budgiet.ui.LocationPickerState
-import com.example.budgiet.ui.LocationViewModel
 import org.junit.Rule
 import org.junit.Test
 
 const val DIALOG_TEST_TAG = "LocationPickerDialog"
+val FAKE_LOCATIONS = getFakeLocations()
 
 class LocationPickerTests {
     private class TestState(
         private val rule: ComposeContentTestRule,
-        locations: Map<UInt, Location> = FAKE_LOCATIONS,
-        initiallySelectedLocation: DbEntry<Location>? = null,
+        locations: List<Location> = FAKE_LOCATIONS,
+        initiallySelectedLocation: Location? = null,
     ) {
         // These buttons exist mutually exclusive.
 
@@ -93,15 +93,26 @@ class LocationPickerTests {
         private var dialogState by mutableStateOf<LocationPickerState?>(null)
 
         init {
-            val viewModel = LocationViewModel().apply {
-                useAlternativeLocations(locations)
-                selectedLocation = initiallySelectedLocation
+            val dbEntries = run {
+                LocationDbEntry.clearAll()
+                val entries = mutableListOf<LocationDbEntry>()
+
+                for (data in locations) {
+                    entries.add(LocationDbEntry.insertNew(data))
+                }
+                entries as List<LocationDbEntry>
             }
+            var selectedLocation by mutableStateOf(initiallySelectedLocation?.let { location ->
+                when (val found = dbEntries.find { it.data.name == location.name && it.data.address == location.address }) {
+                    null -> throw Exception("Could not find location $location")
+                    else -> found
+                }
+            })
 
             this.rule.setContent {
                 Row {
                     LocationField(
-                        viewModel = viewModel,
+                        selectedLocation = selectedLocation?.data,
                         onClickSelect = { dialogState = LocationPickerState.Search },
                         onClickNearby = { dialogState = LocationPickerState.Nearby },
                     )
@@ -110,9 +121,10 @@ class LocationPickerTests {
                 dialogState?.let { state ->
                     LocationPickerDialog(
                         modifier = Modifier.testTag(DIALOG_TEST_TAG),
-                        viewModel = viewModel,
                         state = state,
                         onStateChange = { dialogState = it },
+                        selectedLocation = selectedLocation,
+                        onSelectLocation = { selectedLocation = it },
                         onDismiss = { dialogState = null },
                     )
                 }
@@ -126,7 +138,7 @@ class LocationPickerTests {
     @Test
     fun selectLocation() {
         val state = TestState(this.rule)
-        val targetItem = FAKE_LOCATIONS[3u]!!
+        val targetItem = FAKE_LOCATIONS[3]
 
         // Select the item.
         state.showLocationPickerDialog()
@@ -141,7 +153,7 @@ class LocationPickerTests {
     @Test
     fun searchLocation() {
         val state = TestState(this.rule)
-        val targetName = FAKE_LOCATIONS[3u]!!.name
+        val targetName = FAKE_LOCATIONS[3].name
         val query = targetName.take(5)
 
         state.showLocationPickerDialog()
@@ -196,7 +208,7 @@ class LocationPickerTests {
     @Test
     fun editLocation() {
         val state = TestState(this.rule)
-        val targetItem = FAKE_LOCATIONS[0u]!!
+        val targetItem = FAKE_LOCATIONS[0]
         val newName = "Chipped"
 
         state.showLocationPickerDialog()
@@ -235,7 +247,7 @@ class LocationPickerTests {
     @Test
     fun deleteLocation() {
         val state = TestState(this.rule)
-        val targetName = FAKE_LOCATIONS[3u]!!.name
+        val targetName = FAKE_LOCATIONS[3].name
 
         state.showLocationPickerDialog()
         state.onLocationItem(targetName)
@@ -260,7 +272,7 @@ class LocationPickerTests {
     @Test
     fun invalidNewLocation() {
         val state = TestState(this.rule)
-        val targetItem = FAKE_LOCATIONS[0u]!!
+        val targetItem = FAKE_LOCATIONS[0]
 
         state.showLocationPickerDialog()
         state.newButton.performClick()

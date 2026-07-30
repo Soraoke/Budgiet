@@ -1,25 +1,43 @@
 #![doc(hidden)]
 
-use std::fmt::Display;
+use std::todo;
 use boltffi::{custom_type, data};
 use chrono::{DateTime, Utc};
-use rust_decimal::{Decimal, prelude::FromPrimitive};
-use rusty_money::{Findable as _, Locale};
-use crate::{Currency, Money, price::{ALL_CURRENCIES, ParseMoneyError}};
+use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive as _}};
+use rusty_money::Findable as _;
+use crate::{Currency, Locale, Money, price::{ALL_CURRENCIES, ParseMoneyError}};
 
-#[derive(Clone, Copy)]
 #[data]
+#[derive(Clone, Copy)]
 pub struct FfiCurrency { ptr: usize }
 #[data(impl)]
 impl FfiCurrency {
-    pub const fn name(self) -> &'static str { self.from_ffi().name }
-    pub const fn code(self) -> &'static str { self.from_ffi().iso_alpha_code }
-    pub const fn symbol(self) -> &'static str { self.from_ffi().symbol }
+    pub fn name(self) -> String { self.from_ffi().name.to_string() }
+    pub fn code(self) -> String { self.from_ffi().iso_alpha_code.to_string() }
+    pub fn symbol(self) -> String { self.from_ffi().symbol.to_string() }
 
     pub fn look_up(code: &str) -> Option<Self> {
         rusty_money::iso::Currency::find(code)
             .map(|inner| Self::to_ffi(&inner))
     }
+
+    /// Returns the [`Currency`] that is currently in use by the application.
+    ///
+    /// This value is set by the user in the application's settings page.
+    pub fn current() -> Self {
+        Self::to_ffi(
+            &crate::CURRENT_CURRENCY.read()
+                // Is doing this slop??
+                .unwrap_or_else(|lock| {
+                    crate::CURRENT_CURRENCY.clear_poison();
+                    lock.into_inner()
+                })
+        )
+    }
+    pub fn locale_default(locale: Locale) -> Self {
+        todo!()
+    }
+    pub fn to_string(self) -> String { self.code() }
 
     /// Returns a slice containing all the [`Currencies`][Currency] that exist in this program.
     ///
@@ -27,44 +45,6 @@ impl FfiCurrency {
     /// The returned list should be cached in the memory of the native application running.
     pub fn list() -> Vec<Self> { ALL_CURRENCIES.iter().map(|c| FfiCurrency::to_ffi(c)).collect::<Vec<_>>() }
 }
-#[data(impl)]
-impl Default for FfiCurrency {
-    fn default() -> Self {
-        todo!()
-        // CURRENT_CURRENCY.read()
-        //     .map(|lock| *lock)
-        //     .unwrap_or(Currency(rusty_money::iso::USD))
-    }
-}
-#[data(impl)]
-impl Display for FfiCurrency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.code())
-    }
-}
-// #[data(impl)]
-// impl FromStr for FfiCurrency {
-//     type Err = ();
-
-//     fn from_str(code: &str) -> Result<Self, Self::Err> {
-//         Self::look_up(code).ok_or(())
-//     }
-// }
-// impl Serialize for FfiCurrency {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where S: serde::Serializer {
-//         serializer.serialize_str(self.code())
-//     }
-// }
-// impl<'de> Deserialize<'de> for FfiCurrency {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where D: serde::Deserializer<'de> {
-//         let code = deserializer.deserialize_str(StringVisitor::new("An ISO-4217 currency code"))?;
-//         Self::look_up(&code)
-//             .ok_or_else(|| format!("Could not find currency by code \"{code}\""))
-//             .map_err(|err| serde::de::Error::custom(err))
-//     }
-// }
 impl FfiCurrency {
     fn to_ffi(value: &Currency) -> Self {
         Self { ptr: *value as *const rusty_money::iso::Currency as usize }
@@ -84,9 +64,10 @@ custom_type! {
 
 #[data]
 pub struct FfiDecimal { data: Vec<u8> }
-// #[data(impl)]
+#[data(impl)]
 impl FfiDecimal {
     pub fn zero() -> Self { Self::to_ffi(&Decimal::ZERO) }
+
     /// Get a [`Decimal`][FfiDecimal] number from a `Double` number.
     ///
     /// Will throw an error if the `Double` has too many digits,
@@ -97,16 +78,28 @@ impl FfiDecimal {
             .unwrap_or_else(|| panic!("Error converting f64 ({n:?}) to Decimal: too many digits"))
         )
     }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        Decimal::from_str_exact(s)
+            .map(|val| Self::to_ffi(&val))
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn to_int(self) -> i32 {
+        let dec = self.from_ffi()
+            .expect("Error converting Decimal data from ffi");
+        dec.to_i32()
+            .expect(&format!("Could not convert Decimal {dec} to i32"))
+    }
 }
 impl FfiDecimal {
     fn to_ffi(value: &Decimal) -> Self {
         Self { data: Vec::from(Decimal::serialize(value)) }
     }
-    const fn from_ffi(self) -> Result<Decimal, boltffi::CustomTypeConversionError> {
-        todo!()
-        // Ok(Decimal::deserialize(self.data.try_into()
-        //     .map_err(|_| boltffi::CustomTypeConversionError)?
-        // ))
+    fn from_ffi(self) -> Result<Decimal, boltffi::CustomTypeConversionError> {
+        Ok(Decimal::deserialize(self.data.try_into()
+            .map_err(|_| boltffi::CustomTypeConversionError)?
+        ))
     }
 }
 custom_type! {
@@ -153,23 +146,40 @@ custom_type! {
     try_from_ffi = FfiMoney::from_ffi,
 }
 
+#[data]
+pub struct FfiLocale { code: String }
+#[data(impl)]
+impl FfiLocale {
+    pub fn code(self) -> String { self.code }
+
+    /// Returns the [`Locale`] that is currently in use by the application.
+    ///
+    /// This value is set by the user in the application's settings page.
+    pub fn current() -> Self {
+        Self::to_ffi(
+            &crate::CURRENT_LOCALE.read()
+                .unwrap_or_else(|lock| {
+                    crate::CURRENT_LOCALE.clear_poison();
+                    lock.into_inner()
+                })
+        )
+    }
+}
+impl FfiLocale {
+    fn to_ffi(value: &Locale) -> Self {
+        Self { code: value.name().to_string() }
+    }
+    fn from_ffi(self) -> Result<Locale, boltffi::CustomTypeConversionError> {
+        Locale::from_name(&self.code)
+            .map_err(|_| boltffi::CustomTypeConversionError)
+    }
+}
 custom_type! {
     pub Locale,
     remote = Locale,
-    repr = u8,
-    into_ffi = |value: &Locale| match value {
-        Locale::EnUs => 0,
-        Locale::EnIn => 1,
-        Locale::EnEu => 2,
-        Locale::EnBy => 3,
-    },
-    try_from_ffi = |value: u8| match value {
-        0 => Ok(Locale::EnUs),
-        1 => Ok(Locale::EnIn),
-        2 => Ok(Locale::EnEu),
-        3 => Ok(Locale::EnBy),
-        _ => Err(boltffi::CustomTypeConversionError),
-    },
+    repr = FfiLocale,
+    into_ffi = FfiLocale::to_ffi,
+    try_from_ffi = FfiLocale::from_ffi,
 }
 
 custom_type! {

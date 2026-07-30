@@ -1,38 +1,35 @@
 package com.example.budgiet.ui.theme
 
-import androidx.compose.ui.graphics.Color
+import com.example.budgiet.Color
+import androidx.compose.ui.graphics.Color as JColor
+import com.example.budgiet.UserColorPalette
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val Purple80 = JColor(0xFFD0BCFF)
+val PurpleGrey80 = JColor(0xFFCCC2DC)
+val Pink80 = JColor(0xFFEFB8C8)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val Purple40 = JColor(0xFF6650a4)
+val PurpleGrey40 = JColor(0xFF625b71)
+val Pink40 = JColor(0xFF7D5260)
 
 @Suppress("unused")
 object UserColorPalette: List<Color> {
-    val Red = Color(0xFFF3413D)
-    val Orange = Color(0xFFFA7B40)
-    val Brown = Color(0xFFB37200)
-    val Yellow = Color(0xFFF3E248)
-    val Green = Color(0xFF21BF13)
-    val Forest = Color(0xFF00966E)
-    val Turquoise = Color(0xFF37FDAD)
-    val Cyan = Color(0xFF34F6FA)
-    val Blue = Color(0xFF3D50F3)
-    val Purple = Color(0xFFAA07FF)
-    val Lavender = Color(0xFFD88FFF)
-    val Pink = Color(0xFFFF84EF)
-    val Grey = Color(0xFFCFCFCF)
-    val DarkGrey = Color(0xFF6B6B6B)
+    private var list = UserColorPalette.colorList()
 
-    private var list = listOf(
-        this.Red, this.Orange, this.Brown, this.Yellow,
-        this.Green, this.Forest, this.Turquoise, this.Cyan,
-        this.Blue, this.Purple, this.Lavender, this.Pink,
-        this.Grey, this.DarkGrey
-    )
+    val Red       = this.list[0]
+    val Orange    = this.list[1]
+    val Brown     = this.list[2]
+    val Yellow    = this.list[3]
+    val Green     = this.list[4]
+    val Forest    = this.list[5]
+    val Turquoise = this.list[6]
+    val Cyan      = this.list[7]
+    val Blue      = this.list[8]
+    val Purple    = this.list[9]
+    val Lavender  = this.list[10]
+    val Pink      = this.list[11]
+    val Grey      = this.list[12]
+    val DarkGrey  = this.list[13]
 
     override val size: Int get() = this.list.size
 

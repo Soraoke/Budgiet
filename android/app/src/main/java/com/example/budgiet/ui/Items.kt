@@ -85,16 +85,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -104,16 +99,28 @@ import androidx.compose.ui.unit.max
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.window.core.layout.WindowSizeClass
+import com.example.budgiet.Amount
+import com.example.budgiet.AmountType
+import com.example.budgiet.Currency
+import com.example.budgiet.Decimal
+import com.example.budgiet.Item
+import com.example.budgiet.Locale
+import com.example.budgiet.Money
 import com.example.budgiet.R
 import com.example.budgiet.Result
-import com.example.budgiet.formatPrice
+import com.example.budgiet.Tax
+import com.example.budgiet.TaxType
+import com.example.budgiet.displayItemsFieldInfo
 import com.example.budgiet.getCurrencyIcon
+import com.example.budgiet.getFakeItems
 import com.example.budgiet.into
+import com.example.budgiet.totalPrice
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.AutoValidateTimings
 import com.example.budgiet.ui.utils.Corner
+import com.example.budgiet.ui.utils.ErrorText
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.ListColumn
@@ -122,11 +129,7 @@ import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.StringTextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.onMeasureCoords
-import com.example.budgiet.validateFieldInput
 import kotlinx.coroutines.delay
-import java.text.NumberFormat
-import java.util.Currency
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -138,178 +141,21 @@ private const val PRICE_COLUMN_WEIGHT = 0.3f
 private const val AMOUNT_COLUMN_WEIGHT = 0.3f
 private const val TOTAL_COLUMN_WEIGHT = 0.3f
 
-val FAKE_ITEMS = listOf(
-    Item("Ham", 5.99, Amount.Units(1u)),
-    Item("Cheese", 2.59, Amount.Measured(1.0, "lbs")),
-    Item("Bread", 4.19, Amount.Units(2u)),
-    Item("Crackers", 1.89, Amount.Units(1u)),
-    Item("Chicken", 4.99, Amount.Measured(3.5, "lbs")),
-)
-
-data class Item(
-    val name: String,
-    val unitPrice: Double, // TODO: use money struct
-    val amount: Amount,
-) {
-    val totalPrice get() = when (this.amount) {
-        is Amount.Measured -> this.unitPrice * this.amount.value
-        is Amount.Units -> this.unitPrice * this.amount.value.toInt()
-    }
-}
-
-sealed class Amount {
-    class Measured(val value: Double, val label: String): Amount()
-    class Units(val value: UInt): Amount()
-
-    enum class Type {
-        Measured, Units;
-
-        override fun toString() = when (this) {
-            Measured -> "Measured"
-            Units -> "Units"
-        }
-    }
-
-    val textValue get() = when (this) {
-        is Measured -> NumberFormat.getNumberInstance()
-            .apply {
-                minimumFractionDigits = 1
-                maximumFractionDigits = 3
-            }
-            .format(this.value)
-            .trim()
-        is Units -> this.value.toString()
-    }
-    val type get() = when (this) {
-        is Measured -> Type.Measured
-        is Units -> Type.Units
-    }
-
-    companion object {
-        private const val LABEL_CHAR_LIMIT = 7
-
-        fun validateLabel(label: String): Result<Unit> {
-            return if (label.isEmpty()) {
-                Result.Err(Exception("label must not be empty."))
-            } else if (label.length > this.LABEL_CHAR_LIMIT) {
-                Result.Err(Exception("The length of the label for an Amount must not exceed ${this.LABEL_CHAR_LIMIT} characters."))
-            } else {
-                Result.Ok(Unit)
-            }
-        }
-        fun parseValue(type: Type, value: String): Result<Double> {
-            return runCatching { when (type) {
-                // TODO: Use different parsers to emit better error messages
-                Type.Measured -> value.toDouble()
-                Type.Units -> value.toInt().toDouble()
-            } }.into()
-        }
-    }
-}
-
-sealed class Tax {
-    // TODO: use Money type later for this
-    class CurrencyAmount(val price: Double): Tax()
-    class Percentage(val v: Double): Tax()
-
-    enum class Type {
-        CurrencyAmount, Percentage;
-
-        override fun toString() = when (this) {
-            CurrencyAmount -> "Currency Amount"
-            Percentage -> "Percentage"
-        }
-    }
-
-    val value get() = when (this) {
-        is CurrencyAmount -> this.price
-        is Percentage -> this.v
-    }
-    val type get() = when (this) {
-        is CurrencyAmount -> Type.CurrencyAmount
-        is Percentage -> Type.Percentage
-    }
-
-    companion object {
-        fun new(type: Type, value: Double): Tax {
-            return when (type) {
-                Type.CurrencyAmount -> CurrencyAmount(value)
-                Type.Percentage -> Percentage(value)
-            }
-        }
-
-        fun parse(type: Type, value: String, currency: Currency, locale: Locale): Result<Tax> {
-            return when (type) {
-                Type.CurrencyAmount -> currency.validateFieldInput(value, locale).map { CurrencyAmount(it) }
-                Type.Percentage -> if (value.isEmpty()) {
-                    Result.Ok(Percentage(0.0))
-                } else {
-                    RealNumberFieldState.defaultParser(value).map { Percentage(it) }
-                }
-            }
-        }
-    }
-}
-
 class ItemsViewModel: ViewModel() {
     // TODO: Have a database table of item names the user has used, and have a different screen to show aggregate data of each item across transactions.
     val items = mutableStateListOf<Item>()
-    var tax by mutableStateOf<Tax>(Tax.CurrencyAmount(0.0))
+    var tax by mutableStateOf<Tax>(Tax.CurrencyAmount(Decimal.zero()))
 
-    val totalPrice: Double get() = run {
-        val itemsSum = this.items.sumOf { it.totalPrice }
-        val taxAmount = when (val tax = this.tax) {
-            is Tax.CurrencyAmount -> tax.price
-            is Tax.Percentage -> itemsSum * tax.v * 0.01
-        }
-        itemsSum + taxAmount
-    }
-
-    /** Produces a message to display in the [NewTransactionForm] [ItemsField].
-     * Includes the number of items,  */
-    fun displayFieldSummary(currency: Currency, locale: Locale): String {
-        val itemsCount = this.items
-            .sumOf { when (it.amount) {
-                is Amount.Measured -> 1
-                is Amount.Units -> it.amount.value.toInt()
-            } }
-        val itemsPrice = currency.formatPrice(
-            this.items.sumOf { it.totalPrice },
-            locale = locale,
-        )
-        val tax = this.tax
-        val displayTax = if (tax.value != 0.0 && this.items.isNotEmpty()) {
-            when (tax) {
-                is Tax.CurrencyAmount -> " + ${currency.symbol}${currency.formatPrice(tax.price, locale)} tax"
-                is Tax.Percentage -> " + ${tax.v}% tax"
-            }
-        } else ""
-
-        val itemsWord = if (itemsCount == 1) "item" else "items"
-
-        return "$itemsCount $itemsWord (${currency.symbol}$itemsPrice)$displayTax"
-    }
+    val totalPrice get() = totalPrice(this.items, this.tax)
 
     fun removeItem(name: String) {
         val idx = this.items.indexOfFirst { it.name == name }
         this.items.removeAt(idx)
     }
+
     fun reset() {
         this.items.clear()
-        this.tax = Tax.CurrencyAmount(0.0)
-    }
-
-    fun validateName(name: String, isNew: Boolean = true): Result<Unit> {
-        val msg = if (name.isEmpty()) {
-            "Name must not be empty"
-        } else if (isNew && this.items.find { it.name == name } != null) {
-            "An item with this name already exists. Edit the price/amount of that item instead."
-        } else {
-            null
-        }
-
-        return msg?.let { Result.Err(Exception(msg)) }
-            ?: Result.Ok(Unit)
+        this.tax = Tax.CurrencyAmount(Decimal.zero())
     }
 }
 
@@ -329,7 +175,7 @@ fun RowScope.ItemsField(
     onClickOcr: () -> Unit,
 ) {
     if (viewModel.items.isNotEmpty()) {
-        Text(viewModel.displayFieldSummary(currency, locale),
+        Text(displayItemsFieldInfo(viewModel.items, viewModel.tax, currency, locale),
             modifier = Modifier
                 .weight(1f)
                 .align(Alignment.CenterVertically),
@@ -437,34 +283,31 @@ private fun ItemsViewDialog(
         }
         object {
             val name = StringTextFieldState(preData?.name ?: "",
-                validator = { viewModel.validateName(it, isNew = state !is ItemsDialogState.Edit) },
+                validator = { runCatching { Item.validateName(viewModel.items, name = it, isNew = state !is ItemsDialogState.Edit) }.into() },
             )
-            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice ?: 0.0, emptyInitialTextIfZero = true, currency, locale, autoValidateTimings)
+            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice ?: Decimal.zero(), emptyInitialTextIfZero = true, currency, locale, autoValidateTimings)
             val amount = object {
-                var type by mutableStateOf(preData?.amount?.type ?: Amount.Type.Units)
-                val value = run {
-                    val parser = { s: String -> Amount.parseValue(type, s) }
-                    preData?.let {
-                        RealNumberFieldState(it.amount.textValue, parser = parser)
-                    } ?: RealNumberFieldState("", parser = parser)
-                }
+                var type by mutableStateOf(preData?.amount?.ty() ?: AmountType.UNITS)
+                val value = RealNumberFieldState(preData?.amount?.textValue() ?: "",
+                    parser = { s -> runCatching { Amount.parseValue(s, type) }.into() }
+                )
                 val label = StringTextFieldState(
                     initialValue = when (val amount = preData?.amount) {
                         is Amount.Measured -> amount.label
                         is Amount.Units, null -> ""
                     },
-                    validator = { Amount.validateLabel(it) },
+                    validator = { runCatching { Amount.validateLabel(it) }.into() },
                 )
             }
         }
     }
     val taxAmountState = remember { RealNumberFieldState(
-        initialValue = viewModel.tax.value,
+        initialValue = viewModel.tax.value(),
         emptyInitialTextIfZero = true,
-        parser = { text -> Tax.parse(viewModel.tax.type, text, currency, locale).map { it.value } },
-        formatter = { v -> when (viewModel.tax.type) {
-            Tax.Type.CurrencyAmount -> currency.formatPrice(v, locale)
-            Tax.Type.Percentage -> v.toString()
+        parser = { text -> runCatching { Tax.parse(viewModel.tax.ty(), text, currency, locale) }.into().map { it.value() } },
+        formatter = { amount -> when (viewModel.tax.ty()) {
+            TaxType.CURRENCY_AMOUNT -> Money(amount, currency).format(locale, false)
+            TaxType.PERCENTAGE -> amount.toString()
         } },
         autoValidateTimings,
     ).apply { skipEmptyTextFormat = true } }
@@ -545,7 +388,7 @@ private fun ItemsViewDialog(
                         !editItemState.name.isError
                         && !editItemState.unitPrice.isError
                         && !editItemState.amount.value.isError
-                        && !(editItemState.amount.type == Amount.Type.Measured
+                        && !(editItemState.amount.type == AmountType.MEASURED
                             && editItemState.amount.label.isError
                         )
 
@@ -556,9 +399,9 @@ private fun ItemsViewDialog(
                             val item = state.value
                             // Allow submitting only if any field was modified.
                             editItemState.name.fieldText != item.name
-                            || editItemState.unitPrice.fieldText != currency.formatPrice(item.unitPrice, locale)
-                            || editItemState.amount.value.fieldText != item.amount.textValue
-                            || editItemState.amount.type != item.amount.type
+                            || editItemState.unitPrice.fieldText != Money(item.unitPrice, currency).format(locale, false)
+                            || editItemState.amount.value.fieldText != item.amount.textValue()
+                            || editItemState.amount.type != item.amount.ty()
                             || if (item.amount is Amount.Measured) {
                                 editItemState.amount.label.fieldText != item.amount.label
                             } else { false }
@@ -570,7 +413,7 @@ private fun ItemsViewDialog(
                     editItemState.name.doValidate()
                     editItemState.unitPrice.doValidate()
                     editItemState.amount.value.doValidate()
-                    if (editItemState.amount.type == Amount.Type.Measured) {
+                    if (editItemState.amount.type == AmountType.MEASURED) {
                         editItemState.amount.label.doValidate()
                     }
 
@@ -579,8 +422,8 @@ private fun ItemsViewDialog(
                             name = editItemState.name.fieldText,
                             unitPrice = editItemState.unitPrice.parseResult.unwrap(),
                             amount = when (editItemState.amount.type) {
-                                Amount.Type.Measured -> Amount.Measured(editItemState.amount.value.parseResult.unwrap(), editItemState.amount.label.fieldText)
-                                Amount.Type.Units -> Amount.Units(editItemState.amount.value.parseResult.unwrap().toUInt())
+                                AmountType.MEASURED -> Amount.Measured(editItemState.amount.value.parseResult.unwrap(), editItemState.amount.label.fieldText)
+                                AmountType.UNITS -> Amount.Units(editItemState.amount.value.parseResult.unwrap().toInt().toUInt())
                             }
                         )
                         when (state) {
@@ -656,10 +499,10 @@ private fun ItemsViewDialog(
                 LocalTextStyle provides columnLabelTextStyle,
             ) {
                 Text("Name", Modifier.weight(NAME_COLUMN_WEIGHT))
-                Text("Price (${currency.symbol})", Modifier.weight(PRICE_COLUMN_WEIGHT))
+                Text("Price (${currency.symbol()})", Modifier.weight(PRICE_COLUMN_WEIGHT))
                 Text("Amount", Modifier.weight(AMOUNT_COLUMN_WEIGHT))
                 if (showTotalColumn) {
-                    Text("Total (${currency.symbol})", Modifier.weight(TOTAL_COLUMN_WEIGHT))
+                    Text("Total (${currency.symbol()})", Modifier.weight(TOTAL_COLUMN_WEIGHT))
                 }
             } }
 
@@ -741,9 +584,9 @@ private fun ItemsViewDialog(
                     ) {
                         PlainToolTipBox("Switch tax type") {
                             TextButton(
-                                modifier = Modifier.semantics { stateDescription = viewModel.tax.type.toString() },
+                                modifier = Modifier.semantics { stateDescription = viewModel.tax.ty().toString() },
                                 onClick = {
-                                    val taxValue = viewModel.tax.value
+                                    val taxValue = viewModel.tax.value()
                                     viewModel.tax = when (viewModel.tax) {
                                         is Tax.CurrencyAmount -> Tax.Percentage(taxValue)
                                         is Tax.Percentage -> Tax.CurrencyAmount(taxValue)
@@ -773,11 +616,11 @@ private fun ItemsViewDialog(
                                 value = taxAmountState.fieldText,
                                 onValueChange = { text ->
                                     taxAmountState.fieldText = text
-                                    taxAmountState.ifParseOk { viewModel.tax = Tax.new(viewModel.tax.type, it) }
+                                    taxAmountState.ifParseOk { viewModel.tax = Tax.new(viewModel.tax.ty(), it) }
                                 },
                                 isError = taxAmountState.isError,
                                 placeholderText = when (viewModel.tax) {
-                                    is Tax.CurrencyAmount -> currency.formatPrice(0.0, locale)
+                                    is Tax.CurrencyAmount -> Money(Decimal.zero(), currency).format(locale, false)
                                     is Tax.Percentage -> "0.0"
                                 },
                                 keyboardOptions = RealNumberFieldState.keyboardOptions,
@@ -800,7 +643,7 @@ private fun ItemsViewDialog(
                             .padding(itemFieldPadding)
                             .fillMaxWidth()
                         ) {
-                            Text(currency.formatPrice(viewModel.totalPrice, locale),
+                            Text(Money(viewModel.totalPrice, currency).format(locale, false),
                                 modifier = Modifier.semantics { contentDescription = "Total price amount" },
                             )
                         }
@@ -845,22 +688,14 @@ private fun ItemsViewDialog(
 
         // New/Edit item errors.
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.error) {
-            @Composable
-            fun ErrorText(prefix: String, result: Result<*>) {
-                if (result is Result.Err) {
-                    Text(buildAnnotatedString {
-                        withStyle(SpanStyle(
-                            fontWeight = FontWeight.Bold,
-                            textDecoration = TextDecoration.Underline,
-                        )) {
-                            append("$prefix:")
-                        }
-                        append(" ${result.error.message ?: result.error.javaClass.name}")
-                    })
-                }
-            }
-
             newItemCollapseTransition.AnimatedContent { state ->
+                @Composable
+                fun ErrorText(prefix: String, result: Result<*>) {
+                    if (result is Result.Err) {
+                        ErrorText(prefix, result.error)
+                    }
+                }
+
                 when (state) {
                     is ItemsDialogState.View -> {
                         ErrorText("Tax error", taxAmountState.parseResult)
@@ -917,7 +752,7 @@ private fun StaticItemListRow(
                 shape = columnShapes.Middle,
                 isSelected = isSelected,
                 onLongClick = { onLongClick(1u) },
-                content = { TextAutoSized(currency.formatPrice(data.unitPrice, locale)) },
+                content = { TextAutoSized(Money(data.unitPrice, currency).format(locale, false)) },
             )
             ItemColumn(
                 modifier = Modifier.weight(AMOUNT_COLUMN_WEIGHT)
@@ -927,7 +762,7 @@ private fun StaticItemListRow(
                 shape = if (showTotalColumn) { columnShapes.Middle } else { columnShapes.End },
                 isSelected = isSelected,
                 onLongClick = { onLongClick(2u) },
-                content = { TextAutoSized("${data.amount.textValue}${
+                content = { TextAutoSized("${data.amount.textValue()}${
                     when (data.amount) {
                         is Amount.Measured -> " ${data.amount.label}"
                         is Amount.Units -> ""
@@ -943,7 +778,7 @@ private fun StaticItemListRow(
                     shape = columnShapes.End,
                     isSelected = isSelected,
                     onLongClick = { onLongClick(null) },
-                    content = { TextAutoSized(currency.formatPrice(data.totalPrice, locale)) },
+                    content = { TextAutoSized(Money(data.totalPrice(), currency).format(locale, false)) },
                 )
             }
         }
@@ -993,8 +828,8 @@ private fun EditingItemListBox(
     priceState: RealNumberFieldState,
     amountValueState: RealNumberFieldState,
     amountLabelState: StringTextFieldState,
-    amountType: Amount.Type,
-    onHasLabelChange: (Amount.Type) -> Unit,
+    amountType: AmountType,
+    onHasLabelChange: (AmountType) -> Unit,
 ) {
     val columnShapes = ItemColumnsShapes(rowShape)
 
@@ -1069,7 +904,7 @@ private fun EditingItemListBox(
                     )
                 }
                 Column(Modifier.weight(PRICE_COLUMN_WEIGHT)) {
-                    val currencySymbol = currency.symbol
+                    val currencySymbol = currency.symbol()
                     Label("Price ($currencySymbol)")
                     ItemColumnField(
                         modifier = Modifier.semantics { contentDescription = "Price in $currencySymbol" },
@@ -1091,8 +926,8 @@ private fun EditingItemListBox(
                         TextButton(
                             modifier = Modifier.semantics { stateDescription = amountType.toString() },
                             onClick = { onHasLabelChange(when (amountType) {
-                                Amount.Type.Measured -> Amount.Type.Units
-                                Amount.Type.Units -> Amount.Type.Measured
+                                AmountType.MEASURED -> AmountType.UNITS
+                                AmountType.UNITS -> AmountType.MEASURED
                             }) },
                             contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
                         ) {
@@ -1100,19 +935,19 @@ private fun EditingItemListBox(
                                 modifier = Modifier.size(20.dp),
                             )
                             Icon(painterResource(when (amountType) {
-                                Amount.Type.Measured -> R.drawable.scale_24px
-                                Amount.Type.Units -> R.drawable.units_24px
+                                AmountType.MEASURED -> R.drawable.scale_24px
+                                AmountType.UNITS -> R.drawable.units_24px
                             }), null)
                         }
                     }
                 }
                 Spacer(Modifier.width(COLUMN_SPACING * 2))
 
-                /** Returns either argument value depending on the [Amount.Type]. */
-                fun <T> Amount.Type.typeState(labelExpanded: T, labelCollapsed: T): T {
+                /** Returns either argument value depending on the [AmountType]. */
+                fun <T> AmountType.typeState(labelExpanded: T, labelCollapsed: T): T {
                     return when (this) {
-                        Amount.Type.Measured -> labelExpanded
-                        Amount.Type.Units -> labelCollapsed
+                        AmountType.MEASURED -> labelExpanded
+                        AmountType.UNITS -> labelCollapsed
                     }
                 }
 
@@ -1120,8 +955,8 @@ private fun EditingItemListBox(
                     .weight(displayLabelTransition.animateFloat { it.typeState(0.5f, 1.0f) }.value)
                 ) {
                     displayLabelTransition.AnimatedContent { type -> when (type) {
-                        Amount.Type.Measured -> Label(amountType.toString())
-                        Amount.Type.Units -> Label(amountType.toString())
+                        AmountType.MEASURED -> Label(amountType.toString())
+                        AmountType.UNITS -> Label(amountType.toString())
                     } }
                     ItemColumnField(
                         Modifier.semantics { contentDescription = "Amount value" },
@@ -1135,7 +970,7 @@ private fun EditingItemListBox(
                 }
                 Spacer(Modifier.width(displayLabelTransition.animateDp { it.typeState(COLUMN_SPACING * 2, 0.dp) }.value))
 
-                displayLabelTransition.AnimatedVisibility({ it == Amount.Type.Measured },
+                displayLabelTransition.AnimatedVisibility({ it == AmountType.MEASURED },
                     enter = fadeIn() + expandHorizontally(),
                     exit = fadeOut() + shrinkHorizontally(),
                     modifier = Modifier.weight(displayLabelTransition.animateFloat { it.typeState(0.5f, 0.001f) }.value),
@@ -1390,16 +1225,18 @@ private fun ItemsOcrDialog(
     }
 }
 
+val FAKE_ITEMS = getFakeItems()
+
 @Preview(showBackground = true)
 @Composable
 fun ItemsFieldPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme { Row {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>(),
             locale = locale,
-            currency = remember(locale) { Currency.getInstance(locale) },
+            currency = remember(locale) { Currency.current() },
             onClickAdd = { },
             onClickOcr = { },
         )
@@ -1409,16 +1246,16 @@ fun ItemsFieldPreview() {
 @Preview(showBackground = true)
 @Composable
 fun ItemsFieldFilledPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme { Row {
         ItemsField(
             viewModel = viewModel<ItemsViewModel>().apply {
                 items.addAll(FAKE_ITEMS)
-                tax = Tax.CurrencyAmount(4.08)
+                tax = Tax.CurrencyAmount(Decimal.new(4.08))
             },
             locale = locale,
-            currency = remember(locale) { Currency.getInstance(locale) },
+            currency = remember(locale) { Currency.current() },
             onClickAdd = { },
             onClickOcr = { },
         )
@@ -1429,7 +1266,7 @@ fun ItemsFieldFilledPreview() {
 @Preview(showBackground = true)
 @Composable
 fun ItemsDialogPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme {
         ItemsDialog(
@@ -1437,7 +1274,7 @@ fun ItemsDialogPreview() {
                 items.addAll(FAKE_ITEMS)
             },
             locale = locale,
-            currency = remember(locale) { Currency.getInstance(locale) },
+            currency = remember(locale) { Currency.current() },
             state = ItemsDialogState.View,
             onStateChange = { },
             onDismiss = { },
@@ -1448,13 +1285,13 @@ fun ItemsDialogPreview() {
 @Preview(showBackground = true)
 @Composable
 fun ItemsDialogNewItemPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme {
         ItemsDialog(
             viewModel = viewModel<ItemsViewModel>(),
             locale = locale,
-            currency = remember(locale) { Currency.getInstance(locale) },
+            currency = remember(locale) { Currency.current() },
             state = ItemsDialogState.New,
             onStateChange = { },
             onDismiss = { },
@@ -1465,7 +1302,7 @@ fun ItemsDialogNewItemPreview() {
 @Preview(showBackground = true)
 @Composable
 fun ItemsDialogEditItemPreview() {
-    val locale = remember { Locale.getDefault() }
+    val locale = remember { Locale.current() }
 
     BudgietTheme {
         ItemsDialog(
@@ -1473,7 +1310,7 @@ fun ItemsDialogEditItemPreview() {
                 items.add(FAKE_ITEMS.first())
             },
             locale = locale,
-            currency = remember(locale) { Currency.getInstance(locale) },
+            currency = remember(locale) { Currency.current() },
             state = ItemsDialogState.Edit(FAKE_ITEMS.first()),
             onStateChange = { },
             onDismiss = { },

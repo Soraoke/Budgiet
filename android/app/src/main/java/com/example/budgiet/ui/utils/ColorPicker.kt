@@ -36,7 +36,6 @@ import androidx.compose.material3.SliderDefaults.drawStopIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -54,14 +53,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -76,14 +71,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
+import com.example.budgiet.Color
 import com.example.budgiet.R
 import com.example.budgiet.RecentItems
-import com.example.budgiet.fromHex
-import com.example.budgiet.rgbToHex
-import com.example.budgiet.rgbaToHex
+import com.example.budgiet.Result
+import com.example.budgiet.correctColorContrast
+import com.example.budgiet.into
 import com.example.budgiet.ui.SELECTED_TAG_BORDER_COLOR
-import com.example.budgiet.ui.theme.DarkColorScheme
-import com.example.budgiet.ui.theme.LightColorScheme
 import com.example.budgiet.ui.theme.UserColorPalette
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -91,11 +85,12 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import androidx.compose.ui.graphics.Color as JColor
 
 val COLOR_WHEEL_DIAMETER = 250.dp
 val RING_THICKNESS = 28.dp
 val RING_BORDER_THICKNESS = 3.dp
-val RING_BORDER_COLOR = Color.White
+val RING_BORDER_COLOR = JColor.White
 /** Size of the gap between the Hue color ring and the SV color circle. */
 val RING_AND_INNER_GAP = 6.dp
 val HUE_CURSOR_BALL_SIZE = RING_THICKNESS
@@ -104,9 +99,19 @@ val COLOR_PALETTE_ITEM_SIZE = 32.dp
 
 /** Rotate the color ring 90 degrees so that red starts at the top. */
 const val COLOR_RING_ROTATION = 130.0
+val DEFAULT_COLOR_VALUE = JColor.Red.into()
 
 /** just why bro... */
 var parentDialogOffset by mutableStateOf(IntOffset(0, 0))
+
+fun Color.into() = JColor(
+    red = this.red.toInt(),
+    green = this.green.toInt(),
+    blue = this.blue.toInt(),
+    alpha = this.alpha.toInt(),
+)
+
+fun JColor.into() = Color.newArgb(this.toArgb().toUInt())
 
 /** A [Button][IconButton] that opens a [DropdownMenu] with a *color palette* the user can choose from.
  *
@@ -120,17 +125,16 @@ fun ColorPickerButton(
 ) {
     var showPaletteMenu by rememberSaveable { mutableStateOf(false) }
     var showColorPickerDialog by rememberSaveable { mutableStateOf(false) }
-    val context = LocalContext.current
 
     Box(contentAlignment = Alignment.CenterEnd) {
         PlainToolTipBox("Change tag color") {
             IconButton(
                 modifier = modifier
-                    .semantics { this.stateDescription = color.rgbToHex() },
+                    .semantics { this.stateDescription = color.toString() },
                 onClick = { showPaletteMenu = true },
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = color,
-                    contentColor = correctContentContrast(color),
+                    containerColor = color.into(),
+                    contentColor = correctColorContrast(color, MaterialTheme.colorScheme.onPrimaryContainer.into()).into(),
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceDim,
                 )
             ) {
@@ -167,7 +171,7 @@ fun ColorPickerButton(
                     } else this
                 }
                 .clip(itemShape)
-                .background(color)
+                .background(color.into())
                 .border(
                     width = if (isSelectable && color == selectedColor) 3.dp else 1.dp,
                     shape = itemShape,
@@ -184,7 +188,7 @@ fun ColorPickerButton(
                  */
                 extraOnClick: (() -> Unit)? = null,
             ) {
-                val colorStr = "#${color.rgbToHex()}"
+                val colorStr = "#$color"
                 PlainToolTipBox(
                     text = colorStr,
                     setContentDescription = false,
@@ -230,13 +234,13 @@ fun ColorPickerButton(
                     RecentItems.Color.items().value
                         ?.getOkOrNull()
                         ?.forEach { ColorItem(it, extraOnClick = {
-                            RecentItems.Color.moveToFront(it, context)
+                            RecentItems.Color.moveToFront(it)
                         }) }
 
                     PlainToolTipBox("Add new color", dialogPosition = parentDialogOffset) {
                         Box(
                             modifier = Modifier
-                                .itemModifier(MaterialTheme.colorScheme.surfaceDim, false)
+                                .itemModifier(MaterialTheme.colorScheme.surfaceDim.into(), false)
                                 .clickable { showColorPickerDialog = true },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -256,7 +260,7 @@ fun ColorPickerButton(
                 onColorChange(color)
                 // Don't add color to recents if it exists in the UserColorPalette.
                 if (color !in UserColorPalette) {
-                    RecentItems.Color.moveToFront(color, context)
+                    RecentItems.Color.moveToFront(color)
                 }
             },
             onDismiss = {
@@ -276,19 +280,24 @@ fun ColorPickerDialog(
     modifier: Modifier = Modifier,
     title: String = "Choose a color",
     allowAlpha: Boolean = true,
-    initialColor: Color = Color.Red,
+    initialColor: Color = DEFAULT_COLOR_VALUE,
     onSubmit: (Color) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    fun colorHex(color: Color)
-        = if (allowAlpha) color.rgbaToHex() else color.rgbToHex()
+    fun formatHex(color: Color) = if (allowAlpha) color.formatRgba() else color.formatRgb()
+    fun toByte(component: Float) = (255 * component).toUInt().toUByte()
 
     val colorCursorsState = HsvCursorsState.remember(initialColor)
-    var alpha by remember(initialColor, allowAlpha) { mutableFloatStateOf(if (allowAlpha) initialColor.alpha else 1f) }
-    var textField by remember(initialColor) { mutableStateOf(colorHex(initialColor)) }
-    var textFieldError by remember(initialColor) { mutableStateOf<String?>(null) }
+    var alpha by remember(initialColor, allowAlpha) { mutableFloatStateOf(if (allowAlpha) initialColor.alpha.toFloat() else 1f) }
+    val textFieldState = remember(initialColor) { TextFieldState<Color>(
+        initialTextValue = formatHex(initialColor),
+        parser = { s ->
+            runCatching { Color.fromHex(s, allowAlpha) }.into()
+                .also { it.map { color -> colorCursorsState.updateWith(color) } }
+        },
+    ) }
 
-    val color = colorCursorsState.currentColor.copy(alpha = alpha)
+    val color = colorCursorsState.currentColor.copy(alpha = toByte(alpha))
 
     val itemPadding = 8.dp
 
@@ -303,8 +312,8 @@ fun ColorPickerDialog(
 
             FilledTextIconButton(
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = color,
-                    contentColor = correctContentContrast(color),
+                    containerColor = color.into(),
+                    contentColor = correctColorContrast(color, MaterialTheme.colorScheme.onPrimaryContainer.into()).into(),
                 ),
                 border = BorderStroke(Dp.Hairline, MaterialTheme.colorScheme.outline),
                 onClick = {
@@ -320,8 +329,7 @@ fun ColorPickerDialog(
             modifier = Modifier.align(Alignment.CenterHorizontally),
             state = colorCursorsState,
             onColorChange = {
-                textField = colorHex(it.copy(alpha = alpha))
-                textFieldError = null
+                textFieldState.fieldText = formatHex(it.copy(alpha = toByte(alpha)))
             }
         )
         Spacer(Modifier.height(10.dp))
@@ -344,13 +352,13 @@ fun ColorPickerDialog(
                     track = { state ->
                         SliderDefaults.Track(state,
                             colors = SliderDefaults.colors(
-                                activeTrackColor = color,
+                                activeTrackColor = color.into(),
                                 inactiveTrackColor = MaterialTheme.colorScheme.primaryFixed,
                             ),
                             drawStopIndicator = {
                                 this.drawStopIndicator(
                                     offset = it,
-                                    color = color.copy(alpha = 1f),
+                                    color = color.copy(alpha = 1u).into(),
                                     size = TrackStopIndicatorSize * 2,
                                 )
                             }
@@ -365,8 +373,8 @@ fun ColorPickerDialog(
                     onValueChange = {
                         alpha = it
                         // Don't disturb text field if it has an error.
-                        if (textFieldError == null) {
-                            textField = colorHex(color.copy(alpha = it))
+                        if (textFieldState.parseResult is Result.Ok) {
+                            textFieldState.fieldText = formatHex(color.copy(alpha = toByte(it)))
                         }
                     },
                 )
@@ -378,20 +386,13 @@ fun ColorPickerDialog(
             TextField(
                 modifier = Modifier.fillMaxWidth(),
                 prefix = { Text("#") },
-                value = textField,
+                value = textFieldState.fieldText,
                 onValueChange = {
-                    textField = it
-                    try {
-                        colorCursorsState.updateWith(Color.fromHex(it, allowAlpha))
-                        textFieldError = null
-                    } catch (e: IllegalArgumentException) {
-                        textFieldError = e.localizedMessage
-                    }
+                    textFieldState.fieldText = it
+                    textFieldState.doValidate()
                 },
-                isError = textFieldError != null,
-                supportingText = textFieldError?.let { error -> {
-                    Text(error)
-                } },
+                isError = textFieldState.parseResult is Result.Err,
+                supportingText = textFieldState.textFieldSupportingText(),
                 maxLines = 1,
                 singleLine = true,
             )
@@ -424,7 +425,7 @@ private fun HsvColorWheel(
             // Ring
             this.drawCircle(
                 brush = Brush.sweepGradient(List(colorVariety) { i ->
-                    Color.hsv(360f * i.toFloat() / (colorVariety - 1), 1f, 1f)
+                    JColor.hsv(360f * i.toFloat() / (colorVariety - 1), 1f, 1f)
                 }),
                 radius = (this.size.minDimension - ringStrokeWidth) / 2,
                 style = Stroke(ringStrokeWidth),
@@ -453,20 +454,20 @@ private fun HsvColorWheel(
 
             // Inner circle (displays saturation and brightness)
             this.drawCircle(
-                color = Color.White,
+                color = JColor.White,
                 radius = radius,
             )
             // SV gradients obtained from [this video](https://www.youtube.com/watch?v=9zXZtHMqHnI).
             this.drawCircle(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(state.currentHueColor, Color.Transparent),
+                    colors = listOf(state.currentHueColor, JColor.Transparent),
                     startX = this.center.x + gradientRadius,
                     endX = this.center.x - gradientRadius,
                 ).let { brush ->
                     Brush.composite(
                         srcBrush = brush,
                         dstBrush = Brush.verticalGradient(
-                            colors = listOf(Color.Black, Color.White),
+                            colors = listOf(JColor.Black, JColor.White),
                             // Don't apply visual gradient offset for Black because it is strong (radius > gradientRadius).
                             startY = this.center.y + radius,
                             endY = this.center.y - gradientRadius,
@@ -487,7 +488,7 @@ private fun HsvColorWheel(
         @Composable
         fun CursorBall(
             modifier: Modifier = Modifier,
-            color: Color,
+            color: JColor,
             diameter: Dp,
             borderWidth: Dp,
             offset: Density.() -> IntOffset,
@@ -526,7 +527,7 @@ private fun HsvColorWheel(
         )
         // Saturation & Brightness cursor
         CursorBall(
-            color = state.currentColor,
+            color = state.currentColor.into(),
             diameter = SV_CURSOR_BALL_SIZE,
             borderWidth = RING_BORDER_THICKNESS * (SV_CURSOR_BALL_SIZE / HUE_CURSOR_BALL_SIZE),
             offset = { state.svCursor.offset.round() },
@@ -540,22 +541,6 @@ private fun HsvColorWheel(
     }
 }
 
-@Composable
-fun correctContentContrast(background: Color): Color
-    // Fix contrast with icon color and background color if needed.
-    = if (background.alpha < 0.35) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.contentColorFor(background)
-            .takeOrElse {
-                if (background.luminance() < 0.5f) {
-                    DarkColorScheme.onPrimaryContainer
-                } else {
-                    LightColorScheme.onPrimaryContainer
-                }
-            }
-    }
-
 private class HsvCursorsState private constructor(initialColor: Color, private val cursorsData: CursorsData) {
     val hueCursor = Cursor { this.cursorsData.boundedHueCursorOffset(it) }
     val svCursor = Cursor { this.cursorsData.boundedSvCursorOffset(it) }
@@ -564,14 +549,14 @@ private class HsvCursorsState private constructor(initialColor: Color, private v
         this.updateWith(initialColor)
     }
 
-    val currentColor get() = this.cursorsData.createColor(this.hueCursor.offset, this.svCursor.offset)
-    val currentHueColor get() = Color.hsv(this.cursorsData.hueCursorOffsetToDegrees(this.hueCursor.offset).toFloat(), 1f, 1f)
+    val currentColor: Color get() = this.cursorsData.createColor(this.hueCursor.offset, this.svCursor.offset)
+    val currentHueColor: JColor get() = JColor.hsv(this.cursorsData.hueCursorOffsetToDegrees(this.hueCursor.offset).toFloat(), 1f, 1f)
 
     /** Modifies the values of **`hueCursorOffset`** and **`svCursorOffset`** with the *HSV* values from the new **`color`**. */
     fun updateWith(color: Color) {
         val (hue, saturation, value) = run {
             val values = FloatArray(3)
-            android.graphics.Color.colorToHSV(color.toArgb(), values)
+            android.graphics.Color.colorToHSV(color.into().toArgb(), values)
             values
         }
 
@@ -585,7 +570,7 @@ private class HsvCursorsState private constructor(initialColor: Color, private v
     companion object {
         /** Create an instance of [HsvCursorsState] that is remembered by a composable. */
         @Composable
-        fun remember(initialColor: Color = Color.Red): HsvCursorsState = LocalDensity.current.let { density ->
+        fun remember(initialColor: Color = DEFAULT_COLOR_VALUE): HsvCursorsState = LocalDensity.current.let { density ->
             val cursorData = remember(density) { CursorsData(density) }
             remember(initialColor, cursorData) { HsvCursorsState(initialColor, cursorData) }
         }
@@ -728,7 +713,7 @@ internal class CursorsData(
         val hue = hueCursorOffsetToDegrees(hueCursorOffset).toFloat()
         val (saturation, brightness) = svCursorOffsetToColor(svCursorOffset)
 
-        return Color.hsv(hue, saturation, brightness)
+        return JColor.hsv(hue, saturation, brightness).into()
     }
 
     // Makes a value that is in range of 0 - 1 become in range of 1 - 0 instead.

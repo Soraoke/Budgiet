@@ -63,20 +63,9 @@ fun <T> rememberWork(
 ): MutableState<Result<T>?> {
     val key = key ?: Unit
     val state = remember(key) { mutableStateOf<Result<T>?>(null) }
-    suspend fun runTask()
-        // Don't allow an exception to terminate the worker thread; gotta catch em all.
-        = try {
-            Result.Ok(task())
-        } catch (e: Throwable) {
-            Result.Err(e)
-        }
 
     LaunchedEffect(key) {
-        withContext(executor.asCoroutineDispatcher()) {
-            setWorkerThreadId(executor)
-
-            state.value = runTask()
-        }
+        state.value = runWork(executor, task)
     }
 
     return state
@@ -115,18 +104,6 @@ suspend fun <T> runWork(executor: Executor = WORKER_THREAD, task: suspend () -> 
     }
 }
 
-/** Run a **task** in a *single-threaded* work [Executor].
- * Use this if you don't want to *wait* for the value returned when the task is finished.
- *
- * Like [rememberWork], this function *not rethrow* any [Exception]s thrown by the **task**.
- * Instead, it will be printed to log.
- *
- * Optionally, the caller can pass a custom [Executor] to run the work in instead of the default **worker thread**.
- *
- * > Note: If this function detects that it is being called from the *default* **worker thread**,
- * > it will just run the *task* in the same thread without first pushing it to the Executor and waiting its turn.
- * > This optimizes the order of running *tasks* in case the caller calls [dispatchWork] without knowing it is in the worker thread,
- * > Although this should be extremely rare. */
 fun dispatchWork(executor: Executor = WORKER_THREAD, task: suspend () -> Unit) {
     fun runTask() = runBlocking {
         // Don't allow an exception to terminate the worker thread; gotta catch em all.

@@ -1,8 +1,11 @@
-use std::sync::LazyLock;
+use std::{sync::LazyLock, todo};
 use boltffi::{data, export};
 use crate::{color::{Color, UserColorPalette}, db::{DbError, on_fake_or_real_db}};
 
-static FAKE_TAGS: LazyLock<[Tag; 6]> = LazyLock::new(|| [
+/// Returns a slice containing sample [`Tags`][Tag] that are used for demos and App Tests.
+pub fn fake_tags() -> &'static [Tag] { &*__FAKE_TAGS }
+#[doc(hidden)]
+static __FAKE_TAGS: LazyLock<[Tag; 6]> = LazyLock::new(|| [
     Tag::new_fake("Groceries", "shopping_cart", UserColorPalette::Green),
     Tag::new_fake("Transportation", "rail_subway_train_transport", UserColorPalette::Blue),
     Tag::new_fake("Take-out", "fast_food_restaurant", UserColorPalette::Orange),
@@ -10,13 +13,24 @@ static FAKE_TAGS: LazyLock<[Tag; 6]> = LazyLock::new(|| [
     Tag::new_fake("Trips", "hiking_person", UserColorPalette::Turquoise),
     Tag::new_fake("Utility", "domain_infrastructure", UserColorPalette::Yellow),
 ]);
-/// Returns a slice containing sample [`Tags`][Tag] that are used for demos and App Tests.
+/// Returns an array containing sample [`Tags`][Tag] that are used for demos and App Tests.
 ///
 /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
 /// The returned list should be cached in the memory of the native application running.
 #[export]
-pub fn get_fake_tags() -> &'static [Tag] { &*FAKE_TAGS }
+pub fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
 
+#[export]
+pub fn get_all_tags() -> Result<Vec<Tag>, DbError> {
+    on_fake_or_real_db(
+        |fake_db| Ok(fake_db.get_tags().to_vec()),
+        || {
+            todo!("Get all user-created tags from the DB")
+        }
+    )
+}
+
+#[export]
 pub fn insert_tag(data: Tag) -> Result<(), DbError> {
     on_fake_or_real_db(
         |fake_db| Ok(fake_db.insert_tag(data.clone())),
@@ -26,6 +40,7 @@ pub fn insert_tag(data: Tag) -> Result<(), DbError> {
     )
 }
 
+#[export]
 pub fn edit_tag(name: &str, new_data: Tag) -> Result<(), DbError> {
     on_fake_or_real_db(
         |fake_db| fake_db.edit_tag(name, new_data.clone()),
@@ -35,11 +50,22 @@ pub fn edit_tag(name: &str, new_data: Tag) -> Result<(), DbError> {
     )
 }
 
+#[export]
 pub fn delete_tag(name: &str) -> Result<(), DbError> {
     on_fake_or_real_db(
         |fake_db| fake_db.delete_tag(name),
         || {
             todo!("Delete tag named {name:?}")
+        }
+    )
+}
+
+#[export]
+pub fn clear_tags() -> Result<(), DbError> {
+    on_fake_or_real_db(
+        |fake_db| fake_db.clear_tags(),
+        || {
+            todo!("Delete all tags from the DB")
         }
     )
 }
@@ -51,6 +77,7 @@ pub struct Tag {
     pub icon: Option<String>,
     pub color: Color,
 }
+#[data(impl)]
 impl Tag {
     const NAME_CHAR_LIMIT: usize = 15;
 
@@ -93,5 +120,23 @@ impl PartialOrd for Tag {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Tag {
+    use super::*;
+
+    #[data(impl)]
+    impl Tag {
+        pub fn get_name_char_limit() -> usize { Self::NAME_CHAR_LIMIT }
+        pub fn eq(&self, other: &Tag) -> bool { <Self as PartialEq>::eq(self, other) }
+        pub fn compare(&self, other: &Tag) -> i8 {
+            match <Self as Ord>::cmp(self, other) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            }
+        }
     }
 }

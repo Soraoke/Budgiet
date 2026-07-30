@@ -10,17 +10,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import com.example.budgiet.Currency
+import com.example.budgiet.Decimal
+import com.example.budgiet.Locale
+import com.example.budgiet.Money
 import com.example.budgiet.Result
-import com.example.budgiet.formatPrice
 import com.example.budgiet.into
 import com.example.budgiet.ui.FIELD_TIMEOUT
-import com.example.budgiet.validateFieldInput
+import com.example.budgiet.validateMoneyFieldInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Currency
-import java.util.Locale
 import kotlin.time.Duration
 
 /** Required specification for a **state object** of a [TextField][androidx.compose.material3.TextField]. */
@@ -47,6 +48,13 @@ interface FieldState<T> {
      * (if any) is over and the **parsing** is completed.
      * Otherwise, the **callback** is run immediately*/
     fun ifParseOk(block: (T) -> Unit)
+
+    @Composable
+    fun textFieldSupportingText(prefix: String? = null): (@Composable () -> Unit)? {
+        return this.parseResult.let { if (it is Result.Err) {{
+            ErrorText(prefix, it.error)
+        }} else null }
+    }
 }
 
 /** A set of *delays* imposed upon the *validation/parsing/formatting* callbacks when *auto validating* is enabled (or `null` if it is not enabled).
@@ -153,7 +161,7 @@ class StringTextFieldState @RememberInComposition constructor(
  *
  * Note that, by default, the *parser and formatter* are called automatically.
  * See [autoValidateTimings] to change this behavior. */
-abstract class TextFieldState<T> @RememberInComposition protected constructor(
+open class TextFieldState<T> @RememberInComposition protected constructor(
     initialFieldValue: String,
     private val initialResult: Result<T>,
     private val parser: (String) -> Result<T>,
@@ -263,24 +271,24 @@ abstract class TextFieldState<T> @RememberInComposition protected constructor(
     override fun ifParseOk(block: (T) -> Unit) = ifParseOkImpl(block, this.autoValidateJob)
 }
 
-/** A specific implementation of [TextFieldState] for a *real number* (aka [Double]).
+/** A specific implementation of [TextFieldState] for a *real number* (aka [Decimal]).
  *
  * Note: Pass **`keyboardOptions`** to the [TextField][androidx.compose.material3.TextField] to make the on-screen keyboard show only numbers (like a calculator). */
 class RealNumberFieldState @RememberInComposition private constructor(
     initialFieldValue: String,
-    initialResult: Result<Double>,
-    parser: (String) -> Result<Double>,
-    formatter: ((Double) -> String)?,
+    initialResult: Result<Decimal>,
+    parser: (String) -> Result<Decimal>,
+    formatter: ((Decimal) -> String)?,
     autoValidateTimings: AutoValidateTimings? = null,
-): TextFieldState<Double>(initialFieldValue, initialResult, parser, formatter, autoValidateTimings) {
+): TextFieldState<Decimal>(initialFieldValue, initialResult, parser, formatter, autoValidateTimings) {
     @Suppress("unused")
     @RememberInComposition
     constructor(
-        initialValue: Double,
+        initialValue: Decimal,
         /** Instantiates the state object with an *empty* [fieldText] value if the **`initialValue`** is `0.0`. */
         emptyInitialTextIfZero: Boolean = false,
-        parser: (String) -> Result<Double> = defaultParser,
-        formatter: ((Double) -> String)? = null,
+        parser: (String) -> Result<Decimal> = defaultParser,
+        formatter: ((Decimal) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = if (emptyInitialTextIfZero) { "" } else {
@@ -293,17 +301,17 @@ class RealNumberFieldState @RememberInComposition private constructor(
     @RememberInComposition
     constructor(
         initialTextValue: String,
-        parser: (String) -> Result<Double> = defaultParser,
-        formatter: ((Double) -> String)? = null,
+        parser: (String) -> Result<Decimal> = defaultParser,
+        formatter: ((Decimal) -> String)? = null,
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = initialTextValue,
-        initialResult = if (initialTextValue.isEmpty()) { Result.Ok(0.0) } else { parser(initialTextValue) },
+        initialResult = if (initialTextValue.isEmpty()) { Result.Ok(Decimal.zero()) } else { parser(initialTextValue) },
         parser, formatter, autoValidateTimings
     )
 
     companion object {
-        val defaultParser = { s: String -> Unit.runCatching { s.toDouble() }.into() }
+        val defaultParser = { s: String -> runCatching { Decimal.fromStr(s) }.into() }
         val keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done
@@ -315,14 +323,14 @@ class RealNumberFieldState @RememberInComposition private constructor(
          * @param emptyInitialTextIfZero Instantiates the state object with an *empty* [fieldText] value if the **`initialValue`** is `0.0`. */
         @RememberInComposition
         fun moneyFieldState(
-            initialAmount: Double = 0.0,
+            initialAmount: Decimal = Decimal.zero(),
             emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,
             autoValidateTimings: AutoValidateTimings,
         ): RealNumberFieldState {
-            val parser = { s: String -> currency.validateFieldInput(s, locale) }
-            val formatter = { n: Double -> currency.formatPrice(n, locale) }
+            val parser = { s: String -> runCatching { validateMoneyFieldInput(s, currency, locale) }.into().map { it.amount } }
+            val formatter = { n: Decimal -> Money(n, currency).format(locale, false) }
             return RealNumberFieldState(
                 initialValue = initialAmount,
                 emptyInitialTextIfZero,
@@ -338,7 +346,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
         /** Same as [moneyFieldState], but automatically sets the [autoValidateTimings]. */
         @Composable
         fun rememberMoneyFieldState(
-            initialAmount: Double = 0.0,
+            initialAmount: Decimal = Decimal.zero(),
             emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,

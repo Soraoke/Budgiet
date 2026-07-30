@@ -2,7 +2,6 @@
 
 package com.example.budgiet.ui
 
-import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.RepeatMode
@@ -45,7 +44,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,11 +63,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.budgiet.DbEntry
+import com.example.budgiet.Location
+import com.example.budgiet.LocationDbEntry
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.getFakeLocations
+import com.example.budgiet.getLocationsPage
+import com.example.budgiet.into
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager
 import com.example.budgiet.rememberWork
@@ -77,6 +77,7 @@ import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.utils.ActionDialog
 import com.example.budgiet.ui.utils.ActionDialogPadding
 import com.example.budgiet.ui.utils.Corner
+import com.example.budgiet.ui.utils.FieldState
 import com.example.budgiet.ui.utils.FilledTextIconButton
 import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.ListColumn
@@ -85,186 +86,21 @@ import com.example.budgiet.ui.utils.MenuErrorItem
 import com.example.budgiet.ui.utils.MenuLoadingItem
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
+import com.example.budgiet.ui.utils.StringTextFieldState
+import com.example.budgiet.ui.utils.TextFieldState
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
 import com.example.budgiet.ui.utils.hideDropdownMenuPadding
+import com.example.budgiet.useFakeDb
 import kotlinx.coroutines.delay
-import java.time.LocalTime
-import java.util.Objects
 import kotlin.math.ceil
-import kotlin.math.min
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.DurationUnit
-
-val FAKE_LOCATIONS = mapOf(
-    0u  to Location("Chipotle", "123 Main Street, Bronx NY"),
-    1u  to Location("Aldi", "456 IsNuts Lane, Los Angeles CA"),
-    2u  to Location("Bowling Alley", "789 Trampoline Street, Detroit MI"),
-    3u  to Location("Six Flags Great Adventure", "1 Six Flags Blvd, Jackson Township, NJ 08527"),
-    4u  to Location("Reading Terminal Market", "1136 Arch St, Philadelphia, PA 19107"),
-    5u  to Location("Angie's Seafood", "1727 E Pratt St, Baltimore, MD 21231"),
-    6u  to Location("Ichiran", "132 W 31st St, New York, NY 10001"),
-    7u  to Location("Frugal Bookstore", "57 Warren St, Roxbury, MA 02119"),
-    8u  to Location("Sonic Boom", "215 Spadina Ave., Toronto, ON M5T 2C7, Canada"),
-    9u  to Location("The Little Grand Market", "710 Grandview Xing Wy Suite 112, Columbus, OH 43215"),
-    10u to Location("Five Guys", "3273 Steelyard Dr, Cleveland, OH 44109"),
-)
-
-data class Location(
-    val name: String,
-    val address: String? = null,
-    // TODO: remove this when we have a real db
-    val lastUsed: LocalTime? = null,
-) {
-    override fun equals(other: Any?) = when (other) {
-        is Location -> this.name == other.name && this.address == other.address
-        else -> false
-    }
-    override fun toString() = "$name${address?.let { " at $it" } ?: ""}"
-    override fun hashCode() = Objects.hash(name, address)
-}
-
-class LocationViewModel: ViewModel() {
-    private val fakeDb = mutableStateMapOf<UInt, Location>()
-    /** Makes the [ViewModel] ignore the internal database, and instead will hold the [Location]s data in a [MutableList] in memory.
-     *
-     * Don't use in production :D */
-    internal fun useAlternativeLocations(locations: Map<UInt, Location>) {
-        this.fakeDb.clear()
-        locations.forEach { this.fakeDb[it.key] = it.value }
-    }
-
-    var selectedLocation by mutableStateOf<DbEntry<Location>?>(null)
-
-    // TODO: doc, throws
-    fun locationsPage(query: CharSequence?, start: UInt, len: UInt): List<DbEntry<Location>> {
-        val list = this.fakeDb
-            .entries.toList()
-            .map { DbEntry(it.key, it.value) }
-            .run { if (query != null) {
-                filter {
-                    it.data.name.contains(query, ignoreCase = true)
-                    || it.data.address?.contains(query, ignoreCase = true) ?: false
-                }
-            } else this }
-
-        val toIdx = min((start + len).toInt(), list.size)
-        val fromIdx = min(start.toInt(), toIdx)
-        return list.subList(fromIdx, toIdx)
-            .sortedByDescending { it.data.lastUsed }
-
-        // TODO: real impl
-    }
-
-    // TODO: doc
-    fun nearbyLocations(context: Context, searchRadius: UInt): List<DbEntry<Location>> {
-        TODO()
-    }
-
-    // TODO: doc
-    fun nearbyAddresses(context: Context, searchRadius: UInt): List<String> {
-        TODO()
-    }
-
-    fun newLocation(data: Location): DbEntry<Location> {
-        val data = data.copy(lastUsed = LocalTime.now())
-
-        var id = 0u
-        while (this.fakeDb.keys.contains(id)) {
-            id++
-        }
-
-        this.fakeDb[id] = data
-        return DbEntry(id, data)
-
-        // TODO: real impl
-    }
-
-    fun editLocation(id: UInt, newData: Location) {
-        val newData = newData.copy(lastUsed = LocalTime.now())
-
-        this.fakeDb.replace(id, newData)
-        // TODO: real impl
-
-        // Update selected location.
-        if (this.selectedLocation?.let { id == it.id } ?: false) {
-            this.selectedLocation = DbEntry(id, newData)
-        }
-    }
-
-    fun deleteLocation(id: UInt) {
-        this.fakeDb.remove(id)
-        // TODO: real impl
-
-        // Update selected location.
-        if (this.selectedLocation?.let { id == it.id } ?: false) {
-            this.selectedLocation = null
-        }
-    }
-
-    /** Returns an Error if the [Location] could not be submitted because of collisions with *other* [Location]s.
-     *
-     *  This function should only check the **`data`** against *other distinct* items,
-     *  so it has to avoid checking it against the original [Location] data it is editing from.
-     *  If the function is being called for ***editing*** an existing [Location] item,
-     *  the **`ogData`** argument should have that data, otherwise the argument should be `null`.
-     *
-     *  Note that this function *does not* check if the [**name**][Location.name] or [**address**][Location.address] are valid data that can be put in the database.
-     *  This should be checked with [validateName] and [validateAddress] respectively. */
-    // TODO: make unit test (but in rust) for this:
-    //   Add new location (name, addr) when location (name, addr) with the same (addr) but diff name exists
-    //   Add new location (name, no addr) when location (name, addr) with same (name) exists
-    //   Add new location (name, no addr) when location (name, no addr) with same (name) exists
-    //   Add new location (name, addr) when location (name, addr) with same (name, addr) exists
-    //   Add location A (name, addrA), Add location B (name, addrB), Try add location A and B again (fail)
-    //   Edit existing location, repeating all same rules as above.
-    fun validateData(data: Location, ogData: Location? = null): Result<Unit> {
-        this.fakeDb.values
-            // Don't check data against original item data.
-            .run { ogData?.let {
-                filter { !(it.name == ogData.name && it.address == ogData.address) }
-            } ?: this }
-            .forEach { other ->
-                val msg = if (data.name == other.name) {
-                    when (Pair(data.address == null, other.address == null)) {
-                        Pair(true, true),
-                        Pair(false, true) -> "A location with this name and no address already exists.\nTry using another name."
-                        Pair(true, false) -> "A location with this name already exists.\nTry adding an address (or use another name) to differentiate them."
-                        Pair(false, false) -> if (data.address == other.address) {
-                            "A location with this name and address already exists."
-                        } else {
-                            null
-                        }
-                        else -> null
-                    }
-                } else {
-                    null
-                }
-
-                msg?.let {
-                    return Result.Err(Exception(msg))
-                }
-            }
-
-        return Result.Ok(Unit)
-    }
-    fun validateName(name: String): Result<Unit> {
-        val msg = if (name.isEmpty()) {
-            "Name must not be empty"
-        } else {
-            null
-        }
-
-        return msg?.let { Result.Err(Exception(msg)) }
-            ?: Result.Ok(Unit)
-    }
-    fun validateAddress(address: String) = Result.Ok(Unit)
-}
 
 /** Displays the [Location] selected by the user to be assigned to the [NewTransaction][NewTransactionForm].
  *
  * This displays 2 buttons:
  *  1. Displays the *currently selected [Location]* and opens the [LocationPickerDialog].
- *  2. To search from [nearbyLocations][LocationViewModel.nearbyLocations].
+ *  2. To search from [NearbyLocationsDialog].
  *
  * @param onClickSelect The action that runs when the *"Select location"* button is *clicked*.
  *   This action should open the [LocationPickerDialog].
@@ -272,7 +108,7 @@ class LocationViewModel: ViewModel() {
  *   This action should open the [NearbyLocationsDialog]. */
 @Composable
 fun RowScope.LocationField(
-    viewModel: LocationViewModel,
+    selectedLocation: Location?,
     onClickSelect: () -> Unit,
     onClickNearby: () -> Unit,
 ) {
@@ -284,13 +120,13 @@ fun RowScope.LocationField(
             modifier = Modifier
                 .semantics {
                     contentDescription = "Select location"
-                    stateDescription = viewModel.selectedLocation?.data?.toString() ?: "None selected"
+                    stateDescription = selectedLocation?.toString() ?: "None selected"
                 },
             onClick = onClickSelect,
             // Modify the shape on the left-side of the button to connect with the auto-select location button.
             shape = halfRoundedCornerShape(Corner.Right),
         ) {
-            Text(viewModel.selectedLocation?.data?.toString() ?: "Select Location")
+            Text(selectedLocation?.toString() ?: "Select Location")
         }
     }
     PlainToolTipBox("Nearby locations") {
@@ -315,27 +151,28 @@ sealed class LocationPickerState {
     /** Form to *create* a new [Location] item. */
     object New: LocationPickerState()
     /** Form to *edit* an existing [Location] item. */
-    class Edit(val location: DbEntry<Location>): LocationPickerState()
+    class Edit(val location: LocationDbEntry): LocationPickerState()
 }
 /** Shows a [Dialog][ActionDialog] that allows the user to select a [Location].
  * Shows different content depending on the [LocationPickerState]. */
 @Composable
 fun LocationPickerDialog(
     modifier: Modifier = Modifier,
-    viewModel: LocationViewModel,
     state: LocationPickerState,
     onStateChange: (LocationPickerState) -> Unit,
+    selectedLocation: LocationDbEntry?,
+    onSelectLocation: (LocationDbEntry) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var newLocationId by remember { mutableStateOf<UInt?>(null) }
+    var newLocationId by remember { mutableStateOf<ULong?>(null) }
 
     when (state) {
         LocationPickerState.Search -> {
             LocationSearchDialog(
                 modifier = modifier,
-                viewModel = viewModel,
+                selectedLocation = selectedLocation,
                 onDismiss = onDismiss,
-                onSubmit = { viewModel.selectedLocation = it },
+                onSubmit = onSelectLocation,
                 onNewClick = { onStateChange(LocationPickerState.New) },
                 onEditClick = { onStateChange(LocationPickerState.Edit(it)) },
                 newLocationId = newLocationId,
@@ -344,7 +181,8 @@ fun LocationPickerDialog(
         LocationPickerState.Nearby -> {
             NearbyLocationsDialog(
                 modifier = modifier,
-                viewModel = viewModel,
+                selectedLocation = selectedLocation,
+                onSelectLocation = onSelectLocation,
                 onDismiss = onDismiss,
             )
         }
@@ -356,14 +194,13 @@ fun LocationPickerDialog(
 
             LocationEditorDialog(
                 modifier = modifier,
-                location = editLocation?.data,
-                viewModel = viewModel,
+                editLocation = editLocation?.data,
                 onDismiss = { onStateChange(LocationPickerState.Search) },
                 onSubmit = { newLocationId = editLocation?.let { editLoc ->
-                    viewModel.editLocation(editLoc.id, it)
+                    editLoc.edit(it)
                     editLoc.id
                 } ?: run {
-                    viewModel.newLocation(it).id
+                    LocationDbEntry.insertNew(it).id
                 } },
             )
         }
@@ -377,7 +214,7 @@ fun LocationPickerDialog(
  *
  * @param onSubmit The action that runs when the user clicks the `"Submit"` button.
  *   Passes the [Location] and its **ID** as the argument.
- *   This action should set the [selectedLocation][LocationViewModel.selectedLocation].
+ *   This action should set the [selectedLocation].
  * @param newLocationId When a new [Location] item was added to the list of locations,
  *   that item (by ID) in the list of *Recents* will have an *animated scrim* to indicate that it was just added.
  * @param onNewClick The action to run when the `"New Location"` button is clicked.
@@ -387,12 +224,12 @@ fun LocationPickerDialog(
 @Composable
 private fun LocationSearchDialog(
     modifier: Modifier = Modifier,
-    viewModel: LocationViewModel,
-    newLocationId: UInt? = null,
+    selectedLocation: LocationDbEntry?,
+    newLocationId: ULong? = null,
+    onSubmit: (LocationDbEntry) -> Unit,
     onDismiss: () -> Unit,
-    onSubmit: (DbEntry<Location>) -> Unit,
     onNewClick: () -> Unit,
-    onEditClick: (DbEntry<Location>) -> Unit,
+    onEditClick: (LocationDbEntry) -> Unit,
 ) {
     val searchColumnSize = 3.5f
     val newItemAnimationSpeed = 250.milliseconds // In millis
@@ -405,12 +242,12 @@ private fun LocationSearchDialog(
 
     val searchPager = rememberQueryListPager(
         queryState = searchState,
-        getPage = { query, start, len -> viewModel.locationsPage(query, start, len) },
+        getPage = { query, start, len -> getLocationsPage(query.toString(), start, len) },
         // Page size should have enough items to scroll down several times the number of items showed.
         pageSize = pageSize,
     )
     val recentsPager = rememberListPager(
-        getPage = { start, len -> viewModel.locationsPage(null, start, len) },
+        getPage = { start, len -> getLocationsPage(null, start, len) },
         pageSize = pageSize,
     )
 
@@ -422,7 +259,7 @@ private fun LocationSearchDialog(
     }
 
     @Composable
-    fun ListColumnItemScope.LocationItem(item: DbEntry<Location>, query: CharSequence? = null, isNew: Boolean = false) {
+    fun ListColumnItemScope.LocationItem(item: LocationDbEntry, query: CharSequence? = null, isNew: Boolean = false) {
         val defaultContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
         val newItemAnimatedColor = if (isNew && animateNewItemScrim) {
             LaunchedEffect(Unit) {
@@ -475,8 +312,7 @@ private fun LocationSearchDialog(
                     .combinedClickable(
                         onClick = {
                             onSubmit(item)
-                            // Put item first in the list (sorted by lastUsed).
-                            viewModel.editLocation(item.id, item.data)
+                            item.markUsed()
                             close()
                         },
                         onLongClick = { showActionsMenu = true },
@@ -485,7 +321,7 @@ private fun LocationSearchDialog(
                     // Show a scrim
                     containerColor = if (showActionsMenu) {
                         MaterialTheme.colorScheme.surfaceContainerHigh
-                    } else if (viewModel.selectedLocation?.let { it.id == item.id } ?: false) {
+                    } else if (selectedLocation?.let { it.id == item.id } ?: false) {
                         MaterialTheme.colorScheme.surfaceContainerLowest
                     } else newItemAnimatedColor
                     ?: defaultContainerColor,
@@ -498,7 +334,7 @@ private fun LocationSearchDialog(
                 onDismiss = { showActionsMenu = false },
                 onEditClick = { onEditClick(item) },
                 onDeleteClick = {
-                    viewModel.deleteLocation(item.id)
+                    item.delete()
                     searchPager.refresh()
                     recentsPager.refresh()
                 },
@@ -601,20 +437,19 @@ private fun LocationSearchDialog(
 
 /** Display a [Dialog][ActionDialog] that prompts the user for information of a [Location] they want to *edit or create*.
  *
- * @param location The data of the [Location] that is being modified.
+ * @param editLocation The data of the [Location] that is being modified.
  * @param onSubmit The action that runs when the user clicks the `"Submit"` button and all the data has been validated.
  *   This provides an argument with the *new* [Location] data.
- *   This function should call [**newLocation**][LocationViewModel.newLocation] or [**editLocation**][LocationViewModel.editLocation]
+ *   This function should call [LocationDbEntry.insertNew] or [LocationDbEntry.edit]
  *   respective to the purpose of this dialog (to edit an existing tag or create a new one). */
 @Composable
 private fun LocationEditorDialog(
     modifier: Modifier = Modifier,
-    location: Location?,
-    viewModel: LocationViewModel,
+    editLocation: Location?,
+    onSubmit: (Location) -> Unit,
     onDismiss: () -> Unit,
-    onSubmit: (Location) -> Unit
 ) {
-    val maxMenuItems = 10u
+    val maxMenuItems = 10.toULong()
     val menuMaxHeight = 150.dp
     val menuShape = MaterialTheme.shapes.medium
     val menuItemPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
@@ -623,29 +458,37 @@ private fun LocationEditorDialog(
         .padding(menuItemPadding)
         .clip(menuShape)
 
+    val isNew = editLocation == null
     var showNearbyDialog by rememberSaveable { mutableStateOf(false) }
 
-    var locationName by rememberSaveable(location) { mutableStateOf(location?.name ?: "") }
-    var locationAddress by rememberSaveable(location) { mutableStateOf(location?.address) }
-    var nameError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
-    var addressError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    val editLocationState = remember(editLocation) { object {
+        val name = StringTextFieldState(
+            initialValue = editLocation?.name ?: "",
+            validator = { runCatching { Location.validateName(it, isNew) }.into() },
+        )
+        val address = TextFieldState<String?>(
+            initialTextValue = editLocation?.address ?: "",
+            parser = { s -> if (s.isEmpty()) { Result.Ok(null) } else {
+                runCatching { Location.validateAddress(s, isNew) }.into()
+                    .map { s }
+            } },
+        )
+    } }
     /** Disables the "Submit" button if attempting to submit causes an error. */
-    var submitError by remember(location) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
+    var submitError by remember(editLocation) { mutableStateOf<Result<Unit>>(Result.Ok(Unit)) }
 
     @Composable
     fun TextField(
         label: String,
         modifier: Modifier = Modifier,
-        value: String,
-        onValueChange: (String) -> Unit,
-        error: Result<Unit>,
+        fieldState: FieldState<*>,
         suggestedValues: Result<Set<String>>?,
     ) {
         var shouldShowMenu by remember { mutableStateOf(false) }
         val expanded = shouldShowMenu
-                && value.isNotEmpty()
-                && suggestedValues?.run { this is Result.Err || isOkAnd { it.isNotEmpty() } }
-                ?: true // Show a loading menu if null
+            && fieldState.fieldText.isNotEmpty()
+            && suggestedValues?.run { this is Result.Err || isOkAnd { it.isNotEmpty() } }
+            ?: true // Show a loading menu if null
 
         ExposedDropdownMenuBox(
             modifier = modifier,
@@ -665,12 +508,10 @@ private fun LocationEditorDialog(
                     errorContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                value = value,
-                onValueChange = onValueChange,
-                isError = error is Result.Err,
-                supportingText = if (error is Result.Err) {{
-                    Text(error.error.message!!)
-                }} else null,
+                value = fieldState.fieldText,
+                onValueChange = { fieldState.fieldText = it },
+                isError = fieldState.parseResult is Result.Err,
+                supportingText = fieldState.textFieldSupportingText(),
             )
 
             ExposedDropdownMenu(
@@ -688,7 +529,8 @@ private fun LocationEditorDialog(
                             modifier = menuItemModifier,
                             text = { Text(suggestedValue) },
                             onClick = {
-                                onValueChange(suggestedValue)
+                                fieldState.fieldText = suggestedValue
+                                fieldState.doValidate()
                                 shouldShowMenu = false
                             }
                         )
@@ -711,14 +553,14 @@ private fun LocationEditorDialog(
     @Composable
     fun getSuggestedItems(
         query: String,
-        map: (DbEntry<Location>) -> String?
+        map: (LocationDbEntry) -> String?
     ) = rememberWork(query) {
         // Use Set; only allow a single instance of an item to exist.
         val set = mutableSetOf<String>()
-        var start = 0u
+        var start = 0.toULong()
 
         while (set.size < maxMenuItems.toInt()) {
-            val page = viewModel.locationsPage(query, start, maxMenuItems)
+            val page = getLocationsPage(query, start, maxMenuItems)
             if (page.isEmpty()) {
                 break
             }
@@ -733,10 +575,12 @@ private fun LocationEditorDialog(
     }
 
     if (showNearbyDialog) {
-        NearbyLocationsDialog(
+        NearbyAddressesDialog(
             modifier = modifier,
-            viewModel = viewModel,
-            mode = NearbyDialogMode.Addresses,
+            onSubmit = {
+                editLocationState.address.fieldText = it
+                editLocationState.address.doValidate()
+            },
             onDismiss = { showNearbyDialog = false },
         )
     } else {
@@ -744,7 +588,7 @@ private fun LocationEditorDialog(
             modifier = modifier,
             onDismiss = onDismiss,
             title = {
-                Text(if (location != null) "Edit location" else "New location",
+                Text(if (editLocation != null) "Edit location" else "New location",
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.headlineSmall,
                 )
@@ -755,18 +599,20 @@ private fun LocationEditorDialog(
                 }
 
                 val canSubmit = {
-                    nameError is Result.Ok && addressError is Result.Ok && submitError is Result.Ok
+                    editLocationState.name.parseResult is Result.Ok
+                    && editLocationState.address.parseResult is Result.Ok
+                    && submitError is Result.Ok
                     // Check that changes have been made if editing an existing location.
-                    && (location?.let { it != Location(locationName, locationAddress) } ?: true)
+                    && (editLocation?.let { it != Location(editLocationState.name.parseResult.unwrap(), editLocationState.address.parseResult.unwrap()) } ?: true)
                 }
-                PlainToolTipBox(if (location != null) "Save changes" else "Submit new location") {
+                PlainToolTipBox(if (isNew) "Submit new location" else "Save changes") {
                     FilledTextIconButton(
                         onClick = {
-                            val newData = Location(locationName, locationAddress)
+                            editLocationState.name.doValidate()
+                            editLocationState.address.doValidate()
 
-                            nameError = viewModel.validateName(locationName)
-                            addressError = viewModel.validateAddress(locationName)
-                            submitError = viewModel.validateData(newData, ogData = location)
+                            val newData = Location(editLocationState.name.fieldText, editLocationState.address.fieldText)
+                            submitError = runCatching { Location.validate(newData, oldData = editLocation) }.into()
 
                             if (canSubmit()) {
                                 onSubmit(newData)
@@ -775,22 +621,16 @@ private fun LocationEditorDialog(
                         },
                         enabled = canSubmit(),
                         icon = { Icon(painterResource(R.drawable.check_24px), null) },
-                        text = { Text(if (location != null) "Save" else "Submit") },
+                        text = { Text(if (editLocation != null) "Save" else "Submit") },
                     )
                 }
             }
         ) {
-            val suggestedNames by getSuggestedItems(locationName) { item -> item.data.name }
-            val suggestedAddresses by getSuggestedItems(locationAddress ?: "") { item -> item.data.address }
+            val suggestedNames by getSuggestedItems(editLocationState.name.fieldText) { item -> item.data.name }
+            val suggestedAddresses by getSuggestedItems(editLocationState.address.fieldText) { item -> item.data.address }
 
             TextField("Name",
-                value = locationName,
-                onValueChange = {
-                    locationName = it
-                    nameError = viewModel.validateName(it)
-                    submitError = Result.Ok(Unit)
-                },
-                error = nameError,
+                fieldState = editLocationState.name,
                 suggestedValues = suggestedNames,
             )
 
@@ -804,13 +644,7 @@ private fun LocationEditorDialog(
                     modifier = Modifier
                         .weight(1.0f)
                         .padding(end = spacing),
-                    value = locationAddress ?: "",
-                    onValueChange = {
-                        locationAddress = it.ifEmpty { null }
-                        addressError = viewModel.validateAddress(it)
-                        submitError = Result.Ok(Unit)
-                    },
-                    error = addressError,
+                    fieldState = editLocationState.address,
                     suggestedValues = suggestedAddresses,
                 )
 
@@ -844,25 +678,20 @@ private fun LocationEditorDialog(
     }
 }
 
-enum class NearbyDialogMode {
-    FullLocations, Addresses,
-}
+// TODO: doc
 @Composable
 fun NearbyLocationsDialog(
     modifier: Modifier = Modifier,
-    viewModel: LocationViewModel,
-    mode: NearbyDialogMode = NearbyDialogMode.FullLocations,
+    selectedLocation: LocationDbEntry?,
+    onSelectLocation: (LocationDbEntry) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selected by remember { mutableStateOf(viewModel.selectedLocation) }
+    var selected by remember { mutableStateOf(selectedLocation) }
 
     ActionDialog(
         modifier = modifier,
         onDismiss = onDismiss,
-        title = { Text("Nearby ${when (mode) {
-            NearbyDialogMode.FullLocations -> "locations"
-            NearbyDialogMode.Addresses -> "addresses"
-        }}") },
+        title = { Text("Nearby locations") },
         actions = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
@@ -870,10 +699,11 @@ fun NearbyLocationsDialog(
 
             PlainToolTipBox("Use selected location") {
                 FilledTextIconButton(
-                    onClick = {
-                        viewModel.selectedLocation = selected
+                    enabled = selected != null,
+                    onClick = { selected?.let {
+                        onSelectLocation(it)
                         onDismiss()
-                    },
+                    } },
                     icon = { Icon(painterResource(R.drawable.check_24px), null) },
                     text = { Text("Done") },
                 )
@@ -885,14 +715,69 @@ fun NearbyLocationsDialog(
     }
 }
 
+// TODO: doc
+@Composable
+private fun NearbyAddressesDialog(
+    modifier: Modifier = Modifier,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+
+    ActionDialog(
+        modifier = modifier,
+        onDismiss = onDismiss,
+        title = { Text("Nearby addresses") },
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+
+            PlainToolTipBox("Use selected address") {
+                FilledTextIconButton(
+                    enabled = selected != null,
+                    onClick = { selected?.let {
+                        onSubmit(it)
+                        onDismiss()
+                    } },
+                    icon = { Icon(painterResource(R.drawable.check_24px), null) },
+                    text = { Text("Done") },
+                )
+            }
+        },
+    ) {
+        // TODO:
+        Text("TODO: Not yet implemented")
+    }
+}
+
+private val FAKE_LOCATIONS = getFakeLocations()
+/** Setup fake locations for Previews.
+ * Returns the [Database Entry][LocationDbEntry] for the passed in [Location] data (if any) */
+@Composable
+private fun useFakeLocations(selectedLocation: Location? = null): LocationDbEntry? = remember {
+    useFakeDb()
+    LocationDbEntry.clearAll()
+    val entries = mutableListOf<LocationDbEntry>()
+
+    for (data in FAKE_LOCATIONS) {
+        entries.add(LocationDbEntry.insertNew(data))
+    }
+    selectedLocation?.let { location ->
+        when (val found = entries.find { it.data.name == location.name && it.data.address == location.address }) {
+            null -> throw Exception("Could not find location $location")
+            else -> found
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun LocationFieldPreview() {
+    useFakeLocations()
     BudgietTheme { Row {
         LocationField(
-            viewModel = viewModel<LocationViewModel>().apply {
-                useAlternativeLocations(FAKE_LOCATIONS)
-            },
+            selectedLocation = null,
             onClickSelect = { },
             onClickNearby = { },
         )
@@ -902,11 +787,10 @@ fun LocationFieldPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun LocationSearchPreview() {
+    useFakeLocations()
     BudgietTheme {
         LocationSearchDialog(
-            viewModel = viewModel<LocationViewModel>().apply {
-                useAlternativeLocations(FAKE_LOCATIONS)
-            },
+            selectedLocation = null,
             onDismiss = { },
             onSubmit = { },
             onNewClick = { },
@@ -918,12 +802,10 @@ private fun LocationSearchPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun NewLocationPreview() {
+    useFakeLocations()
     BudgietTheme {
         LocationEditorDialog(
-            location = null,
-            viewModel = viewModel<LocationViewModel>().apply {
-                useAlternativeLocations(FAKE_LOCATIONS)
-            },
+            editLocation = null,
             onDismiss = { },
             onSubmit = { _ -> }
         )
@@ -933,11 +815,11 @@ private fun NewLocationPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun NearbyLocationsPreview() {
+    useFakeLocations()
     BudgietTheme {
         NearbyLocationsDialog(
-            viewModel = viewModel<LocationViewModel>().apply {
-                useAlternativeLocations(FAKE_LOCATIONS)
-            },
+            selectedLocation = null,
+            onSelectLocation = { },
             onDismiss = { },
         )
     }
@@ -946,9 +828,10 @@ private fun NearbyLocationsPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun LocationPickerEmptyPreview() {
+    useFakeLocations()
     BudgietTheme {
         LocationSearchDialog(
-            viewModel = viewModel<LocationViewModel>(),
+            selectedLocation = null,
             onDismiss = { },
             onSubmit = { },
             onNewClick = { },

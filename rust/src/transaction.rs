@@ -1,9 +1,12 @@
-use std::sync::LazyLock;
+use std::{sync::LazyLock, todo};
 use boltffi::{data, export};
 use chrono::{DateTime, Utc};
 use crate::{Money, db::{DbError, on_fake_or_real_db}, items::{Item, Tax}, location::LocationDbEntry, tags::Tag};
 
-static FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
+/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
+pub fn fake_transactions() -> &'static [Transaction] { &*__FAKE_TRANSACTIONS }
+#[doc(hidden)]
+static __FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
     // TODO:
 ]);
 /// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
@@ -11,7 +14,7 @@ static FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
 /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
 /// The returned list should be cached in the memory of the native application running.
 #[export]
-pub fn get_fake_transactions() -> &'static [Transaction] { &*FAKE_TRANSACTIONS }
+pub fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }
 
 #[derive(Debug, Clone)]
 #[data]
@@ -54,8 +57,8 @@ pub fn get_transactions_page(query: Option<String>, start: usize, len: usize) ->
     )
 }
 
-#[derive(Debug, Clone)]
 #[data]
+#[derive(Debug, Clone)]
 pub struct TransactionDbEntry {
     pub id: u64,
     pub data: Transaction,

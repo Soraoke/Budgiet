@@ -18,12 +18,12 @@ import java.util.concurrent.Executors
 const val DEFAULT_MAX_PAGES = 4u
 
 // NOTE: key is NOT a Location ID, but an index in the pagination
-typealias PagingKey = UInt
+typealias PagingKey = ULong
 typealias ListPager<T> = Pager<PagingKey, T>
 
 /** The **function** that is in charge of getting the **data** that will be loaded by the [ListPagingSource].
  * ```kotlin
- * suspend (query: CharSequence, startIndex: UInt, length: UInt) -> List<T>
+ * suspend (query: CharSequence, startIndex: ULong, length: ULong) -> List<T>
  * ```
  *
  * This function *must be* ***pure*** and ***consecutive***.
@@ -64,9 +64,9 @@ typealias ListPager<T> = Pager<PagingKey, T>
  *
  *   If the **size** of the [List] is less than the requested **length**,
  *   the *pager* will assume that there are no more items in the dataset and will not request any further pages. */
-typealias QueryPageGetter<T> = suspend (CharSequence, UInt, UInt) -> List<T>
+typealias QueryPageGetter<T> = suspend (CharSequence, ULong, ULong) -> List<T>
 /** The same as [QueryPageGetter], but does not have a **query** parameter. */
-typealias PageGetter<T> = suspend (UInt, UInt) -> List<T>
+typealias PageGetter<T> = suspend (ULong, ULong) -> List<T>
 
 /** Create a [Pager] for a **query** result that persists in a [Composable].
  *
@@ -79,7 +79,7 @@ typealias PageGetter<T> = suspend (UInt, UInt) -> List<T>
 @Composable
 fun <T: Any> rememberQueryListPager(
     /**```kotlin
-     * suspend (query: CharSequence, startIndex: UInt, length: UInt) -> List<T>
+     * suspend (query: CharSequence, startIndex: ULong, length: ULong) -> List<T>
      * ```
      * See [QueryPageGetter]. */
     getPage: QueryPageGetter<T>,
@@ -99,7 +99,7 @@ fun <T: Any> rememberQueryListPager(
 @Composable
 fun <T: Any> rememberListPager(
     /**```kotlin
-     * suspend (startIndex: UInt, length: UInt) -> List<T>
+     * suspend (startIndex: ULong, length: ULong) -> List<T>
      * ```
      * See [PageGetter]. */
     getPage: PageGetter<T>,
@@ -206,7 +206,7 @@ class ListPagingSource<T: Any> private constructor(
          * If the getter does not need a query, use [ListPagingSource.withoutQuery] with [PageGetter] instead. */
         fun <T: Any> withQuery(
             /**```kotlin
-             * suspend (query: CharSequence, startIndex: UInt, length: UInt) -> List<T>
+             * suspend (query: CharSequence, startIndex: ULong, length: ULong) -> List<T>
              * ```
              * See [QueryPageGetter]. */
             getPage: QueryPageGetter<T>,
@@ -216,7 +216,7 @@ class ListPagingSource<T: Any> private constructor(
         /** This constructor is for a [PagingSource] that ***does not*** use a **query** to get pages. */
         fun <T: Any> withoutQuery(
             /**```kotlin
-             * suspend (startIndex: UInt, length: UInt) -> List<T>
+             * suspend (startIndex: ULong, length: ULong) -> List<T>
              * ```
              * See [PageGetter]. */
             getPage: PageGetter<T>,
@@ -235,10 +235,10 @@ class ListPagingSource<T: Any> private constructor(
 
     /** Return `null` if the **key** is out of bounds.
      *
-     * Made the argument type [Int] instead of [UInt] to avoid underflow,
-     * but **key** should always be [UInt] everywhere else. */
+     * Made the argument type [Int] instead of [ULong] to avoid underflow,
+     * but **key** should always be [ULong] everywhere else. */
     private fun ensureValidKey(key: Int): PagingKey? = when {
-        key >= 0 -> key.toUInt()
+        key >= 0 -> key.toULong()
         else -> null
     }
 
@@ -260,10 +260,10 @@ class ListPagingSource<T: Any> private constructor(
 
         val task = when (this.type) {
             is ListPagingSourceType.NoQuery -> suspend {
-                this.type.getPage(start, params.loadSize.toUInt())
+                this.type.getPage(start, params.loadSize.toULong())
             }
             is ListPagingSourceType.WithQuery -> suspend {
-                this.type.getPage(this.type.queryState.text, start, params.loadSize.toUInt())
+                this.type.getPage(this.type.queryState.text, start, params.loadSize.toULong())
             }
         }
         val result = if (this.executor == null) {
@@ -288,7 +288,7 @@ class ListPagingSource<T: Any> private constructor(
             },
             // Only provide a nextKey if there are potentially more items to load
             nextKey = if (data.size >= params.loadSize) {
-                start + data.size.toUInt()
+                start + data.size.toULong()
             } else {
                 null
             },

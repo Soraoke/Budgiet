@@ -1,23 +1,25 @@
-use std::{fmt::Display, sync::LazyLock};
-use std::str::FromStr;
+use std::{fmt::Display, format, str::FromStr, sync::LazyLock};
 use boltffi::{data, export};
 use rust_decimal::Decimal;
 use crate::price::{format_money, validate_money_field_input};
 use crate::{Currency, Locale, Money};
 
-static FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
+/// Returns a slice containing sample [`Items`][Item] that are used for demos and App Tests.
+pub fn fake_items() -> &'static [Item] { &*__FAKE_ITEMS }
+#[doc(hidden)]
+static __FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
     Item::new_fake("Ham", 5.99, Amount::Units(1)),
     Item::new_fake("Cheese", 2.59, Amount::new_fake_measured(1.0, "lbs")),
     Item::new_fake("Bread", 4.19, Amount::Units(2)),
     Item::new_fake("Crackers", 1.89, Amount::Units(1)),
     Item::new_fake("Chicken", 4.99, Amount::new_fake_measured(3.5, "lbs")),
 ]);
-/// Returns a slice containing sample [`Items`][Item] that are used for demos and App Tests.
+/// Returns an array containing sample [`Items`][Item] that are used for demos and App Tests.
 ///
 /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
 /// The returned list should be cached in the memory of the native application running.
 #[export]
-pub fn get_fake_items() -> &'static [Item] { &*FAKE_ITEMS }
+pub fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
 
 /// Calculate the total cost of *all [`Items`][Item]* combined, plus the [`Tax`] amount.
 #[export]
@@ -164,13 +166,34 @@ impl Amount {
         }
     }
 }
-#[data(impl)]
 impl Display for Amount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Measured { value, label } => write!(f, "{value} {label}"),
             Self::Units(value) => f.write_str(&value.to_string()),
         }
+    }
+}
+impl Display for AmountType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Measured => "Measured",
+            Self::Units => "Units",
+        })
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Amount {
+    use super::*;
+
+    #[data(impl)]
+    impl Amount {
+        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
+    }
+    #[data(impl)]
+    impl AmountType {
+        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }
 
@@ -220,5 +243,23 @@ impl Tax {
             Self::CurrencyAmount { .. } => TaxType::CurrencyAmount,
             Self::Percentage(_) => TaxType::Percentage,
         }
+    }
+}
+impl Display for TaxType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::CurrencyAmount => "CurrencyAmount",
+            Self::Percentage => "Percentage",
+        })
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Tax {
+    use super::*;
+
+    #[data(impl)]
+    impl TaxType {
+        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }

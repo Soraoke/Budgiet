@@ -8,12 +8,14 @@ edition = "2024"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-boltffi = "0.26.1"
+boltffi = "0.28.0"
 chrono = { workspace = true }
 itertools = { workspace = true }
+num-format = "0.4.4"
 regex = "1.12.4"
 rust_decimal = "1.42.1"
 rusty-money = "=0.5.0"
 serde = "1.0.228"
 thiserror = "2.0.18"
+tokio = { version = "1.53.0", features = ["sync", "fs", "rt-multi-thread"] }
 unicode-segmentation = "1.13.3"

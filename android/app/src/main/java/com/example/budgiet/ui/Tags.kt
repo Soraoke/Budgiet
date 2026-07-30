@@ -48,8 +48,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
@@ -59,7 +59,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
@@ -79,7 +78,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgiet.R
 import com.example.budgiet.Result
+import com.example.budgiet.Tag
 import com.example.budgiet.UserIcons
+import com.example.budgiet.clearTags
+import com.example.budgiet.correctColorContrast
+import com.example.budgiet.getAllTags
+import com.example.budgiet.getFakeTags
+import com.example.budgiet.insertTag
+import com.example.budgiet.into
 import com.example.budgiet.ui.theme.BudgietTheme
 import com.example.budgiet.ui.theme.UserColorPalette
 import com.example.budgiet.ui.utils.ActionDialog
@@ -93,10 +99,11 @@ import com.example.budgiet.ui.utils.ItemActionsMenu
 import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.border
-import com.example.budgiet.ui.utils.correctContentContrast
 import com.example.budgiet.ui.utils.halfRoundedCornerShape
+import com.example.budgiet.ui.utils.into
 import com.example.budgiet.ui.utils.onMeasureCoords
 import com.example.budgiet.ui.utils.parentDialogOffset
+import com.example.budgiet.useFakeDb
 
 val TAG_GRID_MAX_HEIGHT = 250.dp
 val TAG_GRID_PADDING = PaddingValues(4.dp)
@@ -106,79 +113,31 @@ val TAG_SHAPE
 val SELECTED_TAG_BORDER_COLOR
     @Composable get() = MaterialTheme.colorScheme.tertiaryFixedDim
 
-val FAKE_TAGS = listOf(
-    Tag("Groceries", "shopping_cart", UserColorPalette.Green),
-    Tag("Transportation", "rail_subway_train_transport", UserColorPalette.Blue),
-    Tag("Take-out", "fast_food_restaurant", UserColorPalette.Orange),
-    Tag("School", "education_school_cap", UserColorPalette.Brown),
-    Tag("Trips", "hiking_person", UserColorPalette.Turquoise),
-    Tag("Utility", "domain_infrastructure", UserColorPalette.Yellow),
-)
-
-data class Tag(
-    val name: String,
-    val icon: String?,
-    val color: Color,
-)
-
 class TagsViewModel: ViewModel() {
-    /** A fake "database" containing tag data in memory. will be removed once the real database is implemented. */
-    // TODO:
-    private val fakeTagsDb = mutableStateListOf<Tag>()
-
-    val tagNameCharLimit = 15
-
-    val allTags: List<Tag> = this.fakeTagsDb
+    private var _allTags: MutableState<List<Tag>> = mutableStateOf(getAllTags())
+    val allTags: List<Tag> get() = this._allTags.value
 
     /** Stores the **ID** of the [Tag]s that have been selected by the user.
      *
      * Since [Tag] names are unique, the name itself can be used as the ID. */
     var selectedTags = mutableStateSetOf<String>()
 
-    /** Makes the [ViewModel] ignore the internal database, and instead will hold the [Tag]s data in a [MutableList] in memory.
-     *
-     * Don't use in production :D */
-    internal fun useAlternativeTags(allTags: List<Tag>)
-        = this.fakeTagsDb
-            .apply { clear() }
-            .addAll(allTags)
-
     fun createNewTag(tag: Tag) {
-        this.fakeTagsDb.add(tag)
+        insertTag(tag)
+        // Update app state
+        this._allTags = mutableStateOf(getAllTags())
     }
     fun editTag(name: String, newTag: Tag) {
-        this.fakeTagsDb
-            .indexOfFirst { it.name == name }
-            .also { idx -> if (idx == -1) {
-                throw IllegalArgumentException("Attempting to edit non-existent tag with name \"$name\"")
-            } }
-            .also { idx ->
-                this.fakeTagsDb.removeAt(idx)
-                this.fakeTagsDb.add(idx, newTag)
-            }
-        // TODO: also replace from selected tags
+        com.example.budgiet.editTag(name, newTag)
+        // Update app state
+        this._allTags = mutableStateOf(getAllTags())
     }
     fun deleteTag(tag: Tag) {
-        this.fakeTagsDb.remove(tag)
-        // TODO: also remove from selected tags
-    }
-
-    /** Check if the provided **`name`** can be used for a new Tag.
-     * Otherwise, returns an **Error** message. */
-    fun validateTagName(name: String, isNewTag: Boolean = true): Result<Unit> {
-        // TODO: only allow ascii and dont allow whitespace
-        val msg = if (name.isEmpty()) {
-            "Tag name must not be empty."
-        } else if (name.length > this.tagNameCharLimit) {
-            "Tag name must be ${this.tagNameCharLimit} characters or less."
-        } else if (isNewTag && this.allTags.find { it.name == name } != null) {
-            "A tag with this name already exists."
-        } else {
-            null
-        }
-
-        return msg?.let { Result.Err(Exception(msg)) }
-            ?: Result.Ok(Unit)
+        com.example.budgiet.deleteTag(tag.name)
+        // Update app state
+        this._allTags = mutableStateOf(getAllTags())
+        // Remove from selected tags
+        this.selectedTags.remove(tag.name)
     }
 }
 
@@ -276,7 +235,7 @@ fun TagsPickerDialog(
         TagEditorDialog(
             modifier = modifier,
             tag = null,
-            validateNewName = { viewModel.validateTagName(it, isNewTag = true) },
+            validateNewName = { runCatching { Tag.validateName(it, isNew = true) }.into() },
             onSubmit = { viewModel.createNewTag(it) },
             onDismiss = { showTagCreator = false },
         )
@@ -455,7 +414,7 @@ fun TagEditorDialog(
                         shape = MaterialTheme.shapes.extraLarge,
                     )
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .background(color)
+                    .background(color.into())
                     .padding(innerPadding),
                 horizontalArrangement = Arrangement.spacedBy(itemSpacing, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
@@ -574,7 +533,7 @@ fun TagFrame(
                     .shadow(3.dp, TAG_SHAPE)
                 } else this }
                 .clip(TAG_SHAPE)
-                .background(color = tag.color, shape = TAG_SHAPE)
+                .background(color = tag.color.into(), shape = TAG_SHAPE)
                 .run { if (longPress || onClick != null) {
                     combinedClickable(
                         onLongClick = if (longPress) {{ showActionsMenu = true }} else null,
@@ -588,7 +547,7 @@ fun TagFrame(
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val contentColor = correctContentContrast(tag.color)
+            val contentColor = correctColorContrast(tag.color, MaterialTheme.colorScheme.onPrimaryContainer.into()).into()
 
             if (tag.icon != null) {
                 when (val icon = UserIcons[tag.icon]) {
@@ -644,7 +603,7 @@ fun TagFrame(
     if (showTagEditor) {
         TagEditorDialog(
             tag = tag,
-            validateNewName = { viewModel.validateTagName(it, isNewTag = false) },
+            validateNewName = { runCatching { Tag.validateName(it, isNew = false) }.into() },
             onSubmit = { viewModel.editTag(tag.name, it) },
             onDismiss = { showTagEditor = false },
         )
@@ -750,6 +709,16 @@ fun IconPickerDialog(
     }
 }
 
+private val FAKE_TAGS = getFakeTags()
+/** Setup fake tags for Previews. */
+private fun useFakeTags() {
+    useFakeDb()
+    clearTags()
+    for (data in FAKE_TAGS) {
+        insertTag(data)
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun TagsFieldPreview() {
@@ -758,7 +727,9 @@ private fun TagsFieldPreview() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TagsField(
-            viewModel = viewModel<TagsViewModel>(),
+            viewModel = viewModel<TagsViewModel>().apply {
+                useFakeTags()
+            },
             onButtonClick = { },
         )
     } }
@@ -773,7 +744,7 @@ private fun TagsFieldFilledPreview() {
     ) {
         TagsField(
             viewModel = viewModel<TagsViewModel>().apply {
-                useAlternativeTags(FAKE_TAGS)
+                useFakeTags()
                 selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
             },
             onButtonClick = { },
@@ -787,7 +758,7 @@ private fun TagsPickerPreview() {
     BudgietTheme {
         TagsPickerDialog(
             viewModel = viewModel<TagsViewModel>().apply {
-                useAlternativeTags(FAKE_TAGS)
+                useFakeTags()
                 selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
             },
             onDismiss = { },

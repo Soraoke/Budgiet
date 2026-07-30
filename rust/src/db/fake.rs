@@ -194,6 +194,8 @@ impl FakeDb {
 }
 
 impl FakeDb {
+    pub fn get_tags(&self) -> &[Tag] { self.tags.as_slice() }
+
     pub fn insert_tag(&mut self, data: Tag) {
         self.tags.push(data);
         // Sort fake Db.
@@ -216,6 +218,10 @@ impl FakeDb {
         // Remove entry.
         self.tags.remove(idx);
 
+        Ok(())
+    }
+    pub fn clear_tags(&mut self) -> Result<(), DbError> {
+        self.tags.clear();
         Ok(())
     }
 }

@@ -1,14 +1,15 @@
-use std::{io, path::{Path, PathBuf}, str::FromStr, sync::{RwLock, atomic::{AtomicBool, Ordering}}};
-use boltffi::{custom_type, export};
+use std::{io, path::{Path, PathBuf}, sync::atomic::{AtomicBool, Ordering}};
+use boltffi::export;
 use itertools::Itertools;
 use rusty_money::Findable;
-use crate::{Currency, color::{Color, UserColorPalette}, utils::IterResultExt as _};
+use tokio::{fs, sync::RwLock};
+use crate::{Currency, color::{Color, UserColorPalette}, utils::{IterResultExt as _, dispatch::dispatch_work}};
 
 static RECENT_CURRENCIES: RecentCurrencies = RecentCurrencies::new();
 static RECENT_COLORS: RecentColors = RecentColors::new();
 
 trait RecentItems: Sized + 'static {
-    type T: PartialEq + Clone;
+    type T: PartialEq + Clone + Sync + Send + 'static;
     const ENTRY_NAME: &'static str;
     const MAX_ITEMS: usize = usize::MAX;
     const ENTRIES_FILE_PATH: &'static RwLock<Option<PathBuf>>;
@@ -16,6 +17,8 @@ trait RecentItems: Sized + 'static {
 
     fn item_from_str(s: &str) -> Result<Self::T, String>;
     fn item_to_string(item: &Self::T) -> String;
+    /// Checks that [`Self`] has been initialized (i.e. it has been given the filesDir path by the Application).
+    fn check_init(&self) -> io::Result<()>;
 
     /// Populates the [`ENTRIES_LIST`] of **recent items** with type `T`, sorted by *most recent use*.
     /// This is done by reading the file off of storage.
@@ -23,11 +26,11 @@ trait RecentItems: Sized + 'static {
     /// This method should only be called if [`Self`] is *NOT* initialized.
     ///
     /// > Note: This function ***blocks***, only run it in the **worker thread**.
-    fn load_storage(files_dir: &Path) -> io::Result<()> {
-        let file_path = create_file_path(files_dir, Self::ENTRIES_FILE_PATH, Self::ENTRY_NAME)?;
+    async fn load_storage(files_dir: &Path) -> io::Result<()> {
+        let file_path = create_file_path(files_dir, Self::ENTRIES_FILE_PATH, Self::ENTRY_NAME).await?;
 
         // Read the entirety of the file
-        let items = std::fs::read_to_string(file_path)?
+        let items = fs::read_to_string(file_path).await?
             .split('\n')
             // Last element will always be empty because the file always ends with newLine (unless it is empty).
             .dropping_back(1)
@@ -38,36 +41,33 @@ trait RecentItems: Sized + 'static {
             .map_err(|errs| io::Error::other(errs.into_iter().collect::<String>()))?;
 
         // Write entries to instance memory.
-        let mut dest = Self::ENTRIES_LIST.write()
-            .unwrap_or_else(|lock| {
-                Self::ENTRIES_LIST.clear_poison();
-                lock.into_inner()
-            });
-        let _ = std::mem::replace(&mut *dest, items);
+        let _ = std::mem::replace(&mut *(Self::ENTRIES_LIST.write().await), items);
 
         Ok(())
     }
 
     /// Removes (clears) all items from the file in storage.
+    /// The caller must remove all items from the *List* in memory in the platform language.
     ///
     /// > Note: This function ***blocks***, only run it in the **worker thread**.
-    fn clear(&self) -> io::Result<()> {
-        std::fs::write(get_file_path::<Self>()?, "")
+    async fn clear(&self) -> io::Result<()> {
+        self.check_init()?;
+        fs::write(get_file_path::<Self>().await?, "").await
     }
 
     /// Marks an **item** as recently used (i.e. it was just selected),
     /// moving it to the front of the [`List`][Vec] of recent items,
     /// which is **sorted** by latest use.
     ///
-    /// This function *only* writes to the [File] in storage.
-    ///
     /// Returns a new [`List`][Vec] with the sorted items.
     ///
+    /// This function *only* writes to the [File] in storage.
+    /// The caller mustreplace the *List* in memory in the platform language.
+    ///
     /// > Note: This function ***blocks***, only run it in the **worker thread**.
-    fn move_to_front(&self, item: &Self::T) -> io::Result<Vec<Self::T>> {
-        #![allow(unstable_name_collisions)]
-        let mut items_list = Self::ENTRIES_LIST.write()
-            .map_err(|_| io::Error::other(format!("Could not read/write to in-memory list of RecentItems {}, RwLock is poisoned", Self::ENTRY_NAME)))?;
+    async fn move_to_front(&self, item: &Self::T) -> io::Result<Vec<Self::T>> {
+        self.check_init()?;
+        let mut items_list = Self::ENTRIES_LIST.write().await;
 
         // Apply to mutable list in memory.
         match items_list.iter().position(|element| element == item) {
@@ -87,13 +87,19 @@ trait RecentItems: Sized + 'static {
         }
 
         // Apply to file in storage.
-        // !TODO: dispatch work to avoid IO from delaying updating the items in the App.
-        std::fs::write(get_file_path::<Self>()?,
-            items_list.iter()
-                .map(|item| Self::item_to_string(item))
-                .intersperse("\n".to_string())
-                .collect::<String>()
-        )?;
+        let dispatch_list = items_list.clone();
+        dispatch_work(async move {
+            let path = get_file_path::<Self>().await
+                .unwrap_or_else(|err| panic!("{err}"));
+            fs::write(&path,
+                #[allow(unstable_name_collisions)]
+                dispatch_list.iter()
+                    .map(|item| Self::item_to_string(item))
+                    .intersperse("\n".to_string())
+                    .collect::<String>(),
+            ).await
+            .unwrap_or_else(|err| panic!("Error writing to file \"{}\": {err}", path.display()));
+        });
 
         Ok(items_list.to_vec())
     }
@@ -108,8 +114,15 @@ impl RecentCurrencies {
     const fn new() -> Self {
         Self {
             is_init: AtomicBool::new(false),
-            file_path: RwLock::new(None),
-            ordered_items: RwLock::new(Vec::new()),
+            file_path: RwLock::const_new(None),
+            ordered_items: RwLock::const_new(Vec::new()),
+        }
+    }
+    pub fn check_init(&self) -> io::Result<()> {
+        if !self.is_init.load(Ordering::SeqCst) {
+            Err(io::Error::other("RecentItems.Currency has not yet been initialized by the Application."))
+        } else {
+            Ok(())
         }
     }
 }
@@ -126,6 +139,8 @@ impl RecentItems for RecentCurrencies {
     fn item_to_string(item: &Self::T) -> String {
         item.iso_alpha_code.to_string()
     }
+    #[inline(always)]
+    fn check_init(&self) -> io::Result<()> { Self::check_init(self) }
 }
 
 struct RecentColors {
@@ -137,8 +152,15 @@ impl RecentColors {
     const fn new() -> Self {
         Self {
             is_init: AtomicBool::new(false),
-            file_path: RwLock::new(None),
-            ordered_items: RwLock::new(Vec::new()),
+            file_path: RwLock::const_new(None),
+            ordered_items: RwLock::const_new(Vec::new()),
+        }
+    }
+    pub fn check_init(&self) -> io::Result<()> {
+        if !self.is_init.load(Ordering::SeqCst) {
+            Err(io::Error::other("RecentItems.Currency has not yet been initialized by the Application."))
+        } else {
+            Ok(())
         }
     }
 }
@@ -153,106 +175,91 @@ impl RecentItems for RecentColors {
         Color::from_str(s).map_err(|err| err.to_string())
     }
     fn item_to_string(item: &Self::T) -> String { item.to_string() }
+    #[inline(always)]
+    fn check_init(&self) -> io::Result<()> { Self::check_init(self) }
 }
 
-struct FfiRecentCurrencies();
+pub struct FfiRecentCurrencies();
 #[export]
 impl FfiRecentCurrencies {
-    pub fn init(files_dir: &str) -> Result<Self, String> {
+    pub async fn load_storage(files_dir: &str) -> Result<Vec<Currency>, String> {
         if !RECENT_CURRENCIES.is_init.load(Ordering::Acquire) {
             <RecentCurrencies as RecentItems>::load_storage(Path::new(files_dir))
-                .map_err(|err| err.to_string())?;
+                .await.map_err(|err| err.to_string())?;
 
             RECENT_CURRENCIES.is_init.store(true, Ordering::Release);
         }
 
-        Ok(Self())
+        Ok(RECENT_CURRENCIES.ordered_items.read().await.clone())
     }
 
-    pub fn clear(&self) -> Result<(), String> {
-        <RecentCurrencies as RecentItems>::clear(&RECENT_CURRENCIES)
-            .map_err(|err| err.to_string())
+    pub fn clear() {
+        dispatch_work(async {
+            <RecentCurrencies as RecentItems>::clear(&RECENT_CURRENCIES)
+                .await.map_err(|err| err.to_string())
+        });
     }
-    pub fn move_to_front(&self, item: &Currency) -> Result<Vec<Currency>, String> {
-        <RecentCurrencies as RecentItems>::move_to_front(&RECENT_CURRENCIES, item)
-            .map_err(|err| err.to_string())
+    pub async fn move_to_front(item: Currency) -> Result<Vec<Currency>, String> {
+        <RecentCurrencies as RecentItems>::move_to_front(&RECENT_CURRENCIES, &item)
+            .await.map_err(|err| err.to_string())
     }
-}
-custom_type! {
-    pub ReceFfiRecentCurrencies,
-    remote = &'static RecentCurrencies,
-    repr = FfiRecentCurrencies,
-    into_ffi = |_| FfiRecentCurrencies(),
-    try_from_ffi = |_| Ok(&RECENT_CURRENCIES),
 }
 
-struct FfiRecentColors();
+pub struct FfiRecentColors();
 #[export]
 impl FfiRecentColors {
-    pub fn init(files_dir: &str) -> Result<Self, String> {
+    pub async fn load_storage(files_dir: &str) -> Result<Vec<Color>, String> {
         if !RECENT_COLORS.is_init.load(Ordering::Acquire) {
             <RecentColors as RecentItems>::load_storage(Path::new(files_dir))
-                .map_err(|err| err.to_string())?;
+                .await.map_err(|err| err.to_string())?;
 
             RECENT_COLORS.is_init.store(true, Ordering::Release);
         }
 
-        Ok(Self())
+        Ok(RECENT_COLORS.ordered_items.read().await.clone())
     }
 
-    pub fn clear(&self) -> Result<(), String> {
-        <RecentColors as RecentItems>::clear(&RECENT_COLORS)
-            .map_err(|err| err.to_string())
+    pub fn clear() {
+        dispatch_work(async {
+            <RecentColors as RecentItems>::clear(&RECENT_COLORS)
+                .await.map_err(|err| err.to_string())
+        });
     }
-    pub fn move_to_front(&self, item: &Color) -> Result<Vec<Color>, String> {
-        <RecentColors as RecentItems>::move_to_front(&RECENT_COLORS, item)
-            .map_err(|err| err.to_string())
+    pub async fn move_to_front(item: Color) -> Result<Vec<Color>, String> {
+        <RecentColors as RecentItems>::move_to_front(&RECENT_COLORS, &item)
+            .await.map_err(|err| err.to_string())
     }
-}
-custom_type! {
-    pub RecentColors,
-    remote = &'static RecentColors,
-    repr = FfiRecentColors,
-    into_ffi = |_| FfiRecentColors(),
-    try_from_ffi = |_| Ok(&RECENT_COLORS),
 }
 
 /// > Note: This function ***blocks***, only run it in the **worker thread**.
-fn create_file_path(files_dir: &Path, entries_file_path: &RwLock<Option<PathBuf>>, entry_name: &str) -> io::Result<PathBuf> {
+async fn create_file_path(files_dir: &Path, entries_file_path: &RwLock<Option<PathBuf>>, entry_name: &str) -> io::Result<PathBuf> {
     let path = files_dir.join("RecentItems").join(entry_name).with_extension("txt");
 
     // Create file if it does not exist
-    match path.metadata() {
+    match fs::metadata(&path).await {
         // Path exists, check it's a file.
         Ok(meta) => if !meta.is_file() {
             return Err(io::Error::other(format!("Entries path for {} must be a regular file", entry_name)));
         }
         // Path does not exist, create the file
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-            std::fs::File::create_new(&path)?;
+            fs::create_dir_all(path.parent().unwrap()).await?;
+            fs::File::create_new(&path).await?;
         },
         Err(err) => return Err(err),
     }
 
     // Save path to the static globals so clear() and move_to_front() can be called later.
-    let _ = entries_file_path.write()
-        .unwrap_or_else(|lock| {
-            entries_file_path.clear_poison();
-            lock.into_inner()
-        })
+    let _ = entries_file_path.write().await
         .insert(path.clone());
 
     Ok(path)
 }
 
 /// > Note: This function ***blocks***, only run it in the **worker thread**.
-fn get_file_path<I: RecentItems>() -> io::Result<PathBuf> {
-    I::ENTRIES_FILE_PATH.read()
-        .map_err(|_| format!("Could not clear RecentItems {} entries: path lock is poisoned", I::ENTRY_NAME))
-        .and_then(|lock| match &*lock {
-            Some(path) => Ok(path.clone()),
-            None => Err(format!("Could not clear RecentItems {} entries: path not initialized", I::ENTRY_NAME))
-        })
-        .map_err(|err| io::Error::other(err))
+async fn get_file_path<I: RecentItems>() -> io::Result<PathBuf> {
+    match &*I::ENTRIES_FILE_PATH.read().await {
+        Some(path) => Ok(path.clone()),
+        None => Err(io::Error::other(format!("Could not get RecentItems {} entries: path not initialized", I::ENTRY_NAME)))
+    }
 }
