@@ -1,14 +1,17 @@
 mod fake;
 
 use fake::{FakeDb, FAKE_DB};
+use thiserror::Error;
 
-#[boltffi::error]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error, uniffi::Error)]
 pub enum DbError {
-    // TODO: thiserror
+    #[error("{}", todo!())]
     InsertError,
+    #[error("{}", todo!())]
     EntryNotFound,
+    #[error("{}", todo!())]
     IndexOutOfBounds,
+    #[error("{}", todo!())]
     Other(String),
 }
 

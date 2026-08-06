@@ -1,5 +1,5 @@
 use std::{fmt::Display, format, sync::LazyLock, time::SystemTime, todo, write};
-use boltffi::{data, export};
+use uniffi::{Record, export};
 use crate::db::{DbError, on_fake_or_real_db};
 
 /// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
@@ -18,15 +18,7 @@ static __FAKE_LOCATIONS: LazyLock<[Location; 11]> = LazyLock::new(|| [
     Location::new_fake("The Little Grand Market", "710 Grandview Xing Wy Suite 112, Columbus, OH 43215"),
     Location::new_fake("Five Guys", "3273 Steelyard Dr, Cleveland, OH 44109"),
 ]);
-/// Returns an array containing sample [`Locations`][Location] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-#[doc(hidden)]
-pub fn get_fake_locations() -> Vec<Location> { fake_locations().to_vec() }
 
-#[export]
 pub fn get_locations_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<LocationDbEntry>, DbError> {
     on_fake_or_real_db(
         |fake_db| fake_db.get_locations_page(query.as_ref().map(String::as_str), start, len),
@@ -41,15 +33,14 @@ pub fn search_nearby_locations() -> Vec<LocationDbEntry> {
     todo!()
 }
 
-#[data]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Record)]
+#[export(Debug, Eq, Ord)]
 pub struct LocationDbEntry {
     pub id: u64,
     pub data: Location,
-    #[boltffi::default(Instant::EPOCH)]
+    #[uniffi(default)]
     pub(super) last_used: SystemTime,
 }
-#[data(impl)]
 impl LocationDbEntry {
     /// Create a new [`Location`] *Database item* with the given data.
     pub fn insert_new(data: Location) -> Result<Self, DbError> {
@@ -72,6 +63,18 @@ impl LocationDbEntry {
         )
     }
 
+    /// Deletes all [`Location`] entries from the Database.
+    pub fn clear_all() -> Result<(), DbError> {
+        on_fake_or_real_db(
+            |fake_db| Ok(fake_db.locations.clear()),
+            || {
+                todo!()
+            }
+        )
+    }
+}
+#[export]
+impl LocationDbEntry {
     /// Modifies the existing [`Location`] item's data in the Database.
     pub fn edit(&self, new_data: Location) -> Result<(), DbError> {
         let new_last_used = SystemTime::now();
@@ -107,16 +110,6 @@ impl LocationDbEntry {
             }
         )
     }
-
-    /// Deletes all [`Location`] entries from the Database.
-    pub fn clear_all() -> Result<(), DbError> {
-        on_fake_or_real_db(
-            |fake_db| Ok(fake_db.locations.clear()),
-            || {
-                todo!()
-            }
-        )
-    }
 }
 impl PartialOrd for LocationDbEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -131,35 +124,19 @@ impl Ord for LocationDbEntry {
             .then(self.data.cmp(&other.data))
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_LocationDbEntry {
-    use super::*;
 
-    #[data(impl)]
-    impl LocationDbEntry {
-        pub fn compare(&self, other: &LocationDbEntry) -> i8 {
-            match <Self as Ord>::cmp(self, other) {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            }
-        }
-    }
-}
-
-#[data]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Record)]
+#[export(Display, Eq, Ord)]
 pub struct Location {
     pub name: String,
     pub address: Option<String>,
 }
-#[data(impl)]
 impl Location {
     fn new_fake(name: &str, address: &str) -> Self {
         Self { name: name.to_string(), address: Some(address.to_string()) }
     }
-
+}
+impl Location {
     // TODO: DOC; old_data is Some if editing a specific location
     // TODO: make unit test (but in rust) for this:
     //   Add new location (name, addr) when location (name, addr) with the same (addr) but diff name exists
@@ -172,8 +149,8 @@ impl Location {
         todo!("Check that {new_data:?} can be inserted into DB, optionally comparing to {old_data:?}")
     }
 
-    #[allow(unused_variables)]
     pub fn validate_name(name: &str, is_new: bool) -> Result<(), String> {
+        #![allow(unused_variables)]
         if name.is_empty() {
             Err("Name must not be empty".into())
         } else {
@@ -195,13 +172,51 @@ impl Display for Location {
         write!(f, "{}{address}", self.name)
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Location {
-    use super::*;
 
-    #[data(impl)]
-    impl Location {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
-    }
+// --- EXPORT Associated functions ---
+
+/// Returns an array containing sample [`Locations`][Location] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+fn get_fake_locations() -> Vec<Location> { fake_locations().to_vec() }
+
+#[doc(hidden)]
+#[export(name = "get_locations_page")]
+fn __ffi_get_locations_page(query: Option<String>, start: u64, len: u64) -> Result<Vec<LocationDbEntry>, DbError> {
+    get_locations_page(query, start as usize, len as usize)
+}
+
+#[export]
+#[doc(hidden)]
+fn location_db_insert_new(data: Location) -> Result<LocationDbEntry, DbError> {
+    LocationDbEntry::insert_new(data)
+}
+#[export]
+#[doc(hidden)]
+fn location_db_find_by_id(id: u64) -> Result<Option<LocationDbEntry>, DbError> {
+    LocationDbEntry::find_by_id(id)
+}
+#[export]
+#[doc(hidden)]
+fn location_db_clear_all() -> Result<(), DbError> {
+    LocationDbEntry::clear_all()
+}
+
+#[export]
+#[doc(hidden)]
+fn location_validate(new_data: &Location, old_data: Option<Location>) -> Result<(), String> {
+    Location::validate(new_data, old_data)
+}
+#[export]
+#[doc(hidden)]
+fn location_validate_name(name: &str, is_new: bool) -> Result<(), String> {
+    Location::validate_name(name, is_new)
+}
+#[export]
+#[doc(hidden)]
+fn location_validate_address(address: &str, is_new: bool) -> Result<(), String> {
+    Location::validate_address(address, is_new)
 }

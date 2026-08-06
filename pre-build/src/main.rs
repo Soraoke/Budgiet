@@ -61,7 +61,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
             if verbose {
                 eprintln!("\nDone!");
             }
-            pack_rust_lib(ffi::BoltFfiPlatform::Android, verbose, dry)?;
+            pack_rust_lib(ffi::UniFfiTarget::Kotlin, verbose, dry)?;
         },
         Commands::Svg2Drawable { input, output } => {
             // Don't have to worry about symlinks here, metadata follows them.

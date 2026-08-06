@@ -2,8 +2,15 @@ package com.example.budgiet
 
 import android.annotation.SuppressLint
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ChannelResult
+import kotlinx.coroutines.channels.trySendBlocking
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -106,6 +113,48 @@ fun <T> kotlin.Result<T>.into(): Result<T> = Result.fromKt(this)
  * Can pass a function that generates a custom [exception] to *throw* when the value is `null`.*/
 fun <T> T?.unwrap(exception: (() -> Throwable)? = null): T
     = if (exception == null) this!! else this ?: throw exception()
+
+/** Similar to [runWork], but can be called from a [Composable] context instead of a *suspend* context.
+ *
+ * Upon calling, the **`task`** is immediately spawned in the Runtime,
+ * and this function returns a [State][androidx.compose.runtime.State] object containing `null`.
+ * When the **`task`** is done, the [State] will be populated with the [Result] of running the **`task`**,
+ * which will trigger *recomposition* and update the UI.
+ *
+ * @param key Value that triggers a *re-run* if changed. */
+@Composable
+fun <T> rememberWork(
+    key: Any = Unit,
+    task: suspend () -> T
+): MutableState<Result<T>?> {
+    val state = remember(key) { mutableStateOf<Result<T>?>(null) }
+    LaunchedEffect(key) {
+        state.value = runWork(task)
+    }
+    return state
+}
+
+/** Run a **task** in the *default* single worker thread, returning the value that the **`task`** produced.
+ *
+ * > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
+ * > it will push the **`task`** to the back of the queue instead of executing it immediately.
+ *
+ * Returns [Result.Err] if the **`task`** is *canceled* or throws an [Exception]. */
+suspend fun <T> runWork(task: suspend () -> T): Result<T> {
+    suspend fun runTask()
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        = try {
+            Result.Ok(task())
+        } catch (e: Throwable) {
+            Result.Err(e)
+        }
+
+    val channel = Channel<Result<T>>()
+    dispatchWork {
+        channel.trySend(runTask())
+    }
+    return channel.receive()
+}
 
 fun localDateFromUtcMillis(utcMillis: Long): LocalDate {
     return Instant.ofEpochMilli(utcMillis)

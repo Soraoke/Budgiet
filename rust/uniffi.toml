@@ -1,0 +1,7 @@
+[crate-roots]
+budgietlib = "./rust"
+
+[bindings.kotlin]
+package_name = "com.example.budgiet"
+android = true
+generate_immutable_records = true

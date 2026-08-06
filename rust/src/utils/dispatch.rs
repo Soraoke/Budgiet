@@ -1,6 +1,7 @@
-use std::{format, sync::{LazyLock, atomic::{AtomicUsize, Ordering}}, todo};
-use boltffi::export;
-use tokio::runtime::{Handle, Runtime};
+use std::{format, panic, sync::{Arc, LazyLock, atomic::{AtomicUsize, Ordering}}};
+use async_trait::async_trait;
+use uniffi::export;
+use tokio::{runtime::{Handle, Runtime}, task::JoinError};
 
 /// How many threads are in the Runtime thread-pool.
 const NUM_WORKER_THREADS: usize = 3;
@@ -29,9 +30,11 @@ static RUNTIME_HANDLE: LazyLock<&'static Handle> = LazyLock::new(|| {
 ///
 /// > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
 /// > it will push the **`task`** to the back of the queue instead of executing it immediately.
-pub async fn run_work<T>(task: impl Future<Output = T> + Send + 'static) -> T
+///
+/// Returns [`Err`] if the **`task`** is *canceled* or causes the worker thread to `panic!`.
+pub async fn run_work<T>(task: impl Future<Output = T> + Send + 'static) -> Result<T, JoinError>
 where T: Send + 'static {
-    todo!()
+    RUNTIME_HANDLE.spawn(task).await
 }
 
 /// Run an async **task** in the thread-pool.
@@ -42,19 +45,43 @@ where T: Send + 'static {
 ///
 /// > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
 /// > it will push the **`task`** to the back of the queue instead of executing it immediately.
-pub fn dispatch_work(task: impl Future<Output: Send + 'static> + Send + 'static) {
-    // TODO: catch_unwind(f)
+pub fn dispatch_work(task: impl Future<Output = ()> + Send + 'static) {
     RUNTIME_HANDLE.spawn(task);
 }
 
 /// Same as [`dispatch_work()`], but spawns the **`task`** in the single blocking worker thread.
 pub fn dispatch_blocking_work(task: impl FnOnce() + Send + 'static) {
-    // TODO: catch_unwind(f)
     RUNTIME_HANDLE.spawn_blocking(task);
+}
+
+// --- EXPORT FFI functions ---
+
+#[export]
+#[async_trait]
+trait AyncCallback: Send + Sync {
+    async fn call(&self);
+}
+#[export]
+trait BlockingCallback: Send + Sync {
+    fn call(&self);
+}
+
+#[export]
+#[doc(hidden)]
+/// Run an async **task** in the thread-pool.
+/// Use this if you don't want to *wait* to return a value when the **`task`** is finished.
+///
+/// This function [catches][catch_unwind] any `panic!s` produced by the **`task`**,
+/// and prints the message to **stderr**.
+///
+/// > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
+/// > it will push the **`task`** to the back of the queue instead of executing it immediately.
+fn ffi_dispatch_work(task: Arc<dyn AyncCallback>) {
+    dispatch_work(async move { task.call().await });
 }
 #[export]
 #[doc(hidden)]
 /// Same as [`dispatch_work()`], but spawns the **`task`** in the single blocking worker thread.
-pub fn ffi_dispatch_blocking_work(task: impl FnOnce()) {
-    // dispatch_blocking_work(unsafe { (&task as *const dyn FnOnce()) as *const dyn FnOnce() + Send + 'static })
+fn ffi_dispatch_blocking_work(task: Arc<dyn BlockingCallback>) {
+    dispatch_blocking_work(move || task.call());
 }

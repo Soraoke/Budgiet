@@ -55,7 +55,12 @@ sealed class RecentItems<T> {
     }
 
     /** Removes (clears) all items from the *ordered list* in memory and from the file in storage. */
-    fun clear() = this.instance.clear()
+    fun clear() {
+        if (this.state.value != null) {
+            this.state.value = Result.Ok(listOf())
+        }
+        this.instance.clear()
+    }
 
     /** Marks an **item** as recently used (i.e. it was just selected),
      * moving it to the front of the [List] of recent items,

@@ -1,5 +1,5 @@
 use std::{sync::LazyLock, todo};
-use boltffi::{data, export};
+use uniffi::{Record, export};
 use crate::{color::{Color, UserColorPalette}, db::{DbError, on_fake_or_real_db}};
 
 /// Returns a slice containing sample [`Tags`][Tag] that are used for demos and App Tests.
@@ -13,12 +13,6 @@ static __FAKE_TAGS: LazyLock<[Tag; 6]> = LazyLock::new(|| [
     Tag::new_fake("Trips", "hiking_person", UserColorPalette::Turquoise),
     Tag::new_fake("Utility", "domain_infrastructure", UserColorPalette::Yellow),
 ]);
-/// Returns an array containing sample [`Tags`][Tag] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
 
 #[export]
 pub fn get_all_tags() -> Result<Vec<Tag>, DbError> {
@@ -70,21 +64,21 @@ pub fn clear_tags() -> Result<(), DbError> {
     )
 }
 
-#[data]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Record)]
+#[export(Eq, Ord)]
 pub struct Tag {
     pub name: String,
     pub icon: Option<String>,
     pub color: Color,
 }
-#[data(impl)]
 impl Tag {
     const NAME_CHAR_LIMIT: usize = 15;
 
     fn new_fake(name: &str, icon: &str, color: Color) -> Self {
         Self { name: name.to_string(), icon: Some(icon.to_string()), color }
     }
-
+}
+impl Tag {
     pub fn validate_name(name: &str, is_new: bool) -> Result<(), String> {
         let check_name_exists = || -> bool { todo!() }; // check db
 
@@ -122,21 +116,22 @@ impl PartialOrd for Tag {
         Some(self.cmp(other))
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Tag {
-    use super::*;
 
-    #[data(impl)]
-    impl Tag {
-        pub fn get_name_char_limit() -> usize { Self::NAME_CHAR_LIMIT }
-        pub fn eq(&self, other: &Tag) -> bool { <Self as PartialEq>::eq(self, other) }
-        pub fn compare(&self, other: &Tag) -> i8 {
-            match <Self as Ord>::cmp(self, other) {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            }
-        }
-    }
+// --- EXPORT Associated functions ---
+
+/// Returns an array containing sample [`Tags`][Tag] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
+
+#[export]
+#[doc(hidden)]
+fn tag_name_char_limit() -> u64 { Tag::NAME_CHAR_LIMIT as u64 }
+#[export]
+#[doc(hidden)]
+fn tag_validate_name(name: &str, is_new: bool) -> Result<(), String> {
+    Tag::validate_name(name, is_new)
 }

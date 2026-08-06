@@ -1,6 +1,6 @@
 use std::{cell::RefCell, time::SystemTime};
-use boltffi::export;
 use regex::{Regex, RegexBuilder};
+use uniffi::export;
 use crate::{location::{Location, LocationDbEntry}, tags::Tag, transaction::{Transaction, TransactionDbEntry}};
 use super::DbError;
 

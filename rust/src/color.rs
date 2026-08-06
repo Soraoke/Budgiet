@@ -1,21 +1,20 @@
 #![allow(unstable_name_collisions)]
 
 use std::{fmt::Display, format, str::FromStr, todo};
-use boltffi::{data, export};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use itertools::Itertools as _;
+use uniffi::{Record, export};
 use crate::utils::{IterResultExt as _, StringVisitor};
 
-#[data]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Record)]
+#[export(Display, Eq)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
     pub alpha: u8,
 }
-#[data(impl)]
 impl Color {
     /// Creates a color from a number with the format `0xRRGGBB`.
     pub const fn new_rgb(code: u32) -> Self {
@@ -45,31 +44,8 @@ impl Color {
         }
     }
 
-    /// Converts the [`Color`] to a [`String`] with the format `"RRGGBB"`.
-    pub fn format_rgb(&self) -> String {
-        fn component_to_hex(n: u8) -> String { format!("{n:02X}") }
-        let mut buf = String::new();
-
-        buf.push_str(&component_to_hex(self.red));
-        buf.push_str(&component_to_hex(self.green));
-        buf.push_str(&component_to_hex(self.blue));
-
-        buf
-    }
-    /// Converts the [`Color`] to a [`String`] with the format `"RRGGBBAA"`.
-    pub fn format_rgba(&self) -> String {
-        fn component_to_hex(n: u8) -> String { format!("{n:02X}") }
-        let mut buf = String::new();
-
-        buf.push_str(&component_to_hex(self.red));
-        buf.push_str(&component_to_hex(self.green));
-        buf.push_str(&component_to_hex(self.blue));
-        buf.push_str(&component_to_hex(self.alpha));
-
-        buf
-    }
-
     /// Parse a *Hexadecimal string* to obtain an `RGB[A]` [`Color`].
+    #[uniffi::constructor]
     pub fn from_hex(hex: &str, allow_alpha: bool) -> Result<Self, ColorParseError> {
         let len = hex.len();
         if (len == 4 || len == 8) && !allow_alpha {
@@ -94,7 +70,7 @@ impl Color {
         };
 
         match hex.len() {
-            0..=2 => Err(ColorParseError::InvalidHexLength { len }),
+            0..=2 => Err(ColorParseError::InvalidHexLength { len: len as u64 }),
             3..=4 => Ok(Self {
                 red:   merge_digits(0, 0),
                 green: merge_digits(1, 1),
@@ -107,19 +83,34 @@ impl Color {
                 blue:  merge_digits(4, 5),
                 alpha: if len > 6 { merge_digits(6, 7) } else { 0xFF },
             }),
-            _ => Err(ColorParseError::InvalidHexLength { len }),
+            _ => Err(ColorParseError::InvalidHexLength { len: len as u64 }),
         }
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Color {
-    use super::*;
+#[export]
+impl Color {
+    /// Converts the [`Color`] to a [`String`] with the format `"RRGGBB"`.
+    pub fn format_rgb(&self) -> String {
+        fn component_to_hex(n: u8) -> String { format!("{n:02X}") }
+        let mut buf = String::new();
 
-    #[data(impl)]
-    impl Color {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(&self) }
-        pub fn from_str(s: &str) -> Result<Self, ColorParseError> { <Self as FromStr>::from_str(s) }
+        buf.push_str(&component_to_hex(self.red));
+        buf.push_str(&component_to_hex(self.green));
+        buf.push_str(&component_to_hex(self.blue));
+
+        buf
+    }
+    /// Converts the [`Color`] to a [`String`] with the format `"RRGGBBAA"`.
+    pub fn format_rgba(&self) -> String {
+        fn component_to_hex(n: u8) -> String { format!("{n:02X}") }
+        let mut buf = String::new();
+
+        buf.push_str(&component_to_hex(self.red));
+        buf.push_str(&component_to_hex(self.green));
+        buf.push_str(&component_to_hex(self.blue));
+        buf.push_str(&component_to_hex(self.alpha));
+
+        buf
     }
 }
 impl Display for Color {
@@ -154,8 +145,7 @@ impl<'de> Deserialize<'de> for Color {
     }
 }
 
-#[boltffi::error]
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, uniffi::Error)]
 pub enum ColorParseError {
     #[error("Hex code contained invalid characters ['{}']. Hex characters must be decimal digits (0-9) or A-F (case insensitive)",
         chars.chars()
@@ -170,7 +160,7 @@ pub enum ColorParseError {
         phrase = if *len < 3 { "at least" } else { "at most" },
         limit = if *len < 3 { 3 } else { 8 },
     )]
-    InvalidHexLength { len: usize },
+    InvalidHexLength { len: u64 },
 }
 
 /// TODO: doc
@@ -201,7 +191,7 @@ macro_rules! define_colors {
         // #[allow(non_snake_case)]
         // mod __private_UserColorPalette {
         //     use super::*;
-
+        //
         //     #[boltffi::data(impl)]
         //     impl UserColorPalette {
         //         $(pub const fn $name() -> $crate::color::Color { Self::$name })*
@@ -216,6 +206,7 @@ macro_rules! define_colors {
 
 pub struct UserColorPalette;
 define_colors! {
+    // When adding/removing items, make sure to update the foreign language's named colors.
     Red       = 0xF3413D;
     Orange    = 0xFA7B40;
     Brown     = 0xB37200;
@@ -234,15 +225,6 @@ define_colors! {
 impl UserColorPalette {
     /// Returns a slice containing the colors of the defined [`UserColorPalette`].
     pub const fn list() -> &'static [Color] { __USER_COLOR_PALETTE_LIST }
-}
-#[export]
-impl UserColorPalette {
-    /// Returns an array containing the colors of the defined [`UserColorPalette`].
-    ///
-    /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-    /// The returned list should be cached in the memory of the native application running.
-    #[doc(hidden)]
-    pub fn color_list() -> Vec<Color> { Self::list().to_vec() }
 }
 
 #[cfg(test)]
@@ -282,3 +264,34 @@ mod tests {
         assert_eq!(Color::new_rgba(0x000000FA).to_string(), "000000FA");
     }
 }
+
+// --- EXPORT Associated functions ---
+
+#[export]
+#[doc(hidden)]
+fn color_new_rgb(code: u32) -> Color {
+    Color::new_rgb(code)
+}
+#[export]
+#[doc(hidden)]
+fn color_new_rgba(code: u32) -> Color {
+    Color::new_rgba(code)
+}
+#[export]
+#[doc(hidden)]
+fn color_new_argb(code: u32) -> Color {
+    Color::new_argb(code)
+}
+#[export]
+#[doc(hidden)]
+fn color_from_hex(hex: &str, allow_alpha: bool) -> Result<Color, ColorParseError> {
+    Color::from_hex(hex, allow_alpha)
+}
+
+/// Returns an array containing the colors of the defined [`UserColorPalette`].
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+pub fn color_palette_list() -> Vec<Color> { UserColorPalette::list().to_vec() }

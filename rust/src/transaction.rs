@@ -1,6 +1,6 @@
 use std::{sync::LazyLock, todo};
-use boltffi::{data, export};
 use chrono::{DateTime, Utc};
+use uniffi::{Record, export};
 use crate::{Money, db::{DbError, on_fake_or_real_db}, items::{Item, Tax}, location::LocationDbEntry, tags::Tag};
 
 /// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
@@ -9,15 +9,9 @@ pub fn fake_transactions() -> &'static [Transaction] { &*__FAKE_TRANSACTIONS }
 static __FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
     // TODO:
 ]);
-/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }
 
-#[derive(Debug, Clone)]
-#[data]
+#[derive(Debug, Clone, Record)]
+#[export(Eq, Ord)]
 pub struct Transaction {
     pub date: DateTime<Utc>,
     pub location: Option<LocationDbEntry>,
@@ -47,7 +41,6 @@ impl PartialOrd for Transaction {
     }
 }
 
-#[export]
 pub fn get_transactions_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<TransactionDbEntry>, DbError> {
     on_fake_or_real_db(
         |fake_db| fake_db.get_transactions_page(query.as_ref().map(String::as_str), start, len),
@@ -57,13 +50,12 @@ pub fn get_transactions_page(query: Option<String>, start: usize, len: usize) ->
     )
 }
 
-#[data]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Record)]
+#[export(Eq, Ord)]
 pub struct TransactionDbEntry {
     pub id: u64,
     pub data: Transaction,
 }
-#[data(impl)]
 impl TransactionDbEntry {
     /// Create a new [`Transaction`] *Database item* with the given data.
     pub fn insert_new(data: Transaction) -> Result<Self, DbError> {
@@ -75,6 +67,18 @@ impl TransactionDbEntry {
         )
     }
 
+    /// Deletes all [`Transaction`] entries from the Database.
+    pub fn clear_all() -> Result<(), DbError> {
+        on_fake_or_real_db(
+            |fake_db| Ok(fake_db.transactions.clear()),
+            || {
+                todo!()
+            }
+        )
+    }
+}
+#[export]
+impl TransactionDbEntry {
     /// Modifies the existing [`Transaction`] item's data in the Database.
     pub fn edit(&self, new_data: Transaction) -> Result<(), DbError> {
         on_fake_or_real_db(
@@ -89,16 +93,6 @@ impl TransactionDbEntry {
     pub fn delete(self) -> Result<(), DbError> {
         on_fake_or_real_db(
             |fake_db| fake_db.delete_transaction(self.id),
-            || {
-                todo!()
-            }
-        )
-    }
-
-    /// Deletes all [`Transaction`] entries from the Database.
-    pub fn clear_all() -> Result<(), DbError> {
-        on_fake_or_real_db(
-            |fake_db| Ok(fake_db.transactions.clear()),
             || {
                 todo!()
             }
@@ -123,4 +117,31 @@ impl PartialOrd for TransactionDbEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
+}
+
+// --- EXPORT Associated functions ---
+
+/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }
+
+#[export]
+#[doc(hidden)]
+fn __ffi_get_transactions_page(query: Option<String>, start: u64, len: u64) -> Result<Vec<TransactionDbEntry>, DbError> {
+    get_transactions_page(query, start as usize, len as usize)
+}
+
+#[export]
+#[doc(hidden)]
+fn insert_new(data: Transaction) -> Result<TransactionDbEntry, DbError> {
+    TransactionDbEntry::insert_new(data)
+}
+#[export]
+#[doc(hidden)]
+fn clear_all() -> Result<(), DbError> {
+    TransactionDbEntry::clear_all()
 }

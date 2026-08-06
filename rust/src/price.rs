@@ -1,13 +1,12 @@
 #![allow(unstable_name_collisions)]
 
 use std::todo;
-use boltffi::export;
 use itertools::Itertools as _;
 use thiserror::Error;
+use uniffi::export;
 use crate::{Currency, Locale, Money};
 
-#[boltffi::error]
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, uniffi::Error)]
 pub enum ParseMoneyError {
     #[error("price string must not be empty")]
     Empty,

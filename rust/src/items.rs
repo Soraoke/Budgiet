@@ -1,6 +1,6 @@
 use std::{fmt::Display, format, str::FromStr, sync::LazyLock};
-use boltffi::{data, export};
 use rust_decimal::Decimal;
+use uniffi::{Enum, Record, export};
 use crate::price::{format_money, validate_money_field_input};
 use crate::{Currency, Locale, Money};
 
@@ -14,12 +14,6 @@ static __FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
     Item::new_fake("Crackers", 1.89, Amount::Units(1)),
     Item::new_fake("Chicken", 4.99, Amount::new_fake_measured(3.5, "lbs")),
 ]);
-/// Returns an array containing sample [`Items`][Item] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
 
 /// Calculate the total cost of *all [`Items`][Item]* combined, plus the [`Tax`] amount.
 #[export]
@@ -68,14 +62,12 @@ pub fn display_items_field_info(
     )
 }
 
-#[data]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Record)]
 pub struct Item {
     pub name: String,
     pub unit_price: Decimal,
     pub amount: Amount,
 }
-#[data(impl)]
 impl Item {
     fn new_fake(name: &str, unit_price: f64, amount: Amount) -> Self {
         Self {
@@ -85,15 +77,7 @@ impl Item {
         }
     }
 
-    /// Calculate how much *this* single [`Item`] entry costs based on its **`unit_price`** and **`amount`**.
-    pub fn total_price(&self) -> Decimal {
-        match &self.amount {
-            Amount::Measured { value, .. } => self.unit_price * value,
-            Amount::Units(value) => self.unit_price * Decimal::from(*value),
-        }
-    }
-
-    /// Check that the provided **`name`** can be used for a *new or edited [`Item`]*,
+    /// Check that the provided **`name`** can be used for a *new or edited [`Item`]*.
     pub fn validate_name(existing_items: &[Item], name: &str, is_new: bool) -> Result<(), String> {
         let name_exists = existing_items.iter()
             .find(|item| item.name == name)
@@ -108,19 +92,28 @@ impl Item {
         }
     }
 }
+#[export]
+impl Item {
+    /// Calculate how much *this* single [`Item`] entry costs based on its **`unit_price`** and **`amount`**.
+    pub fn total_price(&self) -> Decimal {
+        match &self.amount {
+            Amount::Measured { value, .. } => self.unit_price * value,
+            Amount::Units(value) => self.unit_price * Decimal::from(*value),
+        }
+    }
+}
 
-#[data]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Enum)]
+#[export(Display)]
 pub enum Amount {
     Measured { value: Decimal, label: String },
     Units(u32),
 }
 /// A lone *discriminant* value for the [`Amount`] type.
-#[data]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Enum)]
+#[export(Display)]
 pub enum AmountType { Measured, Units }
 
-#[data(impl)]
 impl Amount {
     /// The maximum number of *characters* that the **`label`** field can have.
     const LABEL_CHAR_LIMIT: usize = 7;
@@ -130,7 +123,7 @@ impl Amount {
     }
 
     /// Check that the provided **`label`** can be submitted to the database.
-    pub fn validate_label(label: String) -> Result<(), String> {
+    pub fn validate_label(label: &str) -> Result<(), String> {
         if label.is_empty() {
             Err("label must not be empty.".into())
         } else if label.len() > Self::LABEL_CHAR_LIMIT {
@@ -152,7 +145,9 @@ impl Amount {
                 .map_err(|err| err.to_string()),
         }
     }
-
+}
+#[export]
+impl Amount {
     pub fn text_value(&self) -> String {
         match self {
             Self::Measured { value, .. } => value.to_string(),
@@ -182,33 +177,17 @@ impl Display for AmountType {
         })
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Amount {
-    use super::*;
 
-    #[data(impl)]
-    impl Amount {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
-    }
-    #[data(impl)]
-    impl AmountType {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
-    }
-}
-
-#[data]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Enum)]
 pub enum Tax {
     CurrencyAmount(Decimal),
     Percentage(Decimal),
 }
 /// A lone *discriminant* value for the [`Tax`] type.
-#[data]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Enum)]
+#[export(Display)]
 pub enum TaxType { CurrencyAmount, Percentage }
 
-#[data(impl)]
 impl Tax {
     pub fn new(ty: TaxType, value: Decimal) -> Self {
         match ty {
@@ -216,8 +195,7 @@ impl Tax {
             TaxType::Percentage => Self::Percentage(value),
         }
     }
-
-    pub fn parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Tax, String> {
+    pub fn parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Self, String> {
         match ty {
             TaxType::CurrencyAmount => validate_money_field_input(s, currency, locale)
                 .map(|money| Self::CurrencyAmount(*money.amount()))
@@ -231,7 +209,9 @@ impl Tax {
             }
         }
     }
-
+}
+#[export]
+impl Tax {
     pub fn value(&self) -> Decimal {
         match self {
             Self::CurrencyAmount(amount) => *amount,
@@ -253,13 +233,39 @@ impl Display for TaxType {
         })
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Tax {
-    use super::*;
 
-    #[data(impl)]
-    impl TaxType {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
-    }
+// --- EXPORT Assiciated functions ---
+
+/// Returns an array containing sample [`Items`][Item] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
+
+#[export]
+#[doc(hidden)]
+fn item_validate_name(existing_items: &[Item], name: &str, is_new: bool) -> Result<(), String> {
+    Item::validate_name(existing_items, name, is_new)
+}
+#[export]
+#[doc(hidden)]
+fn amount_validate_label(label: &str) -> Result<(), String> {
+    Amount::validate_label(label)
+}
+#[export]
+#[doc(hidden)]
+fn amount_parse_value(s: &str, ty: AmountType) -> Result<Decimal, String> {
+    Amount::parse_value(s, ty)
+}
+#[export]
+#[doc(hidden)]
+fn tax_new(ty: TaxType, value: Decimal) -> Tax {
+    Tax::new(ty, value)
+}
+#[export]
+#[doc(hidden)]
+fn tax_parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Tax, String> {
+    Tax::parse(ty, s, currency, locale)
 }
