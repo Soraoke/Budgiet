@@ -751,30 +751,12 @@ private fun NearbyAddressesDialog(
     }
 }
 
-private val FAKE_LOCATIONS = getFakeLocations()
-/** Setup fake locations for Previews.
- * Returns the [Database Entry][LocationDbEntry] for the passed in [Location] data (if any) */
-@Composable
-private fun useFakeLocations(selectedLocation: Location? = null): LocationDbEntry? = remember {
-    useFakeDb()
-    LocationDbEntry.clearAll()
-    val entries = mutableListOf<LocationDbEntry>()
-
-    for (data in FAKE_LOCATIONS) {
-        entries.add(LocationDbEntry.insertNew(data))
-    }
-    selectedLocation?.let { location ->
-        when (val found = entries.find { it.data.name == location.name && it.data.address == location.address }) {
-            null -> throw Exception("Could not find location $location")
-            else -> found
-        }
-    }
-}
+val FAKE_LOCATIONS = getFakeLocations()
 
 @Preview(showBackground = true)
 @Composable
 fun LocationFieldPreview() {
-    useFakeLocations()
+    LaunchedEffect(Unit) { useFakeDb(true) }
     BudgietTheme { Row {
         LocationField(
             selectedLocation = null,
@@ -787,7 +769,7 @@ fun LocationFieldPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun LocationSearchPreview() {
-    useFakeLocations()
+    LaunchedEffect(Unit) { useFakeDb(true) }
     BudgietTheme {
         LocationSearchDialog(
             selectedLocation = null,
@@ -802,7 +784,7 @@ private fun LocationSearchPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun NewLocationPreview() {
-    useFakeLocations()
+    LaunchedEffect(Unit) { useFakeDb(true) }
     BudgietTheme {
         LocationEditorDialog(
             editLocation = null,
@@ -815,7 +797,7 @@ private fun NewLocationPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun NearbyLocationsPreview() {
-    useFakeLocations()
+    LaunchedEffect(Unit) { useFakeDb(true) }
     BudgietTheme {
         NearbyLocationsDialog(
             selectedLocation = null,
@@ -828,7 +810,6 @@ private fun NearbyLocationsPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun LocationPickerEmptyPreview() {
-    useFakeLocations()
     BudgietTheme {
         LocationSearchDialog(
             selectedLocation = null,

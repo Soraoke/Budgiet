@@ -111,17 +111,6 @@ impl Color {
         }
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Color {
-    use super::*;
-
-    #[data(impl)]
-    impl Color {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(&self) }
-        pub fn from_str(s: &str) -> Result<Self, ColorParseError> { <Self as FromStr>::from_str(s) }
-    }
-}
 impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&if self.alpha == 0xFF {
@@ -197,16 +186,6 @@ macro_rules! define_colors {
         impl UserColorPalette {
             $(pub const $name: $crate::color::Color = $crate::color::Color::new_rgb($val);)*
         }
-        // #[doc(hidden)]
-        // #[allow(non_snake_case)]
-        // mod __private_UserColorPalette {
-        //     use super::*;
-
-        //     #[boltffi::data(impl)]
-        //     impl UserColorPalette {
-        //         $(pub const fn $name() -> $crate::color::Color { Self::$name })*
-        //     }
-        // }
         #[doc(hidden)]
         static __USER_COLOR_PALETTE_LIST: &[$crate::color::Color] = &[
             $(UserColorPalette::$name,)*
@@ -235,6 +214,23 @@ impl UserColorPalette {
     /// Returns a slice containing the colors of the defined [`UserColorPalette`].
     pub const fn list() -> &'static [Color] { __USER_COLOR_PALETTE_LIST }
 }
+
+// --- EXPORT FFI Functions ---
+
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Color {
+    use super::*;
+
+    #[data(impl)]
+    impl Color {
+        #[boltffi::name("to_string")]
+        pub fn ffi_to_string(&self) -> String { <Self as ToString>::to_string(&self) }
+        #[boltffi::name("from_string")]
+        pub fn ffi_from_str(s: &str) -> Result<Self, ColorParseError> { <Self as FromStr>::from_str(s) }
+    }
+}
+
 #[export]
 impl UserColorPalette {
     /// Returns an array containing the colors of the defined [`UserColorPalette`].
@@ -242,7 +238,8 @@ impl UserColorPalette {
     /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
     /// The returned list should be cached in the memory of the native application running.
     #[doc(hidden)]
-    pub fn color_list() -> Vec<Color> { Self::list().to_vec() }
+    #[boltffi::name("list")]
+    pub fn ffi_list() -> Vec<Color> { Self::list().to_vec() }
 }
 
 #[cfg(test)]

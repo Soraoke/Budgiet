@@ -14,12 +14,6 @@ static __FAKE_ITEMS: LazyLock<[Item; 5]> = LazyLock::new(|| [
     Item::new_fake("Crackers", 1.89, Amount::Units(1)),
     Item::new_fake("Chicken", 4.99, Amount::new_fake_measured(3.5, "lbs")),
 ]);
-/// Returns an array containing sample [`Items`][Item] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
 
 /// Calculate the total cost of *all [`Items`][Item]* combined, plus the [`Tax`] amount.
 #[export]
@@ -75,7 +69,6 @@ pub struct Item {
     pub unit_price: Decimal,
     pub amount: Amount,
 }
-#[data(impl)]
 impl Item {
     fn new_fake(name: &str, unit_price: f64, amount: Amount) -> Self {
         Self {
@@ -84,7 +77,9 @@ impl Item {
             amount,
         }
     }
-
+}
+#[data(impl)]
+impl Item {
     /// Calculate how much *this* single [`Item`] entry costs based on its **`unit_price`** and **`amount`**.
     pub fn total_price(&self) -> Decimal {
         match &self.amount {
@@ -120,14 +115,15 @@ pub enum Amount {
 #[derive(Debug, Clone, Copy)]
 pub enum AmountType { Measured, Units }
 
+impl Amount {
+    fn new_fake_measured(value: f64, label: &str) -> Self {
+        Self::Measured { value: Decimal::from_f64_retain(value).unwrap(), label: label.to_string() }
+    }
+}
 #[data(impl)]
 impl Amount {
     /// The maximum number of *characters* that the **`label`** field can have.
     const LABEL_CHAR_LIMIT: usize = 7;
-
-    fn new_fake_measured(value: f64, label: &str) -> Self {
-        Self::Measured { value: Decimal::from_f64_retain(value).unwrap(), label: label.to_string() }
-    }
 
     /// Check that the provided **`label`** can be submitted to the database.
     pub fn validate_label(label: String) -> Result<(), String> {
@@ -180,20 +176,6 @@ impl Display for AmountType {
             Self::Measured => "Measured",
             Self::Units => "Units",
         })
-    }
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_Amount {
-    use super::*;
-
-    #[data(impl)]
-    impl Amount {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
-    }
-    #[data(impl)]
-    impl AmountType {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }
 
@@ -253,6 +235,34 @@ impl Display for TaxType {
         })
     }
 }
+
+// --- EXPORT FFI Functions ---
+
+/// Returns an array containing sample [`Items`][Item] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+pub fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
+
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_Amount {
+    use super::*;
+
+    #[data(impl)]
+    impl Amount {
+        #[boltffi::name("to_string")]
+        pub fn ffi_to_string(&self) -> String { <Self as ToString>::to_string(self) }
+    }
+    #[data(impl)]
+    impl AmountType {
+        #[boltffi::name("to_string")]
+        pub fn ffi_to_string(&self) -> String { <Self as ToString>::to_string(self) }
+    }
+}
+
 #[doc(hidden)]
 #[allow(non_snake_case)]
 mod __private_Tax {
@@ -260,6 +270,7 @@ mod __private_Tax {
 
     #[data(impl)]
     impl TaxType {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
+        #[boltffi::name("to_string")]
+        pub fn ffi_to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }

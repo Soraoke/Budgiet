@@ -9,12 +9,6 @@ pub fn fake_transactions() -> &'static [Transaction] { &*__FAKE_TRANSACTIONS }
 static __FAKE_TRANSACTIONS: LazyLock<[Transaction; 0]> = LazyLock::new(|| [
     // TODO:
 ]);
-/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }
 
 #[derive(Debug, Clone)]
 #[data]
@@ -124,3 +118,13 @@ impl PartialOrd for TransactionDbEntry {
         Some(self.cmp(other))
     }
 }
+
+// --- EXPORT FFI Functions ---
+
+/// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+pub fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }

@@ -13,12 +13,6 @@ static __FAKE_TAGS: LazyLock<[Tag; 6]> = LazyLock::new(|| [
     Tag::new_fake("Trips", "hiking_person", UserColorPalette::Turquoise),
     Tag::new_fake("Utility", "domain_infrastructure", UserColorPalette::Yellow),
 ]);
-/// Returns an array containing sample [`Tags`][Tag] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-pub fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
 
 #[export]
 pub fn get_all_tags() -> Result<Vec<Tag>, DbError> {
@@ -79,7 +73,7 @@ pub struct Tag {
 }
 #[data(impl)]
 impl Tag {
-    const NAME_CHAR_LIMIT: usize = 15;
+    pub const NAME_CHAR_LIMIT: usize = 15;
 
     fn new_fake(name: &str, icon: &str, color: Color) -> Self {
         Self { name: name.to_string(), icon: Some(icon.to_string()), color }
@@ -122,6 +116,17 @@ impl PartialOrd for Tag {
         Some(self.cmp(other))
     }
 }
+
+// --- EXPORT FFI Functions ---
+
+/// Returns an array containing sample [`Tags`][Tag] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+pub fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
+
 #[doc(hidden)]
 #[allow(non_snake_case)]
 mod __private_Tag {
@@ -129,9 +134,10 @@ mod __private_Tag {
 
     #[data(impl)]
     impl Tag {
-        pub fn get_name_char_limit() -> usize { Self::NAME_CHAR_LIMIT }
-        pub fn eq(&self, other: &Tag) -> bool { <Self as PartialEq>::eq(self, other) }
-        pub fn compare(&self, other: &Tag) -> i8 {
+        #[boltffi::name("eq")]
+        pub fn ffi_eq(&self, other: &Tag) -> bool { <Self as PartialEq>::eq(self, other) }
+        #[boltffi::name("cmp")]
+        pub fn ffi_compare(&self, other: &Tag) -> i8 {
             match <Self as Ord>::cmp(self, other) {
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => 0,

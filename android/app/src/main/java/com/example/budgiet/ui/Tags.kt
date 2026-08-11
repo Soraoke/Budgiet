@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -709,15 +710,7 @@ fun IconPickerDialog(
     }
 }
 
-private val FAKE_TAGS = getFakeTags()
-/** Setup fake tags for Previews. */
-private fun useFakeTags() {
-    useFakeDb()
-    clearTags()
-    for (data in FAKE_TAGS) {
-        insertTag(data)
-    }
-}
+val FAKE_TAGS = getFakeTags()
 
 @Preview(showBackground = true)
 @Composable
@@ -728,7 +721,7 @@ private fun TagsFieldPreview() {
     ) {
         TagsField(
             viewModel = viewModel<TagsViewModel>().apply {
-                useFakeTags()
+                useFakeDb(true)
             },
             onButtonClick = { },
         )
@@ -744,7 +737,7 @@ private fun TagsFieldFilledPreview() {
     ) {
         TagsField(
             viewModel = viewModel<TagsViewModel>().apply {
-                useFakeTags()
+                useFakeDb(true)
                 selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
             },
             onButtonClick = { },
@@ -758,7 +751,7 @@ private fun TagsPickerPreview() {
     BudgietTheme {
         TagsPickerDialog(
             viewModel = viewModel<TagsViewModel>().apply {
-                useFakeTags()
+                useFakeDb(true)
                 selectedTags.addAll(listOf(FAKE_TAGS[0], FAKE_TAGS[2]).map { it.name })
             },
             onDismiss = { },

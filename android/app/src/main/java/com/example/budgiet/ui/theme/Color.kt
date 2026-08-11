@@ -14,7 +14,7 @@ val Pink40 = JColor(0xFF7D5260)
 
 @Suppress("unused")
 object UserColorPalette: List<Color> {
-    private var list = UserColorPalette.colorList()
+    private var list = UserColorPalette.ffiList()
 
     val Red       = this.list[0]
     val Orange    = this.list[1]

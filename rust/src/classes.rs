@@ -24,16 +24,8 @@ impl FfiCurrency {
     /// Returns the [`Currency`] that is currently in use by the application.
     ///
     /// This value is set by the user in the application's settings page.
-    pub fn current() -> Self {
-        Self::to_ffi(
-            &crate::CURRENT_CURRENCY.read()
-                // Is doing this slop??
-                .unwrap_or_else(|lock| {
-                    crate::CURRENT_CURRENCY.clear_poison();
-                    lock.into_inner()
-                })
-        )
-    }
+    pub fn current() -> Self { Self::to_ffi(&crate::current_currency()) }
+    /// Returns the [`Currency`] that is used for the [`Locale`] that is [currently][FfiLocale::current()] in use by the application.
     pub fn locale_default(locale: Locale) -> Self {
         todo!()
     }
@@ -66,7 +58,7 @@ custom_type! {
 pub struct FfiDecimal { data: Vec<u8> }
 #[data(impl)]
 impl FfiDecimal {
-    pub fn zero() -> Self { Self::to_ffi(&Decimal::ZERO) }
+    pub const ZERO: Decimal = Decimal::ZERO;
 
     /// Get a [`Decimal`][FfiDecimal] number from a `Double` number.
     ///
@@ -155,15 +147,7 @@ impl FfiLocale {
     /// Returns the [`Locale`] that is currently in use by the application.
     ///
     /// This value is set by the user in the application's settings page.
-    pub fn current() -> Self {
-        Self::to_ffi(
-            &crate::CURRENT_LOCALE.read()
-                .unwrap_or_else(|lock| {
-                    crate::CURRENT_LOCALE.clear_poison();
-                    lock.into_inner()
-                })
-        )
-    }
+    pub fn current() -> Self { Self::to_ffi(&crate::current_locale()) }
 }
 impl FfiLocale {
     fn to_ffi(value: &Locale) -> Self {

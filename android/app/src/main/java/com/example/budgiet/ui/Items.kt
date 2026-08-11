@@ -144,7 +144,7 @@ private const val TOTAL_COLUMN_WEIGHT = 0.3f
 class ItemsViewModel: ViewModel() {
     // TODO: Have a database table of item names the user has used, and have a different screen to show aggregate data of each item across transactions.
     val items = mutableStateListOf<Item>()
-    var tax by mutableStateOf<Tax>(Tax.CurrencyAmount(Decimal.zero()))
+    var tax by mutableStateOf<Tax>(Tax.CurrencyAmount(Decimal.ZERO))
 
     val totalPrice get() = totalPrice(this.items, this.tax)
 
@@ -155,7 +155,7 @@ class ItemsViewModel: ViewModel() {
 
     fun reset() {
         this.items.clear()
-        this.tax = Tax.CurrencyAmount(Decimal.zero())
+        this.tax = Tax.CurrencyAmount(Decimal.ZERO)
     }
 }
 
@@ -285,7 +285,7 @@ private fun ItemsViewDialog(
             val name = StringTextFieldState(preData?.name ?: "",
                 validator = { runCatching { Item.validateName(viewModel.items, name = it, isNew = state !is ItemsDialogState.Edit) }.into() },
             )
-            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice ?: Decimal.zero(), emptyInitialTextIfZero = true, currency, locale, autoValidateTimings)
+            val unitPrice = RealNumberFieldState.moneyFieldState(preData?.unitPrice ?: Decimal.ZERO, emptyInitialTextIfZero = true, currency, locale, autoValidateTimings)
             val amount = object {
                 var type by mutableStateOf(preData?.amount?.ty() ?: AmountType.UNITS)
                 val value = RealNumberFieldState(preData?.amount?.textValue() ?: "",
@@ -620,7 +620,7 @@ private fun ItemsViewDialog(
                                 },
                                 isError = taxAmountState.isError,
                                 placeholderText = when (viewModel.tax) {
-                                    is Tax.CurrencyAmount -> Money(Decimal.zero(), currency).format(locale, false)
+                                    is Tax.CurrencyAmount -> Money(Decimal.ZERO, currency).format(locale, false)
                                     is Tax.Percentage -> "0.0"
                                 },
                                 keyboardOptions = RealNumberFieldState.keyboardOptions,

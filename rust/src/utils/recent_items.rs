@@ -1,8 +1,8 @@
-use std::{io, path::{Path, PathBuf}, sync::atomic::{AtomicBool, Ordering}};
-use boltffi::export;
+use std::{eprintln, io, path::{Path, PathBuf}, str::FromStr as _, sync::atomic::{AtomicBool, Ordering}};
 use itertools::Itertools;
 use rusty_money::Findable;
 use tokio::{fs, sync::RwLock};
+use boltffi::export;
 use crate::{Currency, color::{Color, UserColorPalette}, utils::{IterResultExt as _, dispatch::dispatch_work}};
 
 static RECENT_CURRENCIES: RecentCurrencies = RecentCurrencies::new();
@@ -179,58 +179,6 @@ impl RecentItems for RecentColors {
     fn check_init(&self) -> io::Result<()> { Self::check_init(self) }
 }
 
-pub struct FfiRecentCurrencies();
-#[export]
-impl FfiRecentCurrencies {
-    pub async fn load_storage(files_dir: &str) -> Result<Vec<Currency>, String> {
-        if !RECENT_CURRENCIES.is_init.load(Ordering::Acquire) {
-            <RecentCurrencies as RecentItems>::load_storage(Path::new(files_dir))
-                .await.map_err(|err| err.to_string())?;
-
-            RECENT_CURRENCIES.is_init.store(true, Ordering::Release);
-        }
-
-        Ok(RECENT_CURRENCIES.ordered_items.read().await.clone())
-    }
-
-    pub fn clear() {
-        dispatch_work(async {
-            <RecentCurrencies as RecentItems>::clear(&RECENT_CURRENCIES)
-                .await.map_err(|err| err.to_string())
-        });
-    }
-    pub async fn move_to_front(item: Currency) -> Result<Vec<Currency>, String> {
-        <RecentCurrencies as RecentItems>::move_to_front(&RECENT_CURRENCIES, &item)
-            .await.map_err(|err| err.to_string())
-    }
-}
-
-pub struct FfiRecentColors();
-#[export]
-impl FfiRecentColors {
-    pub async fn load_storage(files_dir: &str) -> Result<Vec<Color>, String> {
-        if !RECENT_COLORS.is_init.load(Ordering::Acquire) {
-            <RecentColors as RecentItems>::load_storage(Path::new(files_dir))
-                .await.map_err(|err| err.to_string())?;
-
-            RECENT_COLORS.is_init.store(true, Ordering::Release);
-        }
-
-        Ok(RECENT_COLORS.ordered_items.read().await.clone())
-    }
-
-    pub fn clear() {
-        dispatch_work(async {
-            <RecentColors as RecentItems>::clear(&RECENT_COLORS)
-                .await.map_err(|err| err.to_string())
-        });
-    }
-    pub async fn move_to_front(item: Color) -> Result<Vec<Color>, String> {
-        <RecentColors as RecentItems>::move_to_front(&RECENT_COLORS, &item)
-            .await.map_err(|err| err.to_string())
-    }
-}
-
 /// > Note: This function ***blocks***, only run it in the **worker thread**.
 async fn create_file_path(files_dir: &Path, entries_file_path: &RwLock<Option<PathBuf>>, entry_name: &str) -> io::Result<PathBuf> {
     let path = files_dir.join("RecentItems").join(entry_name).with_extension("txt");
@@ -261,5 +209,61 @@ async fn get_file_path<I: RecentItems>() -> io::Result<PathBuf> {
     match &*I::ENTRIES_FILE_PATH.read().await {
         Some(path) => Ok(path.clone()),
         None => Err(io::Error::other(format!("Could not get RecentItems {} entries: path not initialized", I::ENTRY_NAME)))
+    }
+}
+
+// --- EXPORT Associated functions
+
+#[doc(hidden)]
+pub struct FfiRecentCurrencies;
+#[export]
+#[doc(hidden)]
+impl FfiRecentCurrencies {
+    pub async fn load_storage(files_dir: String) -> Result<Vec<Currency>, String> {
+        if !RECENT_CURRENCIES.is_init.load(Ordering::Acquire) {
+            <RecentCurrencies as RecentItems>::load_storage(Path::new(&files_dir))
+                .await.map_err(|err| err.to_string())?;
+
+            RECENT_CURRENCIES.is_init.store(true, Ordering::Release);
+        }
+
+        Ok(RECENT_CURRENCIES.ordered_items.read().await.clone())
+    }
+    pub fn clear() {
+        dispatch_work(async {
+            <RecentCurrencies as RecentItems>::clear(&RECENT_CURRENCIES)
+                .await.unwrap_or_else(|err| eprintln!("{err}"));
+        });
+    }
+    pub async fn move_to_front(item: Currency) -> Result<Vec<Currency>, String> {
+        <RecentCurrencies as RecentItems>::move_to_front(&RECENT_CURRENCIES, &item)
+            .await.map_err(|err| err.to_string())
+    }
+}
+
+#[doc(hidden)]
+pub struct FfiRecentColors;
+#[export]
+#[doc(hidden)]
+impl FfiRecentColors {
+    pub async fn load_storage(files_dir: String) -> Result<Vec<Color>, String> {
+        if !RECENT_COLORS.is_init.load(Ordering::Acquire) {
+            <RecentColors as RecentItems>::load_storage(Path::new(&files_dir))
+                .await.map_err(|err| err.to_string())?;
+
+            RECENT_COLORS.is_init.store(true, Ordering::Release);
+        }
+
+        Ok(RECENT_COLORS.ordered_items.read().await.clone())
+    }
+    pub fn clear() {
+        dispatch_work(async {
+            <RecentColors as RecentItems>::clear(&RECENT_COLORS)
+                .await.unwrap_or_else(|err| eprintln!("{err}"));
+        });
+    }
+    pub async fn move_to_front(item: Color) -> Result<Vec<Color>, String> {
+        <RecentColors as RecentItems>::move_to_front(&RECENT_COLORS, &item)
+            .await.map_err(|err| err.to_string())
     }
 }

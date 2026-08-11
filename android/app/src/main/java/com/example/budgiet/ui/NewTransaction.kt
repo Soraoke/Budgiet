@@ -91,6 +91,7 @@ import com.example.budgiet.ui.utils.PlainSearchBar
 import com.example.budgiet.ui.utils.PlainToolTipBox
 import com.example.budgiet.ui.utils.RealNumberFieldState
 import com.example.budgiet.ui.utils.TextIconButton
+import com.example.budgiet.useFakeDb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -114,7 +115,7 @@ class NewTransactionViewModel(
     var date by mutableStateOf<LocalDate>(LocalDate.now())
     var selectedLocation by mutableStateOf<LocationDbEntry?>(null)
     var currency by mutableStateOf(initialCurrency)
-    var customPrice by mutableStateOf(Decimal.zero())
+    var customPrice by mutableStateOf(Decimal.ZERO)
     val items = ItemsViewModel()
     val tags = TagsViewModel()
     var description by mutableStateOf("")
@@ -128,7 +129,7 @@ class NewTransactionViewModel(
         this.selectedLocation = null
         // Currency should persist even after a cancel
         // this.currency = Currency.getInstance(Locale.getDefault())
-        this.customPrice = Decimal.zero()
+        this.customPrice = Decimal.ZERO
         this.items.reset()
         this.tags.selectedTags.clear()
         this.description = ""
@@ -175,7 +176,7 @@ private sealed class DialogState {
                                 "unitPrice" to state.value.unitPrice,
                                 "amountType" to state.value.amount.ty().toString(),
                                 "amountValue" to when (state.value.amount) {
-                                    is Amount.Units -> state.value.amount.value0
+                                    is Amount.Units -> state.value.amount.field0
                                     is Amount.Measured -> state.value.amount.value
                                 },
                                 "amountLabel" to when (state.value.amount) {
@@ -476,7 +477,7 @@ fun PriceField(
                 )
             },
             placeholder = {
-                Text(remember(currency, locale) { Money.fromDecimal(Decimal.zero(), currency).format(locale, false) },
+                Text(remember(currency, locale) { Money.fromDecimal(Decimal.ZERO, currency).format(locale, false) },
                     textAlign = TextAlign.End,
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.outline,
@@ -772,10 +773,10 @@ private fun NewTransactionPreview() {
         Box(Modifier.background(BottomSheetDefaults.ContainerColor)) {
             NewTransactionForm(
                 viewModel = viewModel<NewTransactionViewModel>().apply {
-                    selectedLocation = LocationDbEntry(0u, getFakeLocations()[0])
+                    useFakeDb(true)
+                    selectedLocation = LocationDbEntry.new(0u, FAKE_LOCATIONS[0])
                     items.items.addAll(FAKE_ITEMS)
                     items.tax = Tax.Percentage(Decimal.new(2.5))
-                    tags.useAlternativeTags(FAKE_TAGS)
                     tags.selectedTags.addAll(FAKE_TAGS.subList(0, 3).map { it.name })
                 },
                 userLocale = remember { Locale.current() },

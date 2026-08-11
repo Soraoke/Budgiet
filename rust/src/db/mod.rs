@@ -1,6 +1,9 @@
 mod fake;
 
+use std::time::SystemTime;
+use boltffi::export;
 use fake::{FakeDb, FAKE_DB};
+use crate::{location::fake_locations, tags::fake_tags, transaction::fake_transactions};
 
 #[boltffi::error]
 #[derive(Debug, Clone)]
@@ -10,6 +13,31 @@ pub enum DbError {
     EntryNotFound,
     IndexOutOfBounds,
     Other(String),
+}
+
+/// Activates the *fake "database"* for the current thread.
+///
+/// If **`add_items`** is `true`, the FakeDb will be populated with *fake items* from each category (e.g. [fake tags][crate::tags::fake_tags], [fake locations][crate::location::fake_locations], etc),
+/// otherwise it will start out empty.
+#[export]
+pub fn use_fake_db(add_items: bool) {
+    let mut fake_db = FakeDb::default();
+
+    if add_items {
+        let now = SystemTime::now();
+
+        for location in fake_locations() {
+            fake_db.insert_location(location.clone(), now);
+        }
+        for tag in fake_tags() {
+            fake_db.insert_tag(tag.clone());
+        }
+        for transaction in fake_transactions() {
+            fake_db.insert_transaction(transaction.clone());
+        }
+    }
+
+    FAKE_DB.set(Some(fake_db));
 }
 
 /// Runs the operation on the **fake database**,

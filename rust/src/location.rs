@@ -18,13 +18,6 @@ static __FAKE_LOCATIONS: LazyLock<[Location; 11]> = LazyLock::new(|| [
     Location::new_fake("The Little Grand Market", "710 Grandview Xing Wy Suite 112, Columbus, OH 43215"),
     Location::new_fake("Five Guys", "3273 Steelyard Dr, Cleveland, OH 44109"),
 ]);
-/// Returns an array containing sample [`Locations`][Location] that are used for demos and App Tests.
-///
-/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-/// The returned list should be cached in the memory of the native application running.
-#[export]
-#[doc(hidden)]
-pub fn get_fake_locations() -> Vec<Location> { fake_locations().to_vec() }
 
 #[export]
 pub fn get_locations_page(query: Option<String>, start: usize, len: usize) -> Result<Vec<LocationDbEntry>, DbError> {
@@ -46,11 +39,14 @@ pub fn search_nearby_locations() -> Vec<LocationDbEntry> {
 pub struct LocationDbEntry {
     pub id: u64,
     pub data: Location,
-    #[boltffi::default(Instant::EPOCH)]
     pub(super) last_used: SystemTime,
 }
 #[data(impl)]
 impl LocationDbEntry {
+    pub fn new(id: u64, data: Location) -> Self {
+        Self { id, data, last_used: SystemTime::UNIX_EPOCH }
+    }
+
     /// Create a new [`Location`] *Database item* with the given data.
     pub fn insert_new(data: Location) -> Result<Self, DbError> {
         let new_last_used = SystemTime::now();
@@ -131,22 +127,6 @@ impl Ord for LocationDbEntry {
             .then(self.data.cmp(&other.data))
     }
 }
-#[doc(hidden)]
-#[allow(non_snake_case)]
-mod __private_LocationDbEntry {
-    use super::*;
-
-    #[data(impl)]
-    impl LocationDbEntry {
-        pub fn compare(&self, other: &LocationDbEntry) -> i8 {
-            match <Self as Ord>::cmp(self, other) {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            }
-        }
-    }
-}
 
 #[data]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -195,6 +175,35 @@ impl Display for Location {
         write!(f, "{}{address}", self.name)
     }
 }
+
+// --- EXPORT FFI Functions ---
+
+/// Returns an array containing sample [`Locations`][Location] that are used for demos and App Tests.
+///
+/// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+/// The returned list should be cached in the memory of the native application running.
+#[export]
+#[doc(hidden)]
+pub fn get_fake_locations() -> Vec<Location> { fake_locations().to_vec() }
+
+#[doc(hidden)]
+#[allow(non_snake_case)]
+mod __private_LocationDbEntry {
+    use super::*;
+
+    #[data(impl)]
+    impl LocationDbEntry {
+        #[boltffi::name("cmp")]
+        pub fn ffi_compare(&self, other: &LocationDbEntry) -> i8 {
+            match <Self as Ord>::cmp(self, other) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 #[allow(non_snake_case)]
 mod __private_Location {
@@ -202,6 +211,7 @@ mod __private_Location {
 
     #[data(impl)]
     impl Location {
-        pub fn to_string(&self) -> String { <Self as ToString>::to_string(self) }
+        #[boltffi::name("to_string")]
+        pub fn ffi_to_string(&self) -> String { <Self as ToString>::to_string(self) }
     }
 }

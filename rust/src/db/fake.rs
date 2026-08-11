@@ -1,5 +1,4 @@
 use std::{cell::RefCell, time::SystemTime};
-use boltffi::export;
 use regex::{Regex, RegexBuilder};
 use crate::{location::{Location, LocationDbEntry}, tags::Tag, transaction::{Transaction, TransactionDbEntry}};
 use super::DbError;
@@ -9,12 +8,6 @@ thread_local! {
     ///
     /// Each thread has its own "fake database".
     pub(super) static FAKE_DB: RefCell<Option<FakeDb>> = RefCell::new(None);
-}
-
-/// Activates the *fake "database"* for the current thread.
-#[export]
-pub fn use_fake_db() {
-    FAKE_DB.set(Some(FakeDb::default()));
 }
 
 #[derive(Debug, Default)]

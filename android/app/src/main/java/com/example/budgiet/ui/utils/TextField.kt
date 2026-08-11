@@ -306,7 +306,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
         autoValidateTimings: AutoValidateTimings? = null,
     ): this(
         initialFieldValue = initialTextValue,
-        initialResult = if (initialTextValue.isEmpty()) { Result.Ok(Decimal.zero()) } else { parser(initialTextValue) },
+        initialResult = if (initialTextValue.isEmpty()) { Result.Ok(Decimal.ZERO) } else { parser(initialTextValue) },
         parser, formatter, autoValidateTimings
     )
 
@@ -323,7 +323,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
          * @param emptyInitialTextIfZero Instantiates the state object with an *empty* [fieldText] value if the **`initialValue`** is `0.0`. */
         @RememberInComposition
         fun moneyFieldState(
-            initialAmount: Decimal = Decimal.zero(),
+            initialAmount: Decimal = Decimal.ZERO,
             emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,
@@ -346,7 +346,7 @@ class RealNumberFieldState @RememberInComposition private constructor(
         /** Same as [moneyFieldState], but automatically sets the [autoValidateTimings]. */
         @Composable
         fun rememberMoneyFieldState(
-            initialAmount: Decimal = Decimal.zero(),
+            initialAmount: Decimal = Decimal.ZERO,
             emptyInitialTextIfZero: Boolean = false,
             currency: Currency,
             locale: Locale,
