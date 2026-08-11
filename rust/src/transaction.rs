@@ -129,7 +129,7 @@ impl PartialOrd for TransactionDbEntry {
 #[doc(hidden)]
 fn get_fake_transactions() -> Vec<Transaction> { fake_transactions().to_vec() }
 
-#[export]
+#[export(name = "get_transactions_page")]
 #[doc(hidden)]
 fn __ffi_get_transactions_page(query: Option<String>, start: u64, len: u64) -> Result<Vec<TransactionDbEntry>, DbError> {
     get_transactions_page(query, start as usize, len as usize)
@@ -137,11 +137,11 @@ fn __ffi_get_transactions_page(query: Option<String>, start: u64, len: u64) -> R
 
 #[export]
 #[doc(hidden)]
-fn insert_new(data: Transaction) -> Result<TransactionDbEntry, DbError> {
+fn transaction_db_insert_new(data: Transaction) -> Result<TransactionDbEntry, DbError> {
     TransactionDbEntry::insert_new(data)
 }
 #[export]
 #[doc(hidden)]
-fn clear_all() -> Result<(), DbError> {
+fn transaction_db_clear_all() -> Result<(), DbError> {
     TransactionDbEntry::clear_all()
 }

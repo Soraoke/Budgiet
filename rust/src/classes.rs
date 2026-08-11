@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive as _}};
 use rusty_money::Findable as _;
 use uniffi::{Record, custom_type, export};
-use crate::{Currency, Locale, Money, current_currency, current_locale, price::{ALL_CURRENCIES, ParseMoneyError}};
+use crate::{Currency, Locale, Money, MyError, current_currency, current_locale, price::{ALL_CURRENCIES, ParseMoneyError}};
 
 /// Returns a slice containing all the [`Currencies`][Currency] that exist in this program.
 ///
@@ -155,9 +155,9 @@ fn decimal_new(n: f64) -> Decimal {
 }
 #[export]
 #[doc(hidden)]
-fn decimal_from_str(s: &str) -> Result<Decimal, String> {
+fn decimal_from_str(s: &str) -> Result<Decimal, MyError> {
     Decimal::from_str_exact(s)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string().into())
 }
 
 #[export]

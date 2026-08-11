@@ -61,6 +61,9 @@ android {
         val shareTestModule = "testUtils"
         val sharedTestDir = "src/$shareTestModule/kotlin"
 
+        getByName("main") {
+            jniLibs.directories.add("src/main/jniLibs")
+        }
         getByName("androidTest") {
             java.directories.add(sharedTestDir)
             kotlin.directories.add(sharedTestDir)
@@ -112,6 +115,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.jna)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.core.ktx)

@@ -2,7 +2,7 @@ use std::{fmt::Display, format, str::FromStr, sync::LazyLock};
 use rust_decimal::Decimal;
 use uniffi::{Enum, Record, export};
 use crate::price::{format_money, validate_money_field_input};
-use crate::{Currency, Locale, Money};
+use crate::{Currency, Locale, Money, MyError};
 
 /// Returns a slice containing sample [`Items`][Item] that are used for demos and App Tests.
 pub fn fake_items() -> &'static [Item] { &*__FAKE_ITEMS }
@@ -246,18 +246,18 @@ fn get_fake_items() -> Vec<Item> { fake_items().to_vec() }
 
 #[export]
 #[doc(hidden)]
-fn item_validate_name(existing_items: &[Item], name: &str, is_new: bool) -> Result<(), String> {
-    Item::validate_name(existing_items, name, is_new)
+fn item_validate_name(existing_items: &[Item], name: &str, is_new: bool) -> Result<(), MyError> {
+    Item::validate_name(existing_items, name, is_new).map_err(MyError::from)
 }
 #[export]
 #[doc(hidden)]
-fn amount_validate_label(label: &str) -> Result<(), String> {
-    Amount::validate_label(label)
+fn amount_validate_label(label: &str) -> Result<(), MyError> {
+    Amount::validate_label(label).map_err(MyError::from)
 }
 #[export]
 #[doc(hidden)]
-fn amount_parse_value(s: &str, ty: AmountType) -> Result<Decimal, String> {
-    Amount::parse_value(s, ty)
+fn amount_parse_value(s: &str, ty: AmountType) -> Result<Decimal, MyError> {
+    Amount::parse_value(s, ty).map_err(MyError::from)
 }
 #[export]
 #[doc(hidden)]
@@ -266,6 +266,6 @@ fn tax_new(ty: TaxType, value: Decimal) -> Tax {
 }
 #[export]
 #[doc(hidden)]
-fn tax_parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Tax, String> {
-    Tax::parse(ty, s, currency, locale)
+fn tax_parse(ty: TaxType, s: &str, currency: Currency, locale: Locale) -> Result<Tax, MyError> {
+    Tax::parse(ty, s, currency, locale).map_err(MyError::from)
 }

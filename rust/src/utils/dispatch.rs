@@ -40,9 +40,6 @@ where T: Send + 'static {
 /// Run an async **task** in the thread-pool.
 /// Use this if you don't want to *wait* to return a value when the **`task`** is finished.
 ///
-/// This function [catches][catch_unwind] any `panic!s` produced by the **`task`**,
-/// and prints the message to **stderr**.
-///
 /// > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
 /// > it will push the **`task`** to the back of the queue instead of executing it immediately.
 pub fn dispatch_work(task: impl Future<Output = ()> + Send + 'static) {
@@ -66,20 +63,17 @@ trait BlockingCallback: Send + Sync {
     fn call(&self);
 }
 
-#[export]
+#[export(name = "dispatch_work")]
 #[doc(hidden)]
 /// Run an async **task** in the thread-pool.
 /// Use this if you don't want to *wait* to return a value when the **`task`** is finished.
-///
-/// This function [catches][catch_unwind] any `panic!s` produced by the **`task`**,
-/// and prints the message to **stderr**.
 ///
 /// > Note: If this function is called from the same thread it's supposed to run on (i.e. *default* worker thread),
 /// > it will push the **`task`** to the back of the queue instead of executing it immediately.
 fn ffi_dispatch_work(task: Arc<dyn AyncCallback>) {
     dispatch_work(async move { task.call().await });
 }
-#[export]
+#[export(name = "dispatch_blocking_work")]
 #[doc(hidden)]
 /// Same as [`dispatch_work()`], but spawns the **`task`** in the single blocking worker thread.
 fn ffi_dispatch_blocking_work(task: Arc<dyn BlockingCallback>) {

@@ -1,6 +1,6 @@
 use std::{fmt::Display, format, sync::LazyLock, time::SystemTime, todo, write};
 use uniffi::{Record, export};
-use crate::db::{DbError, on_fake_or_real_db};
+use crate::{MyError, db::{DbError, on_fake_or_real_db}};
 
 /// Returns a slice containing sample [`Locations`][Location] that are used for demos and App Tests.
 pub fn fake_locations() -> &'static [Location] { &*__FAKE_LOCATIONS }
@@ -38,10 +38,13 @@ pub fn search_nearby_locations() -> Vec<LocationDbEntry> {
 pub struct LocationDbEntry {
     pub id: u64,
     pub data: Location,
-    #[uniffi(default)]
     pub(super) last_used: SystemTime,
 }
 impl LocationDbEntry {
+    pub fn new(id: u64, data: Location) -> Self {
+        Self { id, data, last_used: SystemTime::UNIX_EPOCH }
+    }
+
     /// Create a new [`Location`] *Database item* with the given data.
     pub fn insert_new(data: Location) -> Result<Self, DbError> {
         let new_last_used = SystemTime::now();
@@ -191,6 +194,11 @@ fn __ffi_get_locations_page(query: Option<String>, start: u64, len: u64) -> Resu
 
 #[export]
 #[doc(hidden)]
+fn location_db_new(id: u64, data: Location) -> LocationDbEntry {
+    LocationDbEntry::new(id, data)
+}
+#[export]
+#[doc(hidden)]
 fn location_db_insert_new(data: Location) -> Result<LocationDbEntry, DbError> {
     LocationDbEntry::insert_new(data)
 }
@@ -207,16 +215,16 @@ fn location_db_clear_all() -> Result<(), DbError> {
 
 #[export]
 #[doc(hidden)]
-fn location_validate(new_data: &Location, old_data: Option<Location>) -> Result<(), String> {
-    Location::validate(new_data, old_data)
+fn location_validate(new_data: &Location, old_data: Option<Location>) -> Result<(), MyError> {
+    Location::validate(new_data, old_data).map_err(MyError::from)
 }
 #[export]
 #[doc(hidden)]
-fn location_validate_name(name: &str, is_new: bool) -> Result<(), String> {
-    Location::validate_name(name, is_new)
+fn location_validate_name(name: &str, is_new: bool) -> Result<(), MyError> {
+    Location::validate_name(name, is_new).map_err(MyError::from)
 }
 #[export]
 #[doc(hidden)]
-fn location_validate_address(address: &str, is_new: bool) -> Result<(), String> {
-    Location::validate_address(address, is_new)
+fn location_validate_address(address: &str, is_new: bool) -> Result<(), MyError> {
+    Location::validate_address(address, is_new).map_err(MyError::from)
 }

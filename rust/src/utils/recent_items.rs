@@ -3,7 +3,7 @@ use itertools::Itertools;
 use rusty_money::Findable;
 use tokio::{fs, sync::RwLock};
 use uniffi::export;
-use crate::{Currency, color::{Color, UserColorPalette}, utils::{IterResultExt as _, dispatch::dispatch_work}};
+use crate::{Currency, MyError, color::{Color, UserColorPalette}, utils::{IterResultExt as _, dispatch::dispatch_work}};
 
 static RECENT_CURRENCIES: RecentCurrencies = RecentCurrencies::new();
 static RECENT_COLORS: RecentColors = RecentColors::new();
@@ -216,7 +216,7 @@ async fn get_file_path<I: RecentItems>() -> io::Result<PathBuf> {
 
 #[export]
 #[doc(hidden)]
-async fn recent_currencies_load_storage(files_dir: &str) -> Result<Vec<Currency>, String> {
+async fn recent_currencies_load_storage(files_dir: &str) -> Result<Vec<Currency>, MyError> {
     if !RECENT_CURRENCIES.is_init.load(Ordering::Acquire) {
         <RecentCurrencies as RecentItems>::load_storage(Path::new(files_dir))
             .await.map_err(|err| err.to_string())?;
@@ -236,14 +236,14 @@ fn recent_currencies_clear() {
 }
 #[export]
 #[doc(hidden)]
-async fn recent_currencies_move_to_front(item: Currency) -> Result<Vec<Currency>, String> {
+async fn recent_currencies_move_to_front(item: Currency) -> Result<Vec<Currency>, MyError> {
     <RecentCurrencies as RecentItems>::move_to_front(&RECENT_CURRENCIES, &item)
-        .await.map_err(|err| err.to_string())
+        .await.map_err(|err| err.to_string().into())
 }
 
 #[export]
 #[doc(hidden)]
-async fn recent_colors_load_storage(files_dir: &str) -> Result<Vec<Color>, String> {
+async fn recent_colors_load_storage(files_dir: &str) -> Result<Vec<Color>, MyError> {
     if !RECENT_COLORS.is_init.load(Ordering::Acquire) {
         <RecentColors as RecentItems>::load_storage(Path::new(files_dir))
             .await.map_err(|err| err.to_string())?;
@@ -264,7 +264,7 @@ fn recent_colors_clear() {
 }
 #[export]
 #[doc(hidden)]
-async fn recent_colors_move_to_front(item: Color) -> Result<Vec<Color>, String> {
+async fn recent_colors_move_to_front(item: Color) -> Result<Vec<Color>, MyError> {
     <RecentColors as RecentItems>::move_to_front(&RECENT_COLORS, &item)
-        .await.map_err(|err| err.to_string())
+        .await.map_err(|err| err.to_string().into())
 }

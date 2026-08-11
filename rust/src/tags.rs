@@ -1,6 +1,6 @@
 use std::{sync::LazyLock, todo};
 use uniffi::{Record, export};
-use crate::{color::{Color, UserColorPalette}, db::{DbError, on_fake_or_real_db}};
+use crate::{MyError, color::{Color, UserColorPalette}, db::{DbError, on_fake_or_real_db}};
 
 /// Returns a slice containing sample [`Tags`][Tag] that are used for demos and App Tests.
 pub fn fake_tags() -> &'static [Tag] { &*__FAKE_TAGS }
@@ -132,6 +132,6 @@ fn get_fake_tags() -> Vec<Tag> { fake_tags().to_vec() }
 fn tag_name_char_limit() -> u64 { Tag::NAME_CHAR_LIMIT as u64 }
 #[export]
 #[doc(hidden)]
-fn tag_validate_name(name: &str, is_new: bool) -> Result<(), String> {
-    Tag::validate_name(name, is_new)
+fn tag_validate_name(name: &str, is_new: bool) -> Result<(), MyError> {
+    Tag::validate_name(name, is_new).map_err(MyError::from)
 }

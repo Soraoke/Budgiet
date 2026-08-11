@@ -10,9 +10,10 @@ pub mod tags;
 pub mod transaction;
 pub mod utils;
 
-use std::sync::RwLock;
+use std::{fmt::Display, sync::RwLock};
 use rusty_money::iso::USD;
 pub use num_format::Locale;
+use uniffi::export;
 
 uniffi::setup_scaffolding!();
 
@@ -47,4 +48,21 @@ pub fn current_currency() -> Currency {
             CURRENT_CURRENCY.clear_poison();
             lock.into_inner()
         })
+}
+
+/// A wrapper type for [`String`] since [`uniffi`] does not support `Result<_, String>` :(
+#[derive(Debug, Clone, uniffi::Error)]
+#[export(Display)]
+pub enum MyError {
+    Msg(String)
+}
+impl Display for MyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self { Self::Msg(s) => s })
+    }
+}
+impl From<String> for MyError {
+    fn from(value: String) -> Self {
+        Self::Msg(value)
+    }
 }

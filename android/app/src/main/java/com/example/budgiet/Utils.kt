@@ -114,6 +114,8 @@ fun <T> kotlin.Result<T>.into(): Result<T> = Result.fromKt(this)
 fun <T> T?.unwrap(exception: (() -> Throwable)? = null): T
     = if (exception == null) this!! else this ?: throw exception()
 
+fun dispatchWork(task: suspend () -> Unit) = dispatchWork(task as AyncCallbackInterface as AyncCallback)
+
 /** Similar to [runWork], but can be called from a [Composable] context instead of a *suspend* context.
  *
  * Upon calling, the **`task`** is immediately spawned in the Runtime,
