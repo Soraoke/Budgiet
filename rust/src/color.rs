@@ -2,10 +2,11 @@
 
 use std::{fmt::Display, format, str::FromStr, todo};
 use boltffi::{data, export};
+use common::IterResultExt as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use itertools::Itertools as _;
-use crate::utils::{IterResultExt as _, StringVisitor};
+use crate::utils::StringVisitor;
 
 #[data]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

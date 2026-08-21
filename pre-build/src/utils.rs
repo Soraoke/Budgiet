@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, fs::{self, DirEntry}, io, mem::ManuallyDrop, path::Path, process::Command, str::FromStr as _};
 use chrono::{DateTime, Utc};
+use common::{Error, IterResultExt as _};
 use sha2::digest::{Digest, Output};
-use crate::{Error, Errors};
 
 /// Run a system command, streaming **stdout** and **stderr**.
 #[macro_export]
@@ -195,39 +195,4 @@ pub fn recursive_dir_mtime(path: &Path) -> Result<DateTime<Utc>, Error> {
                 .map_err(|err| Error::with_prefix(err, format!("Could not get modified time of directory \"{}\"", path.display())))?
                 .into()
         }))
-}
-
-pub trait IterResultExt<T, E>
-where Self: Iterator {
-    /// Collects results of all the calls to [`next`] and returns it.
-    ///
-    /// If [`next`] only returned `T`s, then it returns a **Collection** containing those values.
-    /// Buf if [`next`] returns *at least 1* **Error**,
-    /// this functions continues calling [`next`] until the end to collect all the **Errors**.
-    ///
-    /// [`next`]: Iterator::next()
-    fn collect_results<C>(self) -> Result<C, Errors<E>>
-    where Self: Iterator<Item = Result<T, E>>,
-          C: FromIterator<T>;
-}
-impl<I, T, E> IterResultExt<T, E> for I
-where I: Iterator {
-    fn collect_results<C>(self) -> Result<C, Errors<E>>
-    where Self: Iterator<Item = Result<T, E>>,
-          C: FromIterator<T>,
-    {
-        let mut errors = Vec::new();
-
-        let values = self.filter_map(|result| result
-            .map_err(|err| errors.push(err))
-            .ok()
-        )
-        .collect::<C>();
-
-        if errors.is_empty() {
-            Ok(values)
-        } else {
-            Err(Errors::from(errors))
-        }
-    }
 }

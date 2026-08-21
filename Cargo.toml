@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
-members = [ "pre-build", "rust" ]
+members = [ "pre-build", "rust", "rust/common" ]
 
 [workspace.dependencies]
+common = { path = "rust/common" }
 chrono = "0.4.45"
 itertools = "0.15.0"
+serde = "1.0.228"

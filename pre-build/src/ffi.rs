@@ -1,5 +1,6 @@
 use std::{ffi::OsString, fmt::Display, fs, io, path::PathBuf};
-use crate::{Error, PROJECT_ROOT, TARGET_DIR, command, command_output, static_path, utils::{read_dir, recursive_dir_mtime}};
+use common::Error;
+use crate::{PROJECT_ROOT, TARGET_DIR, command, command_output, static_path, utils::{read_dir, recursive_dir_mtime}};
 
 pub enum BoltFfiPlatform {
     Apple, Android, // Java, CSharp, Wasm, Python

@@ -1,10 +1,12 @@
 mod android;
 mod ffi;
 mod utils;
+mod locale_currency;
 
-use std::{error::Error as StdError, fmt::{Debug, Display, Write}, fs, io, path::{Path, PathBuf}, process::exit};
+use std::{error::Error as StdError, fs, path::{Path, PathBuf}, process::exit};
 use clap::{Parser, Subcommand};
-use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, ffi::pack_rust_lib, utils::{IterResultExt as _, read_dir}};
+use common::{Error, IterResultExt as _};
+use crate::{android::svg2drawable::{BadDrawable, svg_to_bad_drawable}, ffi::pack_rust_lib, locale_currency::gen_locale_currency_map_src, utils::read_dir};
 
 static_path! { pub PROJECT_ROOT = project_root::get_project_root().expect("Could not find root directory of the Rust project") }
 static_path! { pub TARGET_DIR = PROJECT_ROOT.join("target") }
@@ -58,6 +60,7 @@ fn _main() -> Result<(), Box<dyn StdError>> {
             }
             android::create_icons_array(verbose, dry)?;
             // android::create_gitignore(verbose, dry)?;
+            gen_locale_currency_map_src(verbose, dry)?;
             if verbose {
                 eprintln!("\nDone!");
             }
@@ -122,93 +125,4 @@ fn _main() -> Result<(), Box<dyn StdError>> {
     }
 
     Ok(())
-}
-/// An error packing one or multiple other [`IoError`]s.
-struct Errors<E>(Box<[E]>);
-impl<E> IntoIterator for Errors<E> {
-    type Item = E;
-    type IntoIter = <Box<[Self::Item]> as IntoIterator>::IntoIter;
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-impl<E> From<E> for Errors<E> {
-    fn from(value: E) -> Self {
-        Self(Vec::from([value]).into_boxed_slice())
-    }
-}
-impl<E> From<Box<[E]>> for Errors<E> {
-    #[inline(always)]
-    fn from(value: Box<[E]>) -> Self {
-        Self(value)
-    }
-}
-impl<E> From<Vec<E>> for Errors<E> {
-    #[inline(always)]
-    fn from(value: Vec<E>) -> Self {
-        Self(value.into_boxed_slice())
-    }
-}
-impl<E> Debug for Errors<E>
-where E: Debug {
-    #[inline(always)]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        <Box<[_]> as Debug>::fmt(&self.0, f)
-    }
-}
-impl<E> Display for Errors<E>
-where E: Display {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, error) in self.0.iter().enumerate() {
-            <E as Display>::fmt(error, f)?;
-
-            if i != self.0.len() - 1 {
-                f.write_char('\n')?;
-            }
-        }
-        Ok(())
-    }
-}
-impl<E> StdError for Errors<E>
-where E: StdError { }
-
-#[derive(Debug)]
-struct Error {
-    pub prefix: String,
-    pub error: Box<dyn StdError>,
-}
-impl Error {
-    pub fn new(err: impl Into<Box<dyn StdError>>) -> Self {
-        Self { prefix: "".into(), error: err.into() }
-    }
-    pub fn with_prefix(err: impl Into<Box<dyn StdError>>, msg: impl Display) -> Self {
-        Self { prefix: msg.to_string(), error: err.into() }
-    }
-
-    pub fn io_error_kind(&self) -> Option<io::ErrorKind> {
-        self.error.downcast_ref::<io::Error>()
-            .map(|err| err.kind())
-    }
-}
-impl<E: serde::ser::Error + 'static> From<E> for Error {
-    fn from(value: E) -> Self {
-        Self::new(Box::new(value))
-    }
-}
-impl StdError for Error {
-    #[inline(always)]
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.error.source()
-    }
-}
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.prefix.is_empty() {
-            f.write_str(&self.prefix)?;
-            f.write_str(": ")?;
-        }
-        (&self.error as &dyn Display).fmt(f)
-    }
 }

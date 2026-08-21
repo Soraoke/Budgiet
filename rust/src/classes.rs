@@ -1,11 +1,10 @@
 #![doc(hidden)]
 
-use std::todo;
 use boltffi::{custom_type, data};
 use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive as _}};
 use rusty_money::Findable as _;
-use crate::{Currency, Locale, Money, price::{ALL_CURRENCIES, ParseMoneyError}};
+use crate::{Currency, Locale, Money, price::ParseMoneyError, utils::{CurrencyExt as _, LocaleExt as _}};
 
 #[data]
 #[derive(Clone, Copy)]
@@ -25,9 +24,12 @@ impl FfiCurrency {
     ///
     /// This value is set by the user in the application's settings page.
     pub fn current() -> Self { Self::to_ffi(&crate::current_currency()) }
-    /// Returns the [`Currency`] that is used for the [`Locale`] that is [currently][FfiLocale::current()] in use by the application.
-    pub fn locale_default(locale: Locale) -> Self {
-        todo!()
+    /// Returns the [`Currency`] that is used for the given [`Locale`].
+    ///
+    /// Returns `null` if the [`Locale`] does not contain a **region**.
+    pub fn locale_default(locale: Locale) -> Option<Self> {
+        Currency::locale_default(locale)
+            .map(|currency| Self::to_ffi(&currency))
     }
     pub fn to_string(self) -> String { self.code() }
 
@@ -35,7 +37,7 @@ impl FfiCurrency {
     ///
     /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
     /// The returned list should be cached in the memory of the native application running.
-    pub fn list() -> Vec<Self> { ALL_CURRENCIES.iter().map(|c| FfiCurrency::to_ffi(c)).collect::<Vec<_>>() }
+    pub fn list_all() -> Vec<Self> { Currency::list_all().iter().map(|c| FfiCurrency::to_ffi(c)).collect::<Vec<_>>() }
 }
 impl FfiCurrency {
     fn to_ffi(value: &Currency) -> Self {
@@ -148,6 +150,12 @@ impl FfiLocale {
     ///
     /// This value is set by the user in the application's settings page.
     pub fn current() -> Self { Self::to_ffi(&crate::current_locale()) }
+
+    /// Returns a slice containing all the [`Locales`][Locale] that exist in this program.
+    ///
+    /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+    /// The returned list should be cached in the memory of the native application running.
+    pub fn list_all() -> Vec<Self> { Locale::list_all().iter().map(|c| FfiLocale::to_ffi(c)).collect::<Vec<_>>() }
 }
 impl FfiLocale {
     fn to_ffi(value: &Locale) -> Self {

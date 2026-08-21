@@ -1,10 +1,11 @@
 use std::{ffi::OsString, fs, io, path::{Path, PathBuf}};
+use common::{Error, Errors, IterResultExt as _};
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::SerdeXml;
 use sha2::{Digest as _, Sha256};
 use xml::EmitterConfig;
 use super::{DRAWABLE_DIR, ICONS_DIR, USER_ICON_DRAWABLE_PREFIX};
-use crate::{Error, Errors, TARGET_DIR, command_output, static_path, utils::{IterResultExt as _, checksum, read_dir}};
+use crate::{TARGET_DIR, command_output, static_path, utils::{checksum, read_dir}};
 
 /// Copy and **reformat** `SVG` files in [`ICONS_DIR`] to the `res/drawable` directory in the Android application.
 ///

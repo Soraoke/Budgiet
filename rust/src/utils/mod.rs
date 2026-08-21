@@ -1,94 +1,70 @@
 pub mod recent_items;
 pub mod dispatch;
+mod locale_currency_map;
 
-use std::fmt::{Debug, Display, Write as _};
+use std::{fmt::Display, sync::LazyLock};
+use rusty_money::Findable;
 use serde::de::Visitor;
+use crate::{Currency, Locale};
 
-pub trait IterResultExt<T, E>
-where Self: Iterator {
-    /// Collects results of all the calls to [`next`] and returns it.
+pub trait CurrencyExt {
+    /// Returns the [`Currency`] that is currently in use by the application.
     ///
-    /// If [`next`] only returned `T`s, then it returns a **Collection** containing those values.
-    /// Buf if [`next`] returns *at least 1* **Error**,
-    /// this functions continues calling [`next`] until the end to collect all the **Errors**.
+    /// This value is set by the user in the application's settings page.
+    fn current() -> Currency;
+    /// Returns the [`Currency`] that is used for the given [`Locale`].
     ///
-    /// [`next`]: Iterator::next()
-    fn collect_results<C>(self) -> Result<C, Errors<E>>
-    where Self: Iterator<Item = Result<T, E>>,
-          C: FromIterator<T>;
+    /// Returns [`None`] if the [`Locale`] does not contain a **region**.
+    fn locale_default(locale: Locale) -> Option<Currency>;
+    /// Returns a slice containing all the [`Currencies`][Currency] that exist in this program.
+    fn list_all() -> &'static [Currency];
 }
-impl<I, T, E> IterResultExt<T, E> for I
-where I: Iterator {
-    fn collect_results<C>(self) -> Result<C, Errors<E>>
-    where Self: Iterator<Item = Result<T, E>>,
-          C: FromIterator<T>,
-    {
-        let mut errors = Vec::new();
-
-        let values = self.filter_map(|result| result
-            .map_err(|err| errors.push(err))
-            .ok()
-        )
-        .collect::<C>();
-
-        if errors.is_empty() {
-            Ok(values)
-        } else {
-            Err(Errors::from(errors))
-        }
-    }
-}
-
-/// An error packing one or multiple other `Error`s.
-pub struct Errors<E>(Box<[E]>);
-impl<E> IntoIterator for Errors<E> {
-    type Item = E;
-    type IntoIter = <Box<[Self::Item]> as IntoIterator>::IntoIter;
-
+impl CurrencyExt for Currency {
     #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+    fn current() -> Currency { crate::current_currency() }
+    fn locale_default(locale: Locale) -> Option<Currency> {
+        locale.name()
+            // Regions are always 2 uppercase ASCII characters
+            .split(|c| c == '_' || c == '-')
+            .find(|s| s.len() == 2 && s.chars().all(|c| c >= 'A' && c <= 'Z'))
+            .and_then(|region| locale_currency_map::LOCALE_CURRENCY_MAP.get(region))
+            .and_then(|code| rusty_money::iso::Currency::find(code))
     }
-}
-impl<E> From<E> for Errors<E> {
-    fn from(value: E) -> Self {
-        Self(Vec::from([value]).into_boxed_slice())
-    }
-}
-impl<E> From<Box<[E]>> for Errors<E> {
     #[inline(always)]
-    fn from(value: Box<[E]>) -> Self {
-        Self(value)
-    }
+    fn list_all() -> &'static [Currency] { crate::price::ALL_CURRENCIES }
 }
-impl<E> From<Vec<E>> for Errors<E> {
-    #[inline(always)]
-    fn from(value: Vec<E>) -> Self {
-        Self(value.into_boxed_slice())
-    }
-}
-impl<E> Debug for Errors<E>
-where E: Debug {
-    #[inline(always)]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        <Box<[_]> as Debug>::fmt(&self.0, f)
-    }
-}
-impl<E> Display for Errors<E>
-where E: Display {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, error) in self.0.iter().enumerate() {
-            <E as Display>::fmt(error, f)?;
 
-            if i != self.0.len() - 1 {
-                f.write_char('\n')?;
-            }
-        }
-        Ok(())
+pub trait LocaleExt {
+    /// Returns the [`Locale`] that is currently in use by the application.
+    ///
+    /// This value is set by the user in the application's settings page.
+    fn current() -> Locale;
+    /// Returns the [`Currency`] that is used for the given [`Locale`].
+    ///
+    /// Returns [`None`] if the [`Locale`] does not contain a **region**.
+    fn default_currency(&self) -> Option<Currency>;
+    /// Returns a slice containing all the [`Locales`][Locale] that exist in this program.
+    fn list_all() -> &'static [Locale];
+}
+impl LocaleExt for Locale {
+    #[inline(always)]
+    fn current() -> Locale { crate::current_locale() }
+    #[inline(always)]
+    fn default_currency(&self) -> Option<Currency> {
+        Currency::locale_default(*self)
+    }
+    fn list_all() -> &'static [Locale] {
+        static ALL_LOCALES: LazyLock<Box<[Locale]>> = LazyLock::new(|| {
+            Locale::available_names()
+                .iter()
+                .map(|name| Locale::from_name(name)
+                    .unwrap_or_else(|err| panic!("Could not parse Locale name \"{name}\" provided by 'Locale::available_names()': {err}"))
+                )
+                .collect()
+        });
+        ALL_LOCALES.as_ref()
     }
 }
-impl<E> std::error::Error for Errors<E>
-where E: std::error::Error { }
 
 /// A generic implementation of [`Visitor`] for types that want to implement [`Deserialize`] by parsing a [`str`].
 pub struct StringVisitor {

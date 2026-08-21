@@ -1,0 +1,11 @@
+[package]
+name = "common"
+description = "Common utils that are used in multiple parts of the Rust code in this project"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+serde = { workspace = true }

@@ -1,10 +1,11 @@
 pub mod svg2drawable;
 
 use std::{fs, io::{self, Write}, path::Path};
+use common::{Error, Errors, IterResultExt as _};
 use serde::Serialize;
 use serde_xml_rs::SerdeXml;
 use xml::EmitterConfig;
-use crate::{Error, Errors, PROJECT_ROOT, static_path, utils::{IterResultExt as _, read_dir_files}};
+use crate::{PROJECT_ROOT, static_path, utils::read_dir_files};
 
 static_path! { ANDROID_RESOURCE_DIR = PROJECT_ROOT.join("android/app/src/main/res") }
 static_path! { DRAWABLE_DIR = ANDROID_RESOURCE_DIR.join("drawable") }

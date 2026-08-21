@@ -1,9 +1,10 @@
 use std::{eprintln, io, path::{Path, PathBuf}, str::FromStr as _, sync::atomic::{AtomicBool, Ordering}};
+use common::IterResultExt as _;
 use itertools::Itertools;
 use rusty_money::Findable;
 use tokio::{fs, sync::RwLock};
 use boltffi::export;
-use crate::{Currency, color::{Color, UserColorPalette}, utils::{IterResultExt as _, dispatch::dispatch_work}};
+use crate::{Currency, color::{Color, UserColorPalette}, utils::dispatch::dispatch_work};
 
 static RECENT_CURRENCIES: RecentCurrencies = RecentCurrencies::new();
 static RECENT_COLORS: RecentColors = RecentColors::new();

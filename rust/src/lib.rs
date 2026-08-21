@@ -27,7 +27,7 @@ pub fn current_language() -> &'static str {
         })
 }
 
-static CURRENT_LOCALE: RwLock<Locale> = RwLock::new(Locale::en_US_POSIX);
+static CURRENT_LOCALE: RwLock<Locale> = RwLock::new(Locale::es_US);
 pub fn current_locale() -> Locale {
     *CURRENT_LOCALE.read()
         // Is doing this slop??
