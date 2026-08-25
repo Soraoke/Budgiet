@@ -25,12 +25,7 @@ impl FfiCurrency {
     /// This value is set by the user in the application's settings page.
     pub fn current() -> Self { Self::to_ffi(&crate::current_currency()) }
     /// Returns the [`Currency`] that is used for the given [`Locale`].
-    ///
-    /// Returns `null` if the [`Locale`] does not contain a **region**.
-    pub fn locale_default(locale: Locale) -> Option<Self> {
-        Currency::locale_default(locale)
-            .map(|currency| Self::to_ffi(&currency))
-    }
+    pub fn locale_default(locale: Locale) -> Self { Self::to_ffi(&Currency::locale_default(locale)) }
     pub fn to_string(self) -> String { self.code() }
 
     /// Returns a slice containing all the [`Currencies`][Currency] that exist in this program.
@@ -105,6 +100,40 @@ custom_type! {
 }
 
 #[data]
+pub struct FfiLocale { code: String }
+#[data(impl)]
+impl FfiLocale {
+    pub fn code(self) -> String { self.code }
+
+    /// Returns the [`Locale`] that is currently in use by the application.
+    ///
+    /// This value is set by the user in the application's settings page.
+    pub fn current() -> Self { Self::to_ffi(&crate::current_locale()) }
+
+    /// Returns a slice containing all the [`Locales`][Locale] that exist in this program.
+    ///
+    /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
+    /// The returned list should be cached in the memory of the native application running.
+    pub fn list_all() -> Vec<Self> { Locale::list_all().iter().map(|c| FfiLocale::to_ffi(c)).collect::<Vec<_>>() }
+}
+impl FfiLocale {
+    fn to_ffi(value: &Locale) -> Self {
+        Self { code: value.name().to_string() }
+    }
+    fn from_ffi(self) -> Result<Locale, boltffi::CustomTypeConversionError> {
+        Locale::from_name(&self.code)
+            .map_err(|_| boltffi::CustomTypeConversionError)
+    }
+}
+custom_type! {
+    pub Locale,
+    remote = Locale,
+    repr = FfiLocale,
+    into_ffi = FfiLocale::to_ffi,
+    try_from_ffi = FfiLocale::from_ffi,
+}
+
+#[data]
 pub struct FfiMoney {
     pub amount: FfiDecimal,
     pub currency: FfiCurrency,
@@ -140,38 +169,25 @@ custom_type! {
     try_from_ffi = FfiMoney::from_ffi,
 }
 
-#[data]
-pub struct FfiLocale { code: String }
-#[data(impl)]
-impl FfiLocale {
-    pub fn code(self) -> String { self.code }
-
-    /// Returns the [`Locale`] that is currently in use by the application.
-    ///
-    /// This value is set by the user in the application's settings page.
-    pub fn current() -> Self { Self::to_ffi(&crate::current_locale()) }
-
-    /// Returns a slice containing all the [`Locales`][Locale] that exist in this program.
-    ///
-    /// NOTE: This function should only be called *ONCE* in the entire lifetime of the program.
-    /// The returned list should be cached in the memory of the native application running.
-    pub fn list_all() -> Vec<Self> { Locale::list_all().iter().map(|c| FfiLocale::to_ffi(c)).collect::<Vec<_>>() }
+#[boltffi::error]
+pub enum FfiParseMoneyError {
+    Msg(String)
 }
-impl FfiLocale {
-    fn to_ffi(value: &Locale) -> Self {
-        Self { code: value.name().to_string() }
+impl FfiParseMoneyError {
+    fn to_ffi(value: &ParseMoneyError) -> Self {
+        Self::Msg(value.to_string())
     }
-    fn from_ffi(self) -> Result<Locale, boltffi::CustomTypeConversionError> {
-        Locale::from_name(&self.code)
-            .map_err(|_| boltffi::CustomTypeConversionError)
+    #[allow(unused)]
+    fn from_ffi(self) -> Result<ParseMoneyError, boltffi::CustomTypeConversionError> {
+        unimplemented!("This type is only used for errors, cannot be returned from the Foreign Language")
     }
 }
 custom_type! {
-    pub Locale,
-    remote = Locale,
-    repr = FfiLocale,
-    into_ffi = FfiLocale::to_ffi,
-    try_from_ffi = FfiLocale::from_ffi,
+    pub ParseFfiParseMoneyError,
+    remote = crate::price::ParseMoneyError,
+    repr = FfiParseMoneyError,
+    into_ffi = FfiParseMoneyError::to_ffi,
+    try_from_ffi = FfiParseMoneyError::from_ffi,
 }
 
 custom_type! {

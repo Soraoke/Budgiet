@@ -80,7 +80,14 @@ impl Tag {
     }
 
     pub fn validate_name(name: &str, is_new: bool) -> Result<(), String> {
-        let check_name_exists = || -> bool { todo!() }; // check db
+        let check_name_exists = || -> Result<bool, String> {
+            on_fake_or_real_db(
+                |fake_db| Ok(fake_db.get_tags().iter().find(|tag| tag.name == name).is_some()),
+                || {
+                    todo!("Check name")
+                }
+            ).map_err(|err| err.to_string())
+        };
 
         if name.is_empty() {
             Err("Tag name must not be empty.".into())
@@ -90,7 +97,7 @@ impl Tag {
             Err(format!("Tag name must contain only ASCII characters"))
         } else if name.contains(|c: char| !c.is_whitespace()) {
             Err(format!("Tag name must not contain whitespace"))
-        } else if is_new && !check_name_exists() {
+        } else if is_new && !check_name_exists()? {
             Err("A tag with this name already exists.".into())
         } else {
             Ok(())

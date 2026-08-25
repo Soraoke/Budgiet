@@ -1,124 +1,157 @@
-#![allow(unstable_name_collisions)]
-
-use std::todo;
+use std::{fmt::Display, str::FromStr as _};
 use boltffi::export;
 use itertools::Itertools as _;
-use thiserror::Error;
+use num_format::ToFormattedString as _;
+use rust_decimal::Decimal;
 use crate::{Currency, Locale, Money};
 
-#[boltffi::error]
-#[derive(Debug, Clone, Error)]
-pub enum ParseMoneyError {
-    #[error("price string must not be empty")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseMoneyError {
+    pub currency: Currency,
+    pub locale: Locale,
+    pub kind: ParseMoneyErrorKind,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseMoneyErrorKind {
     Empty,
-    #[error("Leading un-fractional 0s are not allowed")]
     LeadingZeroes,
-    #[error("Invalid characters: {}", list.iter().map(String::as_str).intersperse(" ").collect::<String>())]
-    InvalidChars { list: Vec<String> },
-    #[error("Your locale uses '{group_sep}' as a group separator instead of {found_sep}")]
-    IncorrectGroupSep { group_sep: String, found_sep: String },
-    #[error("Digits must be in groups of 3 if using a group separator ('{group_sep}')")]
-    InvalidGroupSize { group_sep: String },
-    #[error("Your locale uses '{decimal_sep}' as a decimal separator instead of {found_sep}")]
-    IncorrectDecimalSep { decimal_sep: String, found_sep: String },
-    #[error("There can only be 1 decimal separator ('{decimal_sep}')")]
-    MultipleDecimalSeps { decimal_sep: String },
-    #[error("Your currency ({currency_code}) uses up to {currency_digits} decimal places, but found {found_digits}")]
-    TooManyFractionalDigits { currency_code: String, currency_digits: u32, found_digits: u32 },
-    #[error("Group separators ('{group_sep}') after the decimal separator ('{decimal_sep}')")]
-    GroupSepInFractionalSection { group_sep: String, decimal_sep: String },
+    InvalidChars { list: Vec<char> },
+    IncorrectGroupSep { found_sep: char },
+    InvalidGroupSize,
+    IncorrectDecimalSep { found_sep: char },
+    MultipleDecimalSeps,
+    TooManyFractionalDigits { found_digits: u32 },
+    GroupSepInFractionalSection,
+}
+impl Display for ParseMoneyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #![allow(unstable_name_collisions)]
+        let currency_code = self.currency.iso_alpha_code;
+        let currency_minor_digits = self.currency.exponent;
+        let decimal_sep = self.locale.decimal();
+        let group_sep = self.locale.separator();
+
+        f.write_str(&match &self.kind {
+            ParseMoneyErrorKind::Empty
+                => format!("price string must not be empty"),
+            ParseMoneyErrorKind::LeadingZeroes
+                => format!("Leading un-fractional 0s are not allowed"),
+            ParseMoneyErrorKind::InvalidChars { list }
+                => format!("Invalid characters: {}", list.iter().map(char::to_string).intersperse(" ".to_string()).collect::<String>()),
+            ParseMoneyErrorKind::IncorrectGroupSep { found_sep }
+                => format!("Your locale uses '{group_sep}' as a group separator instead of {found_sep}"),
+            ParseMoneyErrorKind::InvalidGroupSize
+                => format!("Digits must be in groups of 3 if using a group separator ('{group_sep}')"),
+            ParseMoneyErrorKind::IncorrectDecimalSep { found_sep }
+                => format!("Your locale uses '{decimal_sep}' as a decimal separator instead of {found_sep}"),
+            ParseMoneyErrorKind::MultipleDecimalSeps
+                => format!("There can only be 1 decimal separator ('{decimal_sep}')"),
+            ParseMoneyErrorKind::TooManyFractionalDigits { found_digits }
+                => format!("Your currency ({currency_code}) uses up to {currency_minor_digits} decimal places, but found {found_digits}"),
+            ParseMoneyErrorKind::GroupSepInFractionalSection
+                => format!("Group separators ('{group_sep}') are not allowed after the decimal separator ('{decimal_sep}')"),
+        })
+    }
+}
+impl std::error::Error for ParseMoneyError { }
+impl ParseMoneyErrorKind {
+    /// Convenience method for the parser function.
+    fn new(self, currency: Currency, locale: Locale) -> Result<Money, ParseMoneyError> {
+        Err(ParseMoneyError { currency, locale, kind: self })
+    }
 }
 
+// This method is courtesy of my dear friend and brother [Asder](https://github.com/asder8215/)
 pub fn parse_money_amount(price: &str, currency: Currency, locale: Locale) -> Result<Money, ParseMoneyError> {
-    // if (price == "") {
-    //     return Result.Err(NumberFormatException("price string must not be empty"))
-    // }
+    if price.is_empty() {
+        return ParseMoneyErrorKind::Empty.new(currency, locale);
+    }
 
-    // val currency = this
-    // val possibleDecimalSeparators = listOf('.', ',', '\u066B')
-    // // How many decimal places are allowed by the currency
-    // // (e.g. USD uses 2 decimal places, crypto uses a variety number of decimal places).
-    // val defaultFractionDigits = currency.defaultFractionDigits
-    // val symbols = DecimalFormatSymbols.getInstance(locale)
-    // // Separates the decimal digits from unit digits (locale-specific) (i.e. ',', '.').
-    // val decimalSeparator = symbols.decimalSeparator
-    // // Separate digits in the thousands (local-specific).
-    // val groupSeparator = symbols.groupingSeparator
-    //
-    // var prevDigit: Char? = null
-    // // Index of the decimal point in the price string
-    // var decimalIdx: Int? = null
-    // // Gets a value when first group separator is found; resets to 0
-    // var groupSize: Int? = null
-    //
-    // fun incorrectGroupSizeError()
-    //     = Result.Err(NumberFormatException("Digits must be in groups of 3 if using a group separator ('$groupSeparator')"))
-    //
-    // price.forEachIndexed { index, char ->
-    //     if (char.isDigit()) {
-    //         if (prevDigit == '0'
-    //         && decimalIdx == null
-    //         && index == 1) {
-    //             // 0100 is not allowed, 0.00 is allowed
-    //             return Result.Err(NumberFormatException("Leading un-fractional 0s are not allowed"))
-    //         }
-    //         if (groupSize != null && decimalIdx == null) {
-    //             groupSize += 1
-    //             if (groupSize > 3) {
-    //                 return incorrectGroupSizeError()
-    //             }
-    //         }
-    //         prevDigit = char
-    //     } else if (char == decimalSeparator) {
-    //         // Has more than one decimal point...
-    //         if (decimalIdx != null) {
-    //             // might be trying to use it as group separator.
-    //             return Result.Err(if (groupSize == null && index - decimalIdx > 3) {
-    //                 NumberFormatException("Your locale uses '$groupSeparator' as a group separator")
-    //             } else {
-    //                 NumberFormatException("Decimal '$decimalSeparator' exists already")
-    //             })
-    //         }
-    //         // if more digits used after decimal (i.e. 100.000 USD), return an error
-    //         if (price.length - index - 1 > defaultFractionDigits) {
-    //             return Result.Err(NumberFormatException("${currency.currencyCode} uses up to $defaultFractionDigits decimal places"))
-    //         }
-    //         // Opened group (with separator), but group does not contain enough digits.
-    //         if (groupSize != null && groupSize != 3) {
-    //             return incorrectGroupSizeError()
-    //         }
-    //         decimalIdx = index
-    //     } else if (char == groupSeparator) {
-    //         if (decimalIdx != null) {
-    //             return Result.Err(NumberFormatException("Group separators ('$groupSeparator') are not allowed in decimal digits"))
-    //         }
-    //         if (groupSize != null && groupSize != 3) {
-    //             return incorrectGroupSizeError()
-    //         }
-    //         groupSize = 0
-    //     } else if (char in possibleDecimalSeparators && decimalIdx == null) {
-    //         return Result.Err(NumberFormatException("Your locale uses '$decimalSeparator' as a decimal separator"))
-    //     } else {
-    //         return Result.Err(NumberFormatException("Invalid character '$char' used"))
-    //     }
-    // }
-    //
-    // // Opened group (with separator), but group does not contain enough digits.
-    // if (groupSize != null && groupSize != 3 && groupSize != 0) {
-    //     return incorrectGroupSizeError()
-    // }
-    //
-    // // Price string was validated, now convert it to a string that can be parsed
-    // val price = price.replace("$groupSeparator", "")
-    //     .replace("$decimalSeparator", ".")
-    //     .trim()
-    //
-    // return try {
-    //     Result.Ok(price.toDouble())
-    // } catch (e: NumberFormatException) {
-    //     Result.Err(e)
-    // }
-    todo!("Parse {price:?} with {currency:?} and {locale:?}")
+    let possible_decimal_seps = &['.', ',', '\u{066B}'];
+    // How many decimal places are allowed by the currency.
+    // (e.g. USD uses 2 decimal places, crypto uses a variety number of decimal places).
+    let exponent = currency.exponent;
+    // Separates the decimal digits from unit digits (locale-specific) (i.e. ',', '.').
+    let decimal_sep = locale.decimal();
+    // Separate digits in the thousands (local-specific).
+    let group_sep = locale.separator();
+
+    let mut prev_digit: Option<char> = None;
+    // idx of the decimal point in the price string
+    let mut decimal_idx: Option<usize> = None;
+    // Gets a value when first group separator is found; resets to 0
+    let mut group_size: Option<usize> = None;
+    // Keeps track of any invalid characters in the price string.
+    let mut invalid_chars = vec![];
+
+    for (idx, c) in price.chars().enumerate() {
+        if c.is_digit(10) {
+            if prev_digit == Some('0')
+            && decimal_idx == None
+            && idx == 1 {
+                // 0100 is not allowed, 0.00 is allowed
+                return ParseMoneyErrorKind::LeadingZeroes.new(currency, locale);
+            }
+            if let Some(group_size) = &mut group_size
+            && decimal_idx.is_none() {
+                *group_size += 1;
+                if *group_size > 3 {
+                    return ParseMoneyErrorKind::InvalidGroupSize.new(currency, locale);
+                }
+            }
+            prev_digit = Some(c)
+        } else if c.to_string() == decimal_sep {
+            // Has more than one decimal point...
+            if decimal_idx.is_none() {
+                // might be trying to use it as group separator.
+                return if group_size.is_none()
+                && decimal_idx.is_some_and(|n| idx - n > 3) {
+                    ParseMoneyErrorKind::IncorrectGroupSep { found_sep: c }
+                } else {
+                    ParseMoneyErrorKind::MultipleDecimalSeps
+                }.new(currency, locale);
+            }
+            // if more digits used after decimal (i.e. 100.000 USD), return an error.
+            let decimal_digits = (price.len() - idx - 1) as u32;
+            if decimal_digits > exponent {
+                return ParseMoneyErrorKind::TooManyFractionalDigits { found_digits: decimal_digits }.new(currency, locale);
+            }
+            // Opened group (with separator), but group does not contain enough digits.
+            if group_size.is_some_and(|n| n != 3) {
+                return ParseMoneyErrorKind::InvalidGroupSize.new(currency, locale);
+            }
+            decimal_idx = Some(idx);
+        } else if c.to_string() == group_sep {
+            if decimal_idx.is_some() {
+                return ParseMoneyErrorKind::GroupSepInFractionalSection.new(currency, locale);
+            }
+            if group_size.is_some_and(|n| n != 3) {
+                return ParseMoneyErrorKind::InvalidGroupSize.new(currency, locale);
+            }
+            group_size = Some(0);
+        } else if possible_decimal_seps.contains(&c) && decimal_idx.is_none() {
+            return ParseMoneyErrorKind::IncorrectDecimalSep { found_sep: c }.new(currency, locale);
+        } else {
+            invalid_chars.push(c);
+        }
+    }
+
+    // price string contained invalid characters.
+    if !invalid_chars.is_empty() {
+        return ParseMoneyErrorKind::InvalidChars { list: invalid_chars }.new(currency, locale);
+    }
+
+    // Opened group (with separator), but group does not contain enough digits.
+    if group_size.is_some_and(|n| n != 3 && n != 0) {
+        return ParseMoneyErrorKind::InvalidGroupSize.new(currency, locale);
+    }
+
+    // Price string was validated, now convert it to a string that can be parsed
+    let price = price.replace(decimal_sep, ".");
+    let price = price.replace(group_sep, "");
+    let price = price.trim();
+
+    Ok(Money::from_decimal(Decimal::from_str(price).unwrap(), currency))
 }
 
 // TODO: doc; does not return ParseMoneyError::Empty
@@ -126,13 +159,14 @@ pub fn parse_money_amount(price: &str, currency: Currency, locale: Locale) -> Re
 //   and should return the transformed field value, and whether there should be a delay before applying it.
 #[export]
 pub fn validate_money_field_input(s: &str, currency: Currency, locale: Locale) -> Result<Money, ParseMoneyError> {
-    // return if (fieldValue.isNotEmpty()) {
-    //     val price = fieldValue.filter { c -> c != DecimalFormatSymbols.getInstance(locale).groupingSeparator }
-    //     this.parsePrice(price, locale)
-    // } else {
-    //     Result.Ok(0.0)
-    // }
-    todo!("Parse {s:?} with {currency:?} and {locale:?}, checking keystrokes")
+    if s.is_empty() {
+        Ok(Money::from_decimal(Decimal::ZERO, currency))
+    } else {
+        let price = s.chars()
+            .filter(|&c| c.to_string() != locale.separator())
+            .collect::<String>();
+        parse_money_amount(&price, currency, locale)
+    }
 }
 
 /// Formats the price value according to the [`Currency`] and [`Locale`] being used.
@@ -143,25 +177,32 @@ pub fn validate_money_field_input(s: &str, currency: Currency, locale: Locale) -
 ///
 /// This returns the **price** formatted with the *decimal point* (if applicable) and *digit separators*.
 /// The returned string *does not* include the currency symbol, as that is displayed as a separate `Icon`.
-///
-/// Heavily inspired by [this article](https://www.codestudy.net/blog/how-can-i-convert-numbers-to-currency-format-in-android/).
 pub fn format_money(money: &Money, locale: Locale, include_symbol: bool) -> String {
-    // when (price) {
-    //     Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY -> return "NaN"
-    // }
-    //
-    // return NumberFormat.getCurrencyInstance(locale)
-    //     .applyProperties(this)
-    //     .format(price)
-    //     // Remove leading and trailing whitespace
-    //     .trim()
-    //     // Remove currency symbol
-    //     .trim { char ->
-    //         // First character can be decimal separator, so don't trim it
-    //         char != DecimalFormatSymbols.getInstance(locale).decimalSeparator
-    //         && !char.isDigit()
-    //     }
-    todo!("Format {money:?} with {locale:?}, optionally including the currency symbol ({include_symbol:?})")
+    let mut buf = String::new();
+    let currency = money.currency();
+    let amount = money.amount()
+        .round_dp_with_strategy(currency.exponent, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+        .normalize();
+
+    if currency.symbol_first && include_symbol {
+        buf.push_str(currency.symbol);
+    }
+
+    buf.push_str(&amount.as_i128().to_formatted_string(&locale));
+    if currency.exponent > 0 {
+        buf.push_str(locale.decimal());
+
+        let fract = amount.fract().as_i128();
+        // Add trailing Zeros to the fractional part to fill the currency's minor-unit digits.
+        let width = currency.exponent as usize;
+        buf.push_str(&format!("{fract:0>width$}"));
+    }
+
+    if !currency.symbol_first && include_symbol {
+        buf.push_str(currency.symbol);
+    }
+
+    buf
 }
 
 pub static ALL_CURRENCIES: &[Currency] = &[

@@ -6,12 +6,14 @@ use fake::{FakeDb, FAKE_DB};
 use crate::{location::fake_locations, tags::fake_tags, transaction::fake_transactions};
 
 #[boltffi::error]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum DbError {
-    // TODO: thiserror
+    #[error("Error inserting data into Database")]
     InsertError,
+    #[error("Could not find entry in Database that matches the given query")]
     EntryNotFound,
-    IndexOutOfBounds,
+    // IndexOutOfBounds,
+    #[error("{_0}")]
     Other(String),
 }
 
