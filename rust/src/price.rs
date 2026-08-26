@@ -3,9 +3,10 @@ use boltffi::export;
 use itertools::Itertools as _;
 use num_format::ToFormattedString as _;
 use rust_decimal::Decimal;
+use thiserror::Error;
 use crate::{Currency, Locale, Money};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub struct ParseMoneyError {
     pub currency: Currency,
     pub locale: Locale,
@@ -53,7 +54,6 @@ impl Display for ParseMoneyError {
         })
     }
 }
-impl std::error::Error for ParseMoneyError { }
 impl ParseMoneyErrorKind {
     /// Convenience method for the parser function.
     fn new(self, currency: Currency, locale: Locale) -> Result<Money, ParseMoneyError> {
@@ -99,7 +99,7 @@ pub fn parse_money_amount(price: &str, currency: Currency, locale: Locale) -> Re
                     return ParseMoneyErrorKind::InvalidGroupSize.new(currency, locale);
                 }
             }
-            prev_digit = Some(c)
+            prev_digit = Some(c);
         } else if c.to_string() == decimal_sep {
             // Has more than one decimal point...
             if decimal_idx.is_none() {
@@ -158,7 +158,7 @@ pub fn parse_money_amount(price: &str, currency: Currency, locale: Locale) -> Re
 //   This function should take full next text value, input key, input position;
 //   and should return the transformed field value, and whether there should be a delay before applying it.
 #[export]
-pub fn validate_money_field_input(s: &str, currency: Currency, locale: Locale) -> Result<Money, ParseMoneyError> {
+pub fn validate_money_field_input(s: &str, currency: Currency, locale: Locale) -> Result<Money, String> {
     if s.is_empty() {
         Ok(Money::from_decimal(Decimal::ZERO, currency))
     } else {
@@ -166,6 +166,7 @@ pub fn validate_money_field_input(s: &str, currency: Currency, locale: Locale) -
             .filter(|&c| c.to_string() != locale.separator())
             .collect::<String>();
         parse_money_amount(&price, currency, locale)
+            .map_err(|err| err.to_string())
     }
 }
 

@@ -192,7 +192,9 @@ async fn create_file_path(files_dir: &Path, entries_file_path: &RwLock<Option<Pa
         }
         // Path does not exist, create the file
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(path.parent().unwrap()).await?;
+            let parent = path.parent()
+                .ok_or_else(|| io::Error::other(format!("Path \"{}\" does not contain a parent component", path.display())))?;
+            fs::create_dir_all(parent).await?;
             fs::File::create_new(&path).await?;
         },
         Err(err) => return Err(err),

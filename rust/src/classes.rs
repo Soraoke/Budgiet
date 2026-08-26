@@ -4,7 +4,7 @@ use boltffi::{custom_type, data};
 use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive as _}};
 use rusty_money::Findable as _;
-use crate::{Currency, Locale, Money, price::ParseMoneyError, utils::{CurrencyExt as _, LocaleExt as _}};
+use crate::{Currency, Locale, Money, utils::{CurrencyExt as _, LocaleExt as _}};
 
 #[data]
 #[derive(Clone, Copy)]
@@ -140,9 +140,10 @@ pub struct FfiMoney {
 }
 #[data(impl)]
 impl FfiMoney {
-    pub fn parse_value(s: &str, currency: Currency, locale: Locale) -> Result<Self, ParseMoneyError> {
+    pub fn parse_value(s: &str, currency: Currency, locale: Locale) -> Result<Self, String> {
         crate::price::parse_money_amount(s, currency, locale)
             .map(|money| Self::to_ffi(&money))
+            .map_err(|err| err.to_string())
     }
 
     pub fn format(self, locale: Locale, include_symbol: bool) -> String {
@@ -167,27 +168,6 @@ custom_type! {
     repr = FfiMoney,
     into_ffi = FfiMoney::to_ffi,
     try_from_ffi = FfiMoney::from_ffi,
-}
-
-#[boltffi::error]
-pub enum FfiParseMoneyError {
-    Msg(String)
-}
-impl FfiParseMoneyError {
-    fn to_ffi(value: &ParseMoneyError) -> Self {
-        Self::Msg(value.to_string())
-    }
-    #[allow(unused)]
-    fn from_ffi(self) -> Result<ParseMoneyError, boltffi::CustomTypeConversionError> {
-        unimplemented!("This type is only used for errors, cannot be returned from the Foreign Language")
-    }
-}
-custom_type! {
-    pub ParseFfiParseMoneyError,
-    remote = crate::price::ParseMoneyError,
-    repr = FfiParseMoneyError,
-    into_ffi = FfiParseMoneyError::to_ffi,
-    try_from_ffi = FfiParseMoneyError::from_ffi,
 }
 
 custom_type! {
