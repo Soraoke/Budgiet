@@ -6,7 +6,7 @@ mod locale_currency_map;
 use std::{fmt::Display, sync::LazyLock};
 use rusty_money::Findable;
 use serde::de::Visitor;
-use crate::{Currency, Locale, Money, price::ParseMoneyError};
+use crate::{Currency, Locale, Money, price::{ParseMoneyError, XXX}};
 
 pub trait CurrencyExt {
     /// Returns the [`Currency`] that is currently in use by the application.
@@ -33,17 +33,6 @@ impl CurrencyExt for Currency {
     #[inline(always)]
     fn list_all() -> &'static [Currency] { crate::price::ALL_CURRENCIES }
 }
-
-static XXX: Currency = &rusty_money::iso::Currency {
-    iso_alpha_code: "XXX",
-    iso_numeric_code: "999",
-    name: "Unknown",
-    exponent: 2,
-    minor_units: 1,
-    locale: rusty_money::Locale::EnUs,
-    symbol: "$",
-    symbol_first: true,
-};
 
 pub trait MoneyExt: Sized {
     fn parse_value(s: &str, currency: Currency, locale: Locale) -> Result<Self, ParseMoneyError>;

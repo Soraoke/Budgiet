@@ -11,9 +11,9 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
+import com.example.budgiet.ListPagingSource.Companion.withQuery
+import com.example.budgiet.ListPagingSource.Companion.withoutQuery
 import org.jetbrains.annotations.Range
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
 
 const val DEFAULT_MAX_PAGES = 4u
 
@@ -109,25 +109,6 @@ fun <T: Any> rememberListPager(
     ListPagingSource.withoutQuery(getPage)
 })
 
-/** Same as [rememberListPager], but allows passing a custom executor to run [getPage] on.
- * The executor should be [Executors.newSingleThreadExecutor].
- *
- * This was specifically made to be called ***ONLY*** from semantic tests.
- *
- * @param getPage See [ListPagingSource].
- * @param pageSize The number of *items* that a **page** can hold (i.e. how many items are requested at a time).
- * @param maxPages The number of **pages** that can be loaded. Loading more pages than this will cause previous pages to get *unloaded*.*/
-@UsableInTestsOnly
-@Composable
-internal fun <T: Any> rememberTestListPager(
-    getPage: PageGetter<T>,
-    pageSize: UInt,
-    maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) UInt = DEFAULT_MAX_PAGES,
-    executor: Executor,
-): PagerController<T> = PagerController.new(Pager(defaultPageConfig(pageSize.toInt(), maxPages.toInt())) {
-    ListPagingSource.forTest(getPage, executor)
-})
-
 private fun defaultPageConfig(pageSize: Int, maxPages: @Range(from = 4, to = Int.MAX_VALUE.toLong()) Int) = PagingConfig(
     pageSize = pageSize,
     initialLoadSize = pageSize,
@@ -197,8 +178,6 @@ class PagerController<T: Any> private constructor(
 class ListPagingSource<T: Any> private constructor(
     /** Contains the **getPage** callback. */
     private val type: ListPagingSourceType<T>,
-    /** An optional custom work [Executor] that runs **getPage**. Only set in tests. */
-    private val executor: Executor? = null,
 ) : PagingSource<PagingKey, T>() {
     companion object {
         /** This constructor is for a [PagingSource] that uses a **query** to get pages.
@@ -221,16 +200,6 @@ class ListPagingSource<T: Any> private constructor(
              * See [PageGetter]. */
             getPage: PageGetter<T>,
         ) = ListPagingSource(ListPagingSourceType.NoQuery(getPage))
-
-        /** Same as [ListPagingSource.withoutQuery], but allows passing a custom executor to run [getPage] on.
-         * The executor should be [Executors.newSingleThreadExecutor].
-         *
-         * This was specifically made to be called ***ONLY*** from semantic tests. */
-        @UsableInTestsOnly
-        internal fun <T: Any> forTest(
-            getPage: PageGetter<T>,
-            executor: Executor,
-        ) = ListPagingSource(ListPagingSourceType.NoQuery(getPage), executor)
     }
 
     /** Return `null` if the **key** is out of bounds.
@@ -266,13 +235,7 @@ class ListPagingSource<T: Any> private constructor(
                 this.type.getPage(this.type.queryState.text, start, params.loadSize.toULong())
             }
         }
-        val result = if (this.executor == null) {
-            runWork(task = task)
-        } else {
-            // This branch only runs on tests!
-            runWork(this.executor, task)
-        }
-        val data = when (result) {
+        val data = when (val result = runWork(task)) {
             // Ignore items that don't fit on this page. They should be loaded on the next page
             is Result.Ok -> result.value.take(params.loadSize)
             is Result.Err -> return LoadResult.Error(result.error)

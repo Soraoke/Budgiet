@@ -1,7 +1,6 @@
 package com.example.budgiet
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
@@ -49,7 +48,7 @@ sealed class RecentItems<T> {
     @Composable
     fun items(): State<Result<List<T>>?> {
         val context = LocalContext.current
-        this.state = rememberWork { this.instance.loadStorage(context).unwrap() }
+        this.state = rememberWork { this.instance.loadStorage(context).unwrap() } as MutableState
 
         return this.state
     }

@@ -80,7 +80,6 @@ import com.example.budgiet.Result
 import com.example.budgiet.Tax
 import com.example.budgiet.formatRelativeToPresent
 import com.example.budgiet.getCurrencyIcon
-import com.example.budgiet.getFakeLocations
 import com.example.budgiet.graphemeStringLength
 import com.example.budgiet.graphemeStringTake
 import com.example.budgiet.ui.theme.BudgietTheme
@@ -571,7 +570,7 @@ fun CurrencySelectorButton(
     val recentCurrencies by RecentItems.Currency.items()
     // This list gets re-sorted (not recalculated) every time the state of recentCurrencies changes.
     val orderedCurrencies = remember {
-        val currencies = Currency.list()
+        val currencies = Currency.listAll()
             // This can be a MutableList, and not a MutableStateList because the sort state lies in recentCurrencies.
             .toMutableList()
 

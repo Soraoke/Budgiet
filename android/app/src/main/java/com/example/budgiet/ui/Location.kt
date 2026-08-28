@@ -68,7 +68,7 @@ import com.example.budgiet.LocationDbEntry
 import com.example.budgiet.R
 import com.example.budgiet.Result
 import com.example.budgiet.getFakeLocations
-import com.example.budgiet.getLocationsPage
+import com.example.budgiet.ffiGetLocationsPage as getLocationsPage
 import com.example.budgiet.into
 import com.example.budgiet.rememberListPager
 import com.example.budgiet.rememberQueryListPager

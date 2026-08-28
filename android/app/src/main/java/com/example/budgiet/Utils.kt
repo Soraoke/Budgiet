@@ -2,8 +2,13 @@ package com.example.budgiet
 
 import android.annotation.SuppressLint
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.channels.Channel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -106,6 +111,39 @@ fun <T> kotlin.Result<T>.into(): Result<T> = Result.fromKt(this)
  * Can pass a function that generates a custom [exception] to *throw* when the value is `null`.*/
 fun <T> T?.unwrap(exception: (() -> Throwable)? = null): T
     = if (exception == null) this!! else this ?: throw exception()
+
+@Composable
+fun <T> rememberWork(key: Any? = null, task: suspend () -> T): State<Result<T>?> {
+    val key = key ?: Unit
+    val state = remember(key) { mutableStateOf<Result<T>?>(null) }
+
+    LaunchedEffect(key) {
+        state.value = runWork(task)
+    }
+
+    return state
+}
+
+suspend fun <T> runWork(task: suspend () -> T): Result<T> {
+    suspend fun runTask()
+        // Don't allow an exception to terminate the worker thread; gotta catch em all.
+        = try {
+            Result.Ok(task())
+        } catch (e: Throwable) {
+            Result.Err(e)
+        }
+
+    val channel = Channel<Result<T>>()
+    dispatchWork { channel.send(runTask()) }
+    val r = channel.receive()
+    channel.close()
+
+    return r
+}
+
+fun dispatchWork(task: suspend () -> Unit) {
+    ffiDispatchWork(task)
+}
 
 fun localDateFromUtcMillis(utcMillis: Long): LocalDate {
     return Instant.ofEpochMilli(utcMillis)

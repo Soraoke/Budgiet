@@ -51,14 +51,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // // Apply fake/sample data for demo
-        // this.newTransactionViewModel.apply {
-        //     location.useAlternativeLocations(com.example.budgiet.ui.FAKE_LOCATIONS)
-        //     items.items.addAll(com.example.budgiet.ui.FAKE_ITEMS)
-        //     items.tax = com.example.budgiet.ui.Tax.Percentage(8.23)
-        //     tags.useAlternativeTags(com.example.budgiet.ui.FAKE_TAGS)
-        // }
-
+        useFakeDb(true)
         UserIcons.load(this)
         setContent {
             BudgietTheme {
